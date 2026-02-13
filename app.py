@@ -288,3 +288,57 @@ with tab2:
     ซึ่งคำนวณจากสูตร:
     $$ \\frac{1}{K_{ec}} = \\frac{1}{\\sum K_c} + \\frac{1}{K_t} $$
     """)
+
+# ==============================================================================
+# ⚙️ DATA NORMALIZATION ENGINE (SI UNITS: N, m)
+# ==============================================================================
+
+def prepare_calculation_data():
+    # 1. Geometry Normalization (cm -> m)
+    h_s = h_slab_cm / 100
+    h_d = (h_slab_cm + h_drop_cm) / 100 if has_drop else h_s
+    c1 = c1_cm / 100
+    c2 = c2_cm / 100
+    
+    # 2. Material Properties (ksc -> N/m²)
+    # 1 ksc ≈ 98,066.5 N/m² (Pa)
+    fc_pa = fc * 98066.5
+    fy_pa = fy * 98066.5
+    
+    # Modulus of Elasticity Ec = 4700 * sqrt(fc') MPa
+    # สำหรับ Concrete (ACI 318)
+    Ec = 4700 * np.sqrt(fc * 0.0980665) * 1e6  # Pa
+    
+    # 3. Load Normalization (kg/m² -> N/m²)
+    # g ≈ 9.806 m/s²
+    sw_slab = h_s * 2400 * 9.806
+    sw_drop = (h_drop_cm/100) * 2400 * 9.806 if has_drop else 0
+    
+    dead_load_total = (dl * 9.806) + sw_slab
+    live_load_total = ll * 9.806
+    
+    # Factored Load (wu)
+    wu = (1.2 * dead_load_total) + (1.6 * live_load_total)
+
+    # 4. Equivalent Frame Properties (Stiffness Components)
+    # L1 คือทิศทางวิเคราะห์, L2 คือทิศทางตั้งฉาก (Strip Width)
+    L1 = L1_l + L1_r
+    L2 = L2_t + L2_b
+    Ln = L1 - c1 # Clear Span
+    
+    # Moment of Inertia (Ig)
+    # ช่วงกลาง (Midspan)
+    I_slab = (L2 * (h_s**3)) / 12
+    # ช่วง Drop (ถ้ามี)
+    I_drop = (drop_w2 * (h_d**3)) / 12 if has_drop else I_slab
+
+    # 📦 คืนค่าเป็น Dictionary ที่พร้อมส่งต่อให้ Structural Engine
+    return {
+        "geom": {"h_s": h_s, "h_d": h_d, "c1": c1, "c2": c2, "L1": L1, "L2": L2, "Ln": Ln},
+        "mat": {"Ec": Ec, "fc": fc_pa, "fy": fy_pa},
+        "loads": {"wu": wu, "dl": dead_load_total, "ll": live_load_total},
+        "stiffness": {"I_slab": I_slab, "I_drop": I_drop}
+    }
+
+# เรียกใช้งาน
+calc_obj = prepare_calculation_data()
