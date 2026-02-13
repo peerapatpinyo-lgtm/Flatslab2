@@ -37,31 +37,30 @@ def validate_aci_standard(h_slab, h_drop, L1_left, L1_right, L2_top, L2_bot, dro
 def draw_plan_view(L1_left, L1_right, L2_top, L2_bot, c1_m, c2_m, col_loc, has_drop, drop_w1, drop_w2):
     fig, ax = plt.subplots(figsize=(10, 8))
     
-    # กำหนดขอบเขตพื้นตามจริง
-    # สำหรับ Interior: จะเห็นเต็มทั้ง 2 ฝั่ง
-    # สำหรับ Edge/Corner: จะโดนตัดขอบตามตำแหน่งเสา
+    # --- 💡 จุดที่แก้ไข: ปรับขอบเขตพื้นตามตำแหน่งเสาจริง ---
+    # ถ้าเป็น Edge/Corner ฝั่งที่ไม่มีสแปนจะเหลือแค่ขอบเสา (c/2)
+    actual_L1_left = c1_m/2 if col_loc == "Corner Column" else L1_left
+    actual_L2_bot = c2_m/2 if col_loc in ["Edge Column", "Corner Column"] else L2_bot
     
     # --- 1. DRAWING GRID & AXES ---
     grid_color = '#7f8c8d'
     ax.axhline(y=0, color=grid_color, linestyle='-.', linewidth=1)
     ax.axvline(x=0, color=grid_color, linestyle='-.', linewidth=1)
 
-    # --- 2. DRAWING SLAB AREA (Design Strip) ---
-    # สี่เหลี่ยมครอบคลุมพื้นที่จาก (-L1_left ถึง L1_right) และ (-L2_bot ถึง L2_top)
-    slab_rect = patches.Rectangle((-L1_left, -L2_bot), L1_left + L1_right, L2_bot + L2_top,
+    # --- 2. DRAWING SLAB AREA ---
+    # ใช้ค่า actual_ ที่คำนวณใหม่
+    slab_rect = patches.Rectangle((-actual_L1_left, -actual_L2_bot), 
+                                  actual_L1_left + L1_right, actual_L2_bot + L2_top,
                                   facecolor='#f0f2f6', edgecolor='#1f77b4', 
                                   linestyle='-', linewidth=2, alpha=0.4, zorder=1)
     ax.add_patch(slab_rect)
 
-    # --- 3. COLUMN STRIP & MIDDLE STRIP BOUNDARIES ---
-    # ACI: Column Strip กว้าง 0.25 * min(L1, L2) ในแต่ละด้านของเซ็นเตอร์ไลน์
-    L_min = min((L1_left + L1_right), (L2_top + L2_bot))
+    # --- 3. COLUMN STRIP BOUNDARIES ---
+    L_min = min((actual_L1_left + L1_right), (actual_L2_bot + L2_top))
     cs_width = 0.25 * L_min
     
-    # วาดเส้นแบ่ง Column Strip (เส้นประสีเขียว)
-    # ต้องระวังไม่ให้วาดเลยขอบพื้น (กรณี Edge Column)
     top_bound = min(cs_width, L2_top)
-    bot_bound = min(cs_width, L2_bot)
+    bot_bound = min(cs_width, actual_L2_bot) # ตัดตามขอบพื้นจริง
     
     ax.axhline(y=top_bound, color='#27ae60', linestyle='--', linewidth=1.5, alpha=0.8, zorder=2)
     ax.axhline(y=-bot_bound, color='#27ae60', linestyle='--', linewidth=1.5, alpha=0.8, zorder=2)
@@ -100,10 +99,14 @@ def draw_plan_view(L1_left, L1_right, L2_top, L2_bot, c1_m, c2_m, col_loc, has_d
                       color='#d35400', backgroundcolor='white')
     
     # X-Dimension
-    ax.annotate('', xy=(0, -L2_bot - 0.5), xytext=(L1_right, -L2_bot - 0.5), arrowprops=arrow_props)
-    ax.text(L1_right/2, -L2_bot - 0.5, f"L1-R: {L1_right}m", **text_props)
-    ax.annotate('', xy=(-L1_left, -L2_bot - 0.5), xytext=(0, -L2_bot - 0.5), arrowprops=arrow_props)
-    ax.text(-L1_left/2, -L2_bot - 0.5, f"L1-L: {L1_left}m", **text_props)
+    ax.annotate('', xy=(0, -actual_L2_bot - 0.5), xytext=(L1_right, -actual_L2_bot - 0.5), arrowprops=arrow_props)
+    ax.text(L1_right/2, -actual_L2_bot - 0.5, f"L1-R: {L1_right}m", **text_props)
+    
+    # วาด L1-Left เฉพาะเมื่อไม่ใช่ Corner Column
+    if col_loc != "Corner Column":
+        ax.annotate('', xy=(-actual_L1_left, -actual_L2_bot - 0.5), xytext=(0, -actual_L2_bot - 0.5), arrowprops=arrow_props)
+        ax.text(-actual_L1_left/2, -actual_L2_bot - 0.5, f"L1-L: {actual_L1_left}m", **text_props)
+   
 
     # Y-Dimension
     ax.annotate('', xy=(-L1_left - 0.5, 0), xytext=(-L1_left - 0.5, L2_top), arrowprops=arrow_props)
@@ -178,19 +181,28 @@ with tab1:
         st.subheader("2. Geometry (Span & Section)")
         h_slab = st.number_input("Slab Thickness (cm)", value=20.0)
         
+    
+        # --- ปรับ Logic การรับค่า Span ให้สอดคล้องกับ Column Location ---
+        is_corner = (col_location == "Corner Column")
+        is_edge = (col_location == "Edge Column")
+
         st.write("**Span L1 (Analysis Direction)**")
         col_l1a, col_l1b = st.columns(2)
         with col_l1a:
-            L1_left = st.number_input("L1 - Left Span (m)", value=3.0, help="ระยะจากศูนย์กลางเสาไปทางซ้าย")
+            # ถ้าเป็น Corner Column ระยะด้านซ้ายจะเป็น 0 (หรือแค่ครึ่งเสา)
+            l1_left_val = 0.0 if is_corner else 3.0
+            L1_left = st.number_input("L1 - Left Span (m)", value=l1_left_val, disabled=is_corner)
         with col_l1b:
-            L1_right = st.number_input("L1 - Right Span (m)", value=3.0, help="ระยะจากศูนย์กลางเสาไปทางขวา")
+            L1_right = st.number_input("L1 - Right Span (m)", value=3.0)
             
         st.write("**Span L2 (Transverse Width)**")
         col_l2a, col_l2b = st.columns(2)
         with col_l2a:
-            L2_top = st.number_input("L2 - Top Half (m)", value=3.0, help="ความกว้าง Strip ครึ่งบน")
+            L2_top = st.number_input("L2 - Top Half (m)", value=3.0)
         with col_l2b:
-            L2_bot = st.number_input("L2 - Bottom Half (m)", value=3.0, help="ความกว้าง Strip ครึ่งล่าง")
+            # ถ้าเป็น Edge หรือ Corner ระยะด้านล่างจะเป็น 0
+            l2_bot_val = 0.0 if (is_edge or is_corner) else 3.0
+            L2_bot = st.number_input("L2 - Bottom Half (m)", value=l2_bot_val, disabled=(is_edge or is_corner))
 
         col_c1, col_c2 = st.columns(2)
         with col_c1:
