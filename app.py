@@ -1,305 +1,290 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import numpy as np
 
 # --- 1. Setup & Configuration ---
 st.set_page_config(page_title="Flat Slab EFM Design Pro", layout="wide")
 
 # ==============================================================================
-# 🧱 UNIT CONVERSION SYSTEM & LOGIC
+# 🧱 ENGINEERING CALCULATIONS & VALIDATION
 # ==============================================================================
-calc_data = {}
 
-# --- ฟังก์ชันตรวจสอบมาตรฐานวิศวกรรม (ACI 318 / วสท.) ---
 def validate_aci_standard(h_slab, h_drop, L1_left, L1_right, L2_top, L2_bot, drop_w1, drop_w2, has_drop):
+    """ตรวจสอบมาตรฐาน ACI 318 สำหรับความหนาและความกว้างของ Drop Panel"""
     warnings = []
     L1_total = L1_left + L1_right
     L2_total = L2_top + L2_bot
     
     if has_drop:
-        # 1. ความหนา Drop (Thickness): ต้องยื่นลงมาอย่างน้อย h_slab / 4
+        # 1. Thickness Check (min h/4)
         if h_drop < (h_slab / 4):
-            warnings.append(f"⚠️ **Drop Thickness Low:** ส่วนที่ยื่น ({h_drop} cm) ต้อง ≥ h_slab/4 ({h_slab/4:.2f} cm)")
+            warnings.append(f"⚠️ **Drop Thickness:** {h_drop} cm < เกณฑ์ขั้นต่ำ {h_slab/4:.2f} cm (h_slab/4)")
         
-        # 2. ความกว้าง Drop (Width): ระยะจากศูนย์กลางเสาถึงขอบ Drop ต้อง ≥ L/6
-        # ACI กำหนดว่าแผ่น Drop ต้องแผ่ออกไปจากศูนย์กลางเสาไม่น้อยกว่า L/6 ของสแปนนั้นๆ
-        min_extend_L1 = L1_total / 6
-        min_extend_L2 = L2_total / 6
+        # 2. Width Check (min L/6 from centerline)
+        # สแปนที่ยาวกว่ามักจะเป็นตัวกำหนดเกณฑ์
+        max_L1 = max(L1_left, L1_right)
+        max_L2 = max(L2_top, L2_bot)
+        
+        min_extend_L1 = max_L1 / 6
+        min_extend_L2 = max_L2 / 6
         
         if (drop_w1 / 2) < min_extend_L1:
-            warnings.append(f"⚠️ **Drop Width L1:** ระยะยื่นจากศูนย์กลาง ({drop_w1/2:.2f} m) น้อยกว่า L1/6 ({min_extend_L1:.2f} m)")
+            warnings.append(f"⚠️ **Drop Width L1:** ระยะยื่น {drop_w1/2:.2f} m < เกณฑ์ {min_extend_L1:.2f} m (L1_max/6)")
         if (drop_w2 / 2) < min_extend_L2:
-            warnings.append(f"⚠️ **Drop Width L2:** ระยะยื่นจากศูนย์กลาง ({drop_w2/2:.2f} m) น้อยกว่า L2/6 ({min_extend_L2:.2f} m)")
+            warnings.append(f"⚠️ **Drop Width L2:** ระยะยื่น {drop_w2/2:.2f} m < เกณฑ์ {min_extend_L2:.2f} m (L2_max/6)")
             
     return warnings
 
-# --- Function วาด Plan View (ปรับปรุงให้รองรับสัดส่วนซ้าย-ขวาไม่เท่ากัน) ---
-def draw_plan_view(L1_left, L1_right, L2_top, L2_bot, c1_m, c2_m, col_loc, has_drop, drop_w1, drop_w2):
+# ==============================================================================
+# 🎨 VISUALIZATION SYSTEM
+# ==============================================================================
+
+def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1, d_w2):
+    """วาดรูปแปลนพื้น (Plan View) พร้อมระบุโซน Column/Middle Strip ตามสัดส่วนจริง"""
     fig, ax = plt.subplots(figsize=(10, 8))
     
-    # --- 💡 จุดที่แก้ไข: ปรับขอบเขตพื้นตามตำแหน่งเสาจริง ---
-    # ถ้าเป็น Edge/Corner ฝั่งที่ไม่มีสแปนจะเหลือแค่ขอบเสา (c/2)
-    actual_L1_left = c1_m/2 if col_loc == "Corner Column" else L1_left
-    actual_L2_bot = c2_m/2 if col_loc in ["Edge Column", "Corner Column"] else L2_bot
+    c1_m = c1_cm / 100
+    c2_m = c2_cm / 100
     
-    # --- 1. DRAWING GRID & AXES ---
-    grid_color = '#7f8c8d'
-    ax.axhline(y=0, color=grid_color, linestyle='-.', linewidth=1)
-    ax.axvline(x=0, color=grid_color, linestyle='-.', linewidth=1)
+    # คำนวณขอบเขตพื้นตามตำแหน่งเสา
+    # ถ้าเป็น Corner หรือ Edge ด้านที่ไม่มีสแปนจะสิ้นสุดแค่ขอบเสา (c/2)
+    slab_L = c1_m/2 if col_loc == "Corner Column" else L1_l
+    slab_R = L1_r
+    slab_T = L2_t
+    slab_B = c2_m/2 if col_loc in ["Edge Column", "Corner Column"] else L2_b
+    
+    # 1. วาด Slab Area
+    slab = patches.Rectangle((-slab_L, -slab_B), slab_L + slab_R, slab_B + slab_T,
+                             facecolor='#f8f9fa', edgecolor='#2c3e50', linewidth=2, alpha=0.6, zorder=1)
+    ax.add_patch(slab)
 
-    # --- 2. DRAWING SLAB AREA ---
-    # ใช้ค่า actual_ ที่คำนวณใหม่
-    slab_rect = patches.Rectangle((-actual_L1_left, -actual_L2_bot), 
-                                  actual_L1_left + L1_right, actual_L2_bot + L2_top,
-                                  facecolor='#f0f2f6', edgecolor='#1f77b4', 
-                                  linestyle='-', linewidth=2, alpha=0.4, zorder=1)
-    ax.add_patch(slab_rect)
-
-    # --- 3. COLUMN STRIP BOUNDARIES ---
-    L_min = min((actual_L1_left + L1_right), (actual_L2_bot + L2_top))
+    # 2. คำนวณและวาด Column Strip (ACI: 0.25 * min(L1, L2) แต่ไม่เกินระยะขอบ)
+    L_min = min((L1_l + L1_r), (L2_t + L2_b))
     cs_width = 0.25 * L_min
     
-    top_bound = min(cs_width, L2_top)
-    bot_bound = min(cs_width, actual_L2_bot) # ตัดตามขอบพื้นจริง
+    # เส้นประสีเขียวแบ่ง Column Strip
+    cs_top = min(cs_width, slab_T)
+    cs_bot = min(cs_width, slab_B)
     
-    ax.axhline(y=top_bound, color='#27ae60', linestyle='--', linewidth=1.5, alpha=0.8, zorder=2)
-    ax.axhline(y=-bot_bound, color='#27ae60', linestyle='--', linewidth=1.5, alpha=0.8, zorder=2)
+    ax.axhline(y=cs_top, color='#27ae60', linestyle='--', linewidth=1.5, alpha=0.8, zorder=2)
+    ax.axhline(y=-cs_bot, color='#27ae60', linestyle='--', linewidth=1.5, alpha=0.8, zorder=2)
     
-    # Label Zones
-    text_strip_props = dict(ha='center', va='center', fontsize=10, fontweight='bold', alpha=0.6)
-    ax.text(L1_right/2, 0, "COLUMN STRIP", color='#27ae60', **text_strip_props)
+    # 3. วาดเสา (Columns)
+    # เสาหลักที่ตำแหน่ง (0,0)
+    ax.add_patch(patches.Rectangle((-c1_m/2, -c2_m/2), c1_m, c2_m, facecolor='#34495e', hatch='///', zorder=10))
     
-    if L2_top > top_bound:
-        ax.text(L1_right/2, top_bound + (L2_top - top_bound)/2, "MIDDLE STRIP", color='#2980b9', **text_strip_props)
-    if L2_bot > bot_bound:
-        ax.text(L1_right/2, -bot_bound - (L2_bot - bot_bound)/2, "MIDDLE STRIP", color='#2980b9', **text_strip_props)
-
-    # --- 4. DRAWING COLUMNS ---
-    # เสากลาง (Target Column)
-    main_col = patches.Rectangle((-c1_m/2, -c2_m/2), c1_m, c2_m, 
-                                 facecolor='#2c3e50', edgecolor='black', hatch='...', zorder=10)
-    ax.add_patch(main_col)
-    
-    # เสาข้างเคียง (Neighboring Columns)
-    col_style = dict(facecolor='white', edgecolor='gray', linestyle=':', zorder=5)
-    ax.add_patch(patches.Rectangle((L1_right - c1_m/2, -c2_m/2), c1_m, c2_m, **col_style))
+    # เสาบริวาร (Neighboring Columns)
+    neighbor_props = dict(facecolor='none', edgecolor='#bdc3c7', linestyle=':', linewidth=1, zorder=5)
+    ax.add_patch(patches.Rectangle((L1_r - c1_m/2, -c2_m/2), c1_m, c2_m, **neighbor_props))
     if col_loc != "Corner Column":
-        ax.add_patch(patches.Rectangle((-L1_left - c1_m/2, -c2_m/2), c1_m, c2_m, **col_style))
+        ax.add_patch(patches.Rectangle((-L1_l - c1_m/2, -c2_m/2), c1_m, c2_m, **neighbor_props))
 
-    # --- 5. DROP PANEL ---
+    # 4. วาด Drop Panel
     if has_drop:
-        drop = patches.Rectangle((-drop_w1/2, -drop_w2/2), drop_w1, drop_w2,
-                                 facecolor='#ffcc00', edgecolor='#d35400', alpha=0.4, 
-                                 linestyle='-', linewidth=2, zorder=8)
-        ax.add_patch(drop)
+        ax.add_patch(patches.Rectangle((-d_w1/2, -d_w2/2), d_w1, d_w2, 
+                                     facecolor='#f1c40f', edgecolor='#f39c12', alpha=0.5, zorder=8))
 
-    # --- 6. DIMENSIONS ---
-    arrow_props = dict(arrowstyle='<|-|>', color='#f1c40f', linewidth=2)
-    text_props = dict(ha='center', va='center', fontsize=11, fontweight='bold', 
-                      color='#d35400', backgroundcolor='white')
-    
-    # X-Dimension
-    ax.annotate('', xy=(0, -actual_L2_bot - 0.5), xytext=(L1_right, -actual_L2_bot - 0.5), arrowprops=arrow_props)
-    ax.text(L1_right/2, -actual_L2_bot - 0.5, f"L1-R: {L1_right}m", **text_props)
-    
-    # วาด L1-Left เฉพาะเมื่อไม่ใช่ Corner Column
+    # 5. ใส่ข้อความระบุโซน
+    txt_style = dict(ha='center', va='center', fontsize=9, fontweight='bold', alpha=0.5)
+    ax.text(slab_R/2, 0, "COLUMN STRIP", color='#27ae60', **txt_style)
+    if slab_T > cs_top:
+        ax.text(slab_R/2, cs_top + (slab_T-cs_top)/2, "MIDDLE STRIP", color='#2980b9', **txt_style)
+    if slab_B > cs_bot:
+        ax.text(slab_R/2, -cs_bot - (slab_B-cs_bot)/2, "MIDDLE STRIP", color='#2980b9', **txt_style)
+
+    # 6. Dimensions
+    arrow = dict(arrowstyle='<|-|>', color='#7f8c8d', linewidth=1.5)
+    # X-Axis Dim
+    ax.annotate('', xy=(0, -slab_B - 0.4), xytext=(slab_R, -slab_B - 0.4), arrowprops=arrow)
+    ax.text(slab_R/2, -slab_B - 0.6, f"{slab_R}m", ha='center', fontsize=10)
     if col_loc != "Corner Column":
-        ax.annotate('', xy=(-actual_L1_left, -actual_L2_bot - 0.5), xytext=(0, -actual_L2_bot - 0.5), arrowprops=arrow_props)
-        ax.text(-actual_L1_left/2, -actual_L2_bot - 0.5, f"L1-L: {actual_L1_left}m", **text_props)
-   
+        ax.annotate('', xy=(-slab_L, -slab_B - 0.4), xytext=(0, -slab_B - 0.4), arrowprops=arrow)
+        ax.text(-slab_L/2, -slab_B - 0.6, f"{slab_L}m", ha='center', fontsize=10)
+    
+    # Y-Axis Dim
+    ax.annotate('', xy=(-slab_L - 0.4, 0), xytext=(-slab_L - 0.4, slab_T), arrowprops=arrow)
+    ax.text(-slab_L - 0.7, slab_T/2, f"{slab_T}m", rotation=90, va='center', fontsize=10)
+    if col_loc == "Interior Column":
+        ax.annotate('', xy=(-slab_L - 0.4, -slab_B), xytext=(-slab_L - 0.4, 0), arrowprops=arrow)
+        ax.text(-slab_L - 0.7, -slab_B/2, f"{slab_B}m", rotation=90, va='center', fontsize=10)
 
-    # Y-Dimension
-    ax.annotate('', xy=(-L1_left - 0.5, 0), xytext=(-L1_left - 0.5, L2_top), arrowprops=arrow_props)
-    ax.text(-L1_left - 0.5, L2_top/2, f"L2-T: {L2_top}m", rotation=90, **text_props)
-    ax.annotate('', xy=(-L1_left - 0.5, -L2_bot), xytext=(-L1_left - 0.5, 0), arrowprops=arrow_props)
-    ax.text(-L1_left - 0.5, -L2_bot/2, f"L2-B: {L2_bot}m", rotation=90, **text_props)
-
-    ax.set_title(f"Plan Geometry: {col_loc}", fontsize=14, fontweight='bold')
-    ax.set_xlim(-L1_left - 1.5, L1_right + 1.5)
-    ax.set_ylim(-L2_bot - 1.5, L2_top + 1.5)
+    ax.set_title(f"Plan View: {col_loc}", fontsize=12, pad=20)
+    ax.set_xlim(-slab_L - 1.5, slab_R + 1.5)
+    ax.set_ylim(-slab_B - 1.5, slab_T + 1.5)
     ax.set_aspect('equal')
     ax.axis('off')
     return fig
 
-# --- Function วาดรูปตัด (Elevation) ---
-def draw_elevation(scenario, h_upper, h_lower, support_cond, has_drop, h_drop, c1_m):
-    fig, ax = plt.subplots(figsize=(4, 5))
-    ax.add_patch(patches.Rectangle((-1.5, -0.1), 3, 0.2, color='gray', alpha=0.5)) 
-    ax.text(1.6, 0, "Slab", va='center', fontsize=9)
+def draw_elevation(floor_env, h_up, h_lo, has_drop, h_drop_cm, c1_cm, slab_cm):
+    """วาดรูปตัดแสดงความหนาและองค์ประกอบแนวดิ่ง"""
+    fig, ax = plt.subplots(figsize=(5, 6))
+    s_m = slab_cm / 100
+    d_m = h_drop_cm / 100
+    c_m = c1_cm / 100
     
+    # Slab
+    ax.add_patch(patches.Rectangle((-2, 0), 4, s_m, color='#ecf0f1', edgecolor='#7f8c8d', zorder=2))
+    
+    # Drop Panel
     if has_drop:
-        drop_w_view = 1.0 
-        ax.add_patch(patches.Rectangle((-drop_w_view/2, -0.1 - h_drop), drop_w_view, h_drop, color='#f39c12', alpha=0.8))
-        ax.text(0.6, -0.1 - h_drop/2, f"Drop +{h_drop*100:.0f}cm", fontsize=8, color='#d35400')
+        ax.add_patch(patches.Rectangle((-0.8, -d_m), 1.6, d_m, color='#f1c40f', alpha=0.7, zorder=3))
+        ax.text(0.9, -d_m/2, f"Drop +{h_drop_cm}cm", va='center', fontsize=8, color='#d35400')
 
-    col_width = c1_m 
-    if scenario != "Top Floor (Roof)":
-        ax.add_patch(patches.Rectangle((-col_width/2, 0.1), col_width, 1.5, color='#3498db')) 
-        ax.text(0.2, 0.8, f"Upper: {h_upper}m", fontsize=9, color='blue')
-
-    ax.add_patch(patches.Rectangle((-col_width/2, -1.6), col_width, 1.5, color='#e74c3c')) 
-    
-    if scenario == "Foundation/First Floor":
-        ax.text(0.2, -0.8, f"Lower: {h_lower}m", fontsize=9, color='red')
-        if support_cond == "Fixed":
-            ax.add_patch(patches.Rectangle((-0.4, -1.7), 0.8, 0.1, color='black')) 
-            ax.text(0, -1.9, "FIXED", ha='center', fontsize=8, fontweight='bold')
-        else: 
-            ax.plot(0, -1.6, marker='^', markersize=10, color='black') 
-            ax.text(0, -1.9, "PINNED", ha='center', fontsize=8, fontweight='bold')
-    else:
-        ax.text(0.2, -0.8, f"Lower: {h_lower}m", fontsize=9, color='red')
+    # Columns
+    if floor_env != "Top Floor (Roof)":
+        ax.add_patch(patches.Rectangle((-c_m/2, s_m), c_m, 1.5, color='#3498db', alpha=0.8))
+        ax.text(0.3, s_m + 0.75, f"H_upper: {h_up}m", fontsize=9)
+        
+    ax.add_patch(patches.Rectangle((-c_m/2, -1.8), c_m, 1.8 if not has_drop else 1.8-d_m, color='#e74c3c', alpha=0.8))
+    ax.text(0.3, -0.9, f"H_lower: {h_lo}m", fontsize=9)
 
     ax.set_xlim(-2, 2)
-    ax.set_ylim(-2.5, 2.5)
+    ax.set_ylim(-2, 2.5)
     ax.axis('off')
+    ax.set_title("Elevation Detail", fontsize=10)
     return fig
 
-# --- 2. Main Interface ---
-st.title("🏗️ Flat Slab Design: Equivalent Frame Method")
+# ==============================================================================
+# 🚀 MAIN APPLICATION INTERFACE
+# ==============================================================================
 
-tab1, tab2 = st.tabs(["📝 Input Parameters", "📘 Theory & Manual"])
+st.title("🏗️ Flat Slab Design: Equivalent Frame Method (EFM)")
+st.markdown("---")
+
+# ใช้ Session State เพื่อจัดการลำดับการเลือก (Prevent NameError)
+if 'col_loc' not in st.session_state:
+    st.session_state['col_loc'] = "Interior Column"
+
+tab1, tab2 = st.tabs(["📝 Input Parameters", "📘 Engineering Theory"])
 
 with tab1:
-    col_input, col_viz = st.columns([1, 1.2])
+    col_input, col_viz = st.columns([1.1, 1.4])
 
     with col_input:
-        # --- Section 1: Materials ---
+        # --- 1. MATERIALS & LOADS ---
         st.subheader("1. Material & Loads")
         c1_mat, c2_mat = st.columns(2)
         with c1_mat:
-            fc_options = [210, 240, 280, 320, 350, 400]
-            fc = st.selectbox("Concrete Strength f'c (ksc)", options=fc_options, index=1)
-            dl = st.number_input("SDL (kg/m²)", value=100)
+            fc = st.selectbox("Concrete Strength f'c (ksc)", options=[210, 240, 280, 320, 350, 400], index=1)
+            dl = st.number_input("Superimposed DL (kg/m²)", value=100, step=10)
         with c2_mat:
-            fy_options = {"SD30": 3000, "SD40": 4000, "SD50": 5000}
-            fy_label = st.selectbox("Steel Grade (fy)", options=list(fy_options.keys()), index=1)
-            fy = fy_options[fy_label]
-            ll = st.number_input("Live Load (kg/m²)", value=200)
+            fy_label = st.selectbox("Steel Grade (fy)", options=["SD30", "SD40", "SD50"], index=1)
+            fy = {"SD30": 3000, "SD40": 4000, "SD50": 5000}[fy_label]
+            ll = st.number_input("Live Load (kg/m²)", value=200, step=50)
+
+        # --- 2. BOUNDARY CONDITIONS ---
+        st.subheader("2. Boundary Conditions")
+        floor_scenario = st.selectbox("Floor Level", ["Typical Floor", "Top Floor (Roof)", "Foundation Level"])
+        col_location = st.selectbox("Column Location", ["Interior Column", "Edge Column", "Corner Column"])
         
-        # --- Section 2: Geometry ---
-        st.subheader("2. Geometry (Span & Section)")
-        h_slab = st.number_input("Slab Thickness (cm)", value=20.0)
-        
-    
-        # --- ปรับ Logic การรับค่า Span ให้สอดคล้องกับ Column Location ---
+        # คุมสิทธิการกรอกสแปนตามตำแหน่งเสา
         is_corner = (col_location == "Corner Column")
         is_edge = (col_location == "Edge Column")
 
-        st.write("**Span L1 (Analysis Direction)**")
+        # --- 3. GEOMETRY ---
+        st.subheader("3. Geometry & Spans")
+        h_slab_cm = st.number_input("Slab Thickness (cm)", value=20.0, step=0.5)
+        
+        st.info("💡 ระบุระยะจากศูนย์กลางเสา (Centerline)")
         col_l1a, col_l1b = st.columns(2)
         with col_l1a:
-            # ถ้าเป็น Corner Column ระยะด้านซ้ายจะเป็น 0 (หรือแค่ครึ่งเสา)
-            l1_left_val = 0.0 if is_corner else 3.0
-            L1_left = st.number_input("L1 - Left Span (m)", value=l1_left_val, disabled=is_corner)
+            l1_l_val = 0.0 if is_corner else 3.0
+            L1_l = st.number_input("L1 - Left Span (m)", value=l1_l_val, disabled=is_corner)
         with col_l1b:
-            L1_right = st.number_input("L1 - Right Span (m)", value=3.0)
+            L1_r = st.number_input("L1 - Right Span (m)", value=3.5)
             
-        st.write("**Span L2 (Transverse Width)**")
         col_l2a, col_l2b = st.columns(2)
         with col_l2a:
-            L2_top = st.number_input("L2 - Top Half (m)", value=3.0)
+            L2_t = st.number_input("L2 - Top Half (m)", value=3.0)
         with col_l2b:
-            # ถ้าเป็น Edge หรือ Corner ระยะด้านล่างจะเป็น 0
-            l2_bot_val = 0.0 if (is_edge or is_corner) else 3.0
-            L2_bot = st.number_input("L2 - Bottom Half (m)", value=l2_bot_val, disabled=(is_edge or is_corner))
+            l2_b_val = 0.0 if (is_edge or is_corner) else 3.0
+            L2_b = st.number_input("L2 - Bottom Half (m)", value=l2_b_val, disabled=(is_edge or is_corner))
 
-        col_c1, col_c2 = st.columns(2)
-        with col_c1:
-            c1 = st.number_input("Column c1 (cm)", value=40.0)
-        with col_c2:
-            c2 = st.number_input("Column c2 (cm)", value=40.0)
+        col_sz1, col_sz2 = st.columns(2)
+        with col_sz1:
+            c1_cm = st.number_input("Column c1 (cm) [Analysis Dir]", value=40.0)
+        with col_sz2:
+            c2_cm = st.number_input("Column c2 (cm) [Transverse]", value=40.0)
 
-        # --- ส่วน Drop Panel ---
+        # --- 4. DROP PANEL ---
         st.markdown("---")
-        st.write("#### 🔸 Drop Panel Configuration")
-        has_drop = st.checkbox("Has Drop Panel?", value=False)
+        has_drop = st.checkbox("✅ Include Drop Panel", value=False)
+        h_drop_cm, drop_w1, drop_w2 = 0.0, 0.0, 0.0
         
-        h_drop_val, drop_w1, drop_w2 = 0.0, 0.0, 0.0
         if has_drop:
-            col_d1, col_d2 = st.columns(2)
-            with col_d1:
-                h_drop_val = st.number_input("Drop Projection (cm)", value=15.0)
-                drop_w1 = st.number_input("Drop Total Width L1 (m)", value=2.5)
-            with col_d2:
-                st.write("") ; st.write("")
-                drop_w2 = st.number_input("Drop Total Width L2 (m)", value=2.5)
+            d_col1, d_col2 = st.columns(2)
+            with d_col1:
+                h_drop_cm = st.number_input("Drop Projection (cm)", value=10.0, help="ความหนาที่ยื่นลงมาใต้ท้องพื้น")
+                drop_w1 = st.number_input("Total Drop Width L1 (m)", value=2.5)
+            with d_col2:
+                st.write("") ; st.write("") # Spacer
+                drop_w2 = st.number_input("Total Drop Width L2 (m)", value=2.5)
         
-        # ACI Validation
-        warnings = validate_aci_standard(h_slab, h_drop_val, L1_left, L1_right, L2_top, L2_bot, drop_w1, drop_w2, has_drop)
+        # Real-time ACI Validation
+        warnings = validate_aci_standard(h_slab_cm, h_drop_cm, L1_l, L1_r, L2_t, L2_b, drop_w1, drop_w2, has_drop)
         for w in warnings:
             st.warning(w)
 
-        # --- Section 3: Boundary Conditions ---
-        st.subheader("3. Boundary Conditions")
-        floor_scenario = st.selectbox("Floor Level", ["Typical Floor (Intermediate)", "Top Floor (Roof)", "Foundation/First Floor"])
-        col_location = st.selectbox("Column Location", ["Interior Column", "Edge Column", "Corner Column"])
-        
-        h_upper, h_lower, support_cond = 0.0, 0.0, "Fixed"
+        # --- 5. STOREY DATA ---
+        st.subheader("4. Storey Heights")
+        h_up, h_lo = 0.0, 3.0
         if floor_scenario != "Top Floor (Roof)":
-            h_upper = st.number_input("Upper Storey Height (m)", value=3.0)
-        
-        if floor_scenario == "Foundation/First Floor":
-            h_lower = st.number_input("Foundation Height (m)", value=1.5)
-            support_cond = st.radio("Foundation Support", ["Fixed", "Pinned"], horizontal=True)
-        else:
-            h_lower = st.number_input("Lower Storey Height (m)", value=3.0)
+            h_up = st.number_input("Upper Column Height (m)", value=3.0)
+        h_lo = st.number_input("Lower Column Height (m)", value=3.0)
 
-        # ---------------------------------------------------------
-        # แปลง Input สู่ Base Units (MKS) และเก็บข้อมูลลง calc_data
-        # ---------------------------------------------------------
+        # --- DATA PROCESSING ---
         calc_data = {
-            'L1_left': L1_left, 'L1_right': L1_right,
-            'L2_top': L2_top, 'L2_bot': L2_bot,
-            'L1_total': L1_left + L1_right,
-            'L2_total': L2_top + L2_bot,
-            'h_slab': h_slab / 100,
-            'c1': c1 / 100, 'c2': c2 / 100,
-            'h_drop': (h_drop_val / 100) if has_drop else 0,
-            'drop_w1': drop_w1, 'drop_w2': drop_w2,
-            'fc': fc, 'fy': fy, 'dl': dl, 'll': ll
+            'L1_total': L1_l + L1_r,
+            'L2_total': L2_t + L2_b,
+            'w_u_approx': 1.2 * (dl + (h_slab_cm/100 * 2400)) + 1.6 * ll,
+            'fc': fc, 'fy': fy
         }
 
     with col_viz:
-        st.subheader("👁️ Structural Visualization")
-        v_tab1, v_tab2 = st.tabs(["Plan View (Top)", "Elevation (Side)"])
+        st.subheader("👁️ Structural Analysis View")
+        v_tab1, v_tab2 = st.tabs(["📐 Plan View", "断面 Elevation"])
         
         with v_tab1:
-            st.caption("แสดงสัดส่วนจริงของพื้นและ Column Strip (เส้นประสีเขียว)")
-            fig_plan = draw_plan_view(
-                calc_data['L1_left'], calc_data['L1_right'],
-                calc_data['L2_top'], calc_data['L2_bot'],
-                calc_data['c1'], calc_data['c2'],
-                col_location, has_drop, 
-                calc_data['drop_w1'], calc_data['drop_w2']
-            )
+            fig_plan = draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_location, has_drop, drop_w1, drop_w2)
             st.pyplot(fig_plan)
             
         with v_tab2:
-            st.caption("Elevation View: แสดงความหนาพื้นและตำแหน่งเสา")
-            fig_elev = draw_elevation(
-                floor_scenario, h_upper, h_lower, support_cond,
-                has_drop, calc_data['h_drop'], calc_data['c1']
-            )
+            fig_elev = draw_elevation(floor_scenario, h_up, h_lo, has_drop, h_drop_cm, c1_cm, h_slab_cm)
             st.pyplot(fig_elev)
             
-        st.info(f"""
-        **Engineer's Summary:**
-        - **Total Analysis Span ($L_1$):** {calc_data['L1_total']:.2f} m
-        - **Design Strip Width ($L_2$):** {calc_data['L2_total']:.2f} m
-        - **Concrete Grade:** {fc} ksc | **Steel Grade:** {fy_label} ({fy} ksc)
-        - **Load Case:** $1.2DL + 1.6LL$ = {1.2*(dl + (h_slab/100)*2400) + 1.6*ll:.0f} kg/m² (โดยประมาณ)
+        # Summary Box
+        st.success(f"""
+        **📋 Design Summary (Factored):**
+        - **Analysis Strip Width:** {calc_data['L2_total']:.2f} m
+        - **Average Span ($L_n$):** {(calc_data['L1_total'] - c1_cm/100):.2f} m
+        - **Approx. Design Load ($w_u$):** {calc_data['w_u_approx']:.0f} kg/m²
+        - **Total Factored Force on Strip:** {calc_data['w_u_approx'] * calc_data['L1_total'] * calc_data['L2_total'] / 1000:.2f} Tons
+        """)
+        
+        st.info("""
+        **🔍 EFM Logic Applied:**
+        โปรแกรมจะคำนวณ Stiffness ($K$) ของ Slab และ Column แยกกันตาม Geometry ที่คุณระบุ 
+        โดยในส่วนของ Drop Panel จะมีการเพิ่มค่า Moment of Inertia ($I$) เฉพาะช่วงหัวเสา 
+        เพื่อหาค่าโอนถ่ายโมเมนต์ที่แม่นยำกว่าวิธี Direct Design Method
         """)
 
 with tab2:
+    st.header("📘 Equivalent Frame Method (EFM)")
+    
     st.markdown("""
-    ### ทฤษฎีและข้อกำหนด (ACI 318 / วสท.)
+    ### 1. การแบ่งแถบพิจารณา (Strips)
+    ตามมาตรฐาน **ACI 318**, พื้นจะถูกแบ่งออกเป็นแถบเสา (Column Strip) และแถบกลาง (Middle Strip):
+    - **Column Strip:** กว้างข้างละ 25% ของสแปนที่สั้นกว่า ($0.25 L_{min}$)
+    - **Middle Strip:** พื้นที่ส่วนที่เหลือระหว่างแถบเสา
     
-    1. **Design Strip:**
-       - **Column Strip:** ความกว้างข้างละ 25% ของ $L_{min}$ วัดจากศูนย์กลางเสา
-       - **Middle Strip:** พื้นที่ส่วนที่เหลือระหว่าง Column Strip สองข้าง
+    ### 2. ข้อกำหนด Drop Panel (ACI 318-19)
+    เพื่อให้สามารถลดความหนาพื้นหรือเพิ่มแรงต้านทานแรงเฉือนทะลุ (Punching Shear):
+    - **ความหนา:** ต้องยื่นลงมาจากท้องพื้นอย่างน้อย 1/4 ของความหนาพื้น ($h/4$)
+    - **ระยะยื่น:** ต้องยาวออกจากศูนย์กลางเสาไม่น้อยกว่า 1/6 ของความยาวสแปนในทิศทางนั้นๆ
     
-    2. **Drop Panel Requirements:**
-       - ความหนาที่ยื่นลงมาต้อง $\geq h_{slab}/4$
-       - ความกว้างจากศูนย์กลางเสาต้อง $\geq L/6$ ในแต่ละทิศทาง
+    ### 3. โครงสร้างเสาเสมือน (Equivalent Column)
+    ความแข็งแรงของระบบจะขึ้นอยู่กับค่า Stiffness ของเสา ($K_c$) และความแข็งแรงในการบิดของคานขวาง ($K_t$) 
+    ซึ่งคำนวณจากสูตร:
+    $$ \\frac{1}{K_{ec}} = \\frac{1}{\\sum K_c} + \\frac{1}{K_t} $$
     """)
