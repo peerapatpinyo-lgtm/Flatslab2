@@ -6,7 +6,7 @@ import matplotlib.patches as patches
 st.set_page_config(page_title="Flat Slab EFM Design", layout="wide", initial_sidebar_state="expanded")
 
 # ==============================================================================
-# 🖌️ VISUALIZATION FUNCTIONS (รองรับ Drop Panel)
+# 🖌️ VISUALIZATION FUNCTIONS (รองรับ Drop Panel & C-to-C Indication)
 # ==============================================================================
 
 def draw_plan_view(L1, L2, c1, c2, col_loc, wu, drop_data=None):
@@ -21,7 +21,8 @@ def draw_plan_view(L1, L2, c1, c2, col_loc, wu, drop_data=None):
     col_color = '#e74c3c'
     dim_color = '#2c3e50'
     
-    # 1. Draw Slab Panel
+    # 1. Draw Slab Panel (Representing the tributary area / panel)
+    # Center at (0,0)
     ax.add_patch(patches.Rectangle((-L1/2, -L2/2), L1, L2, facecolor=slab_color, edgecolor='#bdc3c7', hatch='///', alpha=0.3))
     
     # 2. Draw Drop Panel (New!)
@@ -42,10 +43,17 @@ def draw_plan_view(L1, L2, c1, c2, col_loc, wu, drop_data=None):
     ax.arrow(-L1/2 * 0.8, L2/2 * 1.2, L1 * 0.8, 0, head_width=0.2, head_length=0.3, fc='blue', ec='blue', width=0.05)
     ax.text(0, L2/2 * 1.4, "ANALYSIS DIRECTION (L1)\n(Center-to-Center Span)", ha='center', color='blue', fontweight='bold', fontsize=9)
 
-    # 5. Dimensions (Center-to-Center Emphasis)
+    # 5. Dimensions (Center-to-Center Emphasis) 
+
+[Image of engineering dimension lines]
+
+    # ใช้ arrowstyle='|-|' เพื่อแสดงว่าเป็นระยะระบุตำแหน่ง (Dimension Line) ไม่ใช่ Vector
+    
+    # L1 Dimension
     ax.annotate(f'L1 (c/c) = {L1:.2f} m', xy=(-L1/2, -L2/2 - 0.8), xytext=(L1/2, -L2/2 - 0.8),
                 arrowprops=dict(arrowstyle='|-|', color=dim_color, linewidth=1.5), ha='center', color=dim_color, fontweight='bold')
     
+    # L2 Dimension
     ax.annotate(f'L2 (c/c) = {L2:.2f} m', xy=(-L1/2 - 0.8, -L2/2), xytext=(-L1/2 - 0.8, L2/2),
                 arrowprops=dict(arrowstyle='|-|', color=dim_color, linewidth=1.5), va='center', rotation=90, color=dim_color, fontweight='bold')
     
@@ -67,13 +75,14 @@ def draw_elevation(h_upper, h_lower, support_cond, floor_scenario, drop_data=Non
     col_w = 0.3 
     
     # Draw Slab
-    ax.add_patch(patches.Rectangle((-1, -0.1), 2, 0.2, color='#95a5a6')) # Main Slab (Assuming ~20cm scale)
+    ax.add_patch(patches.Rectangle((-1, -0.1), 2, 0.2, color='#95a5a6')) # Main Slab (Assuming ~20cm scale visual)
     
     # Draw Drop Panel (New!)
     if drop_data and drop_data['has_drop']:
         # Scale Drop thickness relative to slab roughly for visual
         d_thick = 0.1 # Visual thickness for drop
         d_width = 0.8 # Visual width
+        # Drop panel hangs BELOW the slab (y negative relative to slab bottom)
         ax.add_patch(patches.Rectangle((-d_width/2, -0.1 - d_thick), d_width, d_thick, color='#7f8c8d'))
         ax.text(0.5, -0.25, f"Drop +{drop_data['h_drop']*100:.0f}cm", fontsize=8, color='#2c3e50')
 
@@ -85,7 +94,10 @@ def draw_elevation(h_upper, h_lower, support_cond, floor_scenario, drop_data=Non
         ax.text(0, 0.3, "ROOF LEVEL", ha='center', fontsize=8, fontweight='bold', color='gray')
 
     # Draw Lower Column
+    # Adjust start Y based on Drop Panel presence to look realistic
     start_y = -0.1 if not (drop_data and drop_data['has_drop']) else -0.2
+    
+    # Draw lower column starting from bottom of slab/drop
     ax.add_patch(patches.Rectangle((-col_w/2, -2.1), col_w, 2 - abs(start_y) - 0.1, color='#e74c3c', alpha=0.8))
     ax.text(0.4, -1.0, f"Lower\n{h_lower} m", color='#c0392b')
 
@@ -121,8 +133,9 @@ with st.sidebar.form("input_form"):
     ll = st.number_input("Live Load (kg/m²)", 200)
 
     st.markdown("### 3. Geometry (Center-to-Center)")
+    
     # --- Drop Panel Logic ---
-    has_drop = st.checkbox("With Drop Panel?", value=False)
+    has_drop = st.checkbox("With Drop Panel (พื้นมีหัวเสา)?", value=False)
     
     col_geom1, col_geom2 = st.columns(2)
     h_slab = col_geom1.number_input("Slab Thickness (cm)", 20.0)
@@ -206,6 +219,7 @@ with col_viz:
     tab_plan, tab_elev = st.tabs(["📌 Plan View (L1 Analysis)", "📐 Elevation (Heights)"])
     
     with tab_plan:
+        # Pass Drop Data to Visualization
         fig_plan = draw_plan_view(calc_data['L1'], calc_data['L2'], calc_data['c1'], calc_data['c2'], col_loc, wu, calc_data)
         st.pyplot(fig_plan)
         st.caption("✅ **Confirmed:** L1 & L2 are Center-to-Center (Grid-to-Grid) dimensions.")
