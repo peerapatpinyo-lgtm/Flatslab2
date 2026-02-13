@@ -14,135 +14,169 @@ calc_data = {}
 
 def draw_plan_view(L1, L2, c1_m, c2_m, col_loc, dl, ll, has_drop, drop_w1, drop_w2):
     """
-    วาด Plan View แบบ Correct EFM Boundary Condition
-    แสดง L2 (Design Strip Width) ที่ถูกต้องตามตำแหน่งเสา (Interior/Edge/Corner)
+    วาด Plan View แบบ Professional Engineering Schematic
+    - แสดง Real Slab Edge vs Continuous Edge
+    - จัดการ Layer (Z-order) ให้สวยงาม
     """
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, ax = plt.subplots(figsize=(10, 7))
     
-    # --- 1. DEFINITIONS & LOGIC ---
-    # Center Column อยู่ที่ (0,0) เสมอ
-    # L1 Direction = แกน X (Analysis Direction)
-    # L2 Direction = แกน Y (Transverse Direction)
+    # --- 1. CONFIG & STYLES ---
+    # Colors
+    col_color = '#c0392b'      # สีเสา (แดงเข้ม)
+    slab_fill = '#e3f2fd'      # สีพื้น (ฟ้าอ่อนมาก)
+    slab_edge_col = '#2980b9'  # สีขอบพื้น
+    grid_color = '#95a5a6'     # สี Grid
+    drop_fill = '#f39c12'      # สี Drop Panel
+    dim_color = '#2c3e50'      # สี Dimension
     
-    # ตัวแปรสำหรับวาดขอบเขตพื้น (Slab Boundaries)
-    y_top = 0.0   # ขอบบน
-    y_bot = 0.0   # ขอบล่าง
-    x_left = 0.0  # ขอบซ้าย (จุดเริ่ม)
-    
-    # Logic การกำหนดขอบเขตตามประเภทเสา
-    if col_loc == "Interior Column":
-        # เสากลาง: รับพื้นจากกึ่งกลางถึงกึ่งกลาง (Mid-span to Mid-span)
-        # พื้นที่รับผิดชอบ = L2 เต็มๆ (L2/2 บน + L2/2 ล่าง)
-        y_top = L2 / 2
-        y_bot = -L2 / 2
-        x_left = -1.0 # วาดเลยไปหน่อยให้เห็นความต่อเนื่อง
-        
-        l2_text_top = "L2/2 (To Mid-span)"
-        l2_text_bot = "L2/2 (To Mid-span)"
-        edge_style = '--' # เส้นประ (ต่อเนื่อง)
+    # Z-Orders (ลำดับการซ้อนทับ)
+    Z_GRID = 1
+    Z_SLAB = 2
+    Z_DROP = 3
+    Z_COL = 4
+    Z_TEXT = 5
 
-    elif col_loc == "Edge Column":
-        # เสาริม (สมมติริมล่าง พื้นอยู่ด้านบน)
-        # รับพื้นจากกึ่งกลาง Span บน (L2/2) ถึง ขอบอาคารล่าง (c2/2)
-        y_top = L2 / 2
-        y_bot = -c2_m / 2 # สุดที่ผิวเสา (Edge of Slab)
-        x_left = -1.0 # L1 ต่อเนื่องซ้ายขวา
+    # --- 2. CALCULATE BOUNDARIES (Head Logic) ---
+    # Center Column @ (0,0)
+    # L1 Direction = X axis (Right is Next Column)
+    # L2 Direction = Y axis
+    
+    # Default Interior Condition
+    y_top = L2 / 2
+    y_bot = -L2 / 2
+    x_left = -1.5  # วาดเลยเสาไปทางซ้ายนิดหน่อย
+    x_right = L1   # ถึงเสาถัดไป
+    
+    # Boundary Style Flags
+    top_is_edge = False
+    bot_is_edge = False
+    left_is_edge = False
+    
+    # Logic ปรับตามตำแหน่งเสา
+    if col_loc == "Edge Column":
+        # สมมติ: เป็นเสาริมล่าง (Bottom Edge)
+        # พื้นที่รับแรง: จากกึ่งกลางบน (L2/2) ถึง ขอบเสาล่าง (-c2/2)
+        y_bot = -c2_m / 2
+        bot_is_edge = True
         
-        l2_text_top = "L2/2 (To Mid-span)"
-        l2_text_bot = "Edge (c2/2)"
-        edge_style = '-' # เส้นทึบ (สุดขอบปูน)
-
     elif col_loc == "Corner Column":
-        # เสาเข้ามุม (สมมติมุมซ้ายล่าง)
-        # รับพื้นจากกึ่งกลาง Span บน (L2/2) ถึง ขอบอาคารล่าง
-        # และจากขอบอาคารซ้าย ถึง กึ่งกลาง Span ขวา (L1)
-        y_top = L2 / 2
-        y_bot = -c2_m / 2 # สุดที่ผิวเสาล่าง
-        x_left = -c1_m / 2 # สุดที่ผิวเสาซ้าย
-        
-        l2_text_top = "L2/2"
-        l2_text_bot = "Edge"
-        edge_style = '-'
+        # สมมติ: เป็นเสามุมซ้ายล่าง
+        # พื้นที่รับแรง: ขอบเสาล่าง ถึง กึ่งกลางบน และ ขอบเสาซ้าย ถึง กึ่งกลางขวา
+        y_bot = -c2_m / 2
+        x_left = -c1_m / 2
+        bot_is_edge = True
+        left_is_edge = True
 
-    # คำนวณความกว้างรวมของ Strip ที่ใช้คำนวณจริง (Total Strip Width)
+    # Strip Width รวม
     strip_width = y_top - y_bot
 
-    # --- 2. DRAWING LAYERS ---
+    # --- 3. DRAWING LAYERS ---
     
-    # A. The Slab Strip (Design Strip)
-    # วาดสี่เหลี่ยมตามขอบเขตที่คำนวณมา
+    # A. GRID LINES (Infinite Lines)
+    ax.axhline(y=0, color=grid_color, linestyle='-.', linewidth=0.8, zorder=Z_GRID)
+    ax.axvline(x=0, color=grid_color, linestyle='-.', linewidth=0.8, zorder=Z_GRID)
+    ax.axvline(x=L1, color=grid_color, linestyle='-.', linewidth=0.8, alpha=0.5, zorder=Z_GRID)
+
+    # B. SLAB STRIP (Design Strip)
+    # วาดสี่เหลี่ยมพื้น
     rect_slab = patches.Rectangle((x_left, y_bot), (L1 + abs(x_left) + 0.5), strip_width, 
-                                  facecolor='#e3f2fd', edgecolor='blue', 
-                                  linestyle=edge_style, linewidth=1.5, alpha=0.5, label='Design Strip')
+                                  facecolor=slab_fill, edgecolor='none', alpha=0.6, zorder=Z_SLAB)
     ax.add_patch(rect_slab)
+    
+    # C. BOUNDARY LINES (เส้นขอบ)
+    # วาดเส้นขอบตามประเภท (ทึบ = Edge, ประ = Continuous)
+    
+    # Top Line
+    ax.plot([x_left, L1+0.5], [y_top, y_top], color=slab_edge_col, 
+            linestyle='-' if top_is_edge else '--', linewidth=2 if top_is_edge else 1, zorder=Z_SLAB)
+    # Bottom Line
+    ax.plot([x_left, L1+0.5], [y_bot, y_bot], color=slab_edge_col, 
+            linestyle='-' if bot_is_edge else '--', linewidth=2 if bot_is_edge else 1, zorder=Z_SLAB)
+    # Left Line
+    ax.plot([x_left, x_left], [y_bot, y_top], color=slab_edge_col, 
+            linestyle='-' if left_is_edge else '--', linewidth=2 if left_is_edge else 1, zorder=Z_SLAB)
 
-    # B. Grid Lines (Center Lines)
-    ax.axhline(y=0, color='gray', linestyle='-.', linewidth=1)
-    ax.axvline(x=0, color='gray', linestyle='-.', linewidth=1)
-    ax.axvline(x=L1, color='gray', linestyle='-.', linewidth=1, alpha=0.5)
-
-    # C. Drop Panel (ถ้ามี)
+    # D. DROP PANEL (With Clipping Logic)
     if has_drop:
-        # Drop Panel ก็ต้องถูกตัดถ้าอยู่ที่ Edge/Corner
-        # แต่เพื่อความง่ายในการมอง วาดเต็มไปก่อน แล้ว Clip ด้วยความคิด หรือวาดตัด
-        # Logic: วาด Drop ปกติ แต่ถ้ายื่นเกิน Edge ให้ตัดทิ้ง (Visual Clip)
+        # คำนวณขอบ Drop Panel ปกติ
+        d_top = drop_w2/2
+        d_bot = -drop_w2/2
+        d_left = -drop_w1/2
+        d_right = drop_w1/2
         
-        drop_y_min = -drop_w2/2
-        drop_y_max = drop_w2/2
+        # Clip Drop Panel ไม่ให้เกินขอบ Slab
+        if d_top > y_top: d_top = y_top
+        if d_bot < y_bot: d_bot = y_bot
+        if d_left < x_left: d_left = x_left
         
-        # Adjust for Edge condition visually
-        if col_loc != "Interior Column":
-             if drop_y_min < y_bot: drop_y_min = y_bot # ไม่ให้ Drop เกินขอบปูน
+        d_h = d_top - d_bot
+        d_w = d_right - d_left
         
-        final_drop_h = drop_y_max - drop_y_min
-        
-        drop_rect = patches.Rectangle((-drop_w1/2, drop_y_min), drop_w1, final_drop_h,
-                                      facecolor='#f39c12', edgecolor='#d35400', alpha=0.6, linestyle='--')
+        drop_rect = patches.Rectangle((d_left, d_bot), d_w, d_h,
+                                      facecolor=drop_fill, edgecolor='#d35400', 
+                                      alpha=0.5, linestyle='--', zorder=Z_DROP)
         ax.add_patch(drop_rect)
+        
+        # Label Drop
+        ax.text(0, d_bot - 0.3, f"Drop {drop_w1}x{drop_w2}m", 
+                ha='center', va='top', fontsize=8, color='#d35400', zorder=Z_TEXT)
 
-    # D. Column (Center)
-    col_rect = patches.Rectangle((-c1_m/2, -c2_m/2), c1_m, c2_m, 
-                                 facecolor='#c0392b', edgecolor='black', hatch='///', zorder=5)
-    ax.add_patch(col_rect)
+    # E. COLUMNS
+    # Main Column (Center)
+    col_main = patches.Rectangle((-c1_m/2, -c2_m/2), c1_m, c2_m, 
+                                 facecolor=col_color, edgecolor='black', hatch='///', zorder=Z_COL)
+    ax.add_patch(col_main)
     
-    # Next Column (Ghost)
-    if col_loc != "Corner Column" or True: # Corner ก็มีเสาถัดไปทางขวา
-        next_col = patches.Rectangle((L1 - c1_m/2, -c2_m/2), c1_m, c2_m, 
-                                     facecolor='white', edgecolor='black', linestyle=':', alpha=0.5, zorder=5)
-        ax.add_patch(next_col)
+    # Next Column (Ghost - แสดงเพื่อให้รู้ว่า L1 ไปจบที่ไหน)
+    if col_loc != "Corner Column": # Corner ปกติมีด้านเดียว แต่ EFM assume frame ต่อไป
+        col_next = patches.Rectangle((L1 - c1_m/2, -c2_m/2), c1_m, c2_m, 
+                                     facecolor='white', edgecolor='gray', linestyle=':', alpha=0.5, zorder=Z_COL)
+        ax.add_patch(col_next)
+        ax.text(L1, 0, "Next\nCol", ha='center', va='center', fontsize=7, color='gray', zorder=Z_TEXT)
 
-    # --- 3. DIMENSIONS & ANNOTATIONS (The Correction) ---
+    # --- 4. DIMENSIONS (Clean & Offset) ---
     
-    # L1 Span
-    ax.annotate('', xy=(0, 0), xytext=(L1, 0), arrowprops=dict(arrowstyle='<|-|>', color='blue'))
-    ax.text(L1/2, 0.1, f"L1 Span = {L1}m", color='blue', ha='center', fontweight='bold')
-
-    # L2 Width Components (สำคัญมาก!)
-    # แสดงระยะย่อยด้านข้างเพื่อบอกที่มาของความกว้าง Strip
-    dim_x = -1.2 if col_loc == "Interior Column" else -0.8
+    # L1 (Horizontal) - วาดด้านล่าง
+    dim_y_pos = y_bot - 1.0 # ขยับลงมาจากขอบล่าง
+    ax.annotate('', xy=(0, dim_y_pos), xytext=(L1, dim_y_pos),
+                arrowprops=dict(arrowstyle='<|-|>', color='blue', linewidth=1.5))
+    ax.text(L1/2, dim_y_pos + 0.1, f"L1 (Span) = {L1:.2f} m", 
+            ha='center', color='blue', fontweight='bold', zorder=Z_TEXT)
     
-    # Arrow Top (L2/2)
-    ax.annotate('', xy=(dim_x, 0), xytext=(dim_x, y_top), arrowprops=dict(arrowstyle='<|-|>', color='green'))
-    ax.text(dim_x - 0.1, y_top/2, l2_text_top, rotation=90, va='center', ha='right', color='green', fontsize=9)
+    # Connector Lines for L1
+    ax.plot([0, 0], [-c2_m/2, dim_y_pos], color='gray', linestyle=':', linewidth=0.5)
+    ax.plot([L1, L1], [-c2_m/2, dim_y_pos], color='gray', linestyle=':', linewidth=0.5)
+
+    # L2 (Vertical) - วาดด้านซ้าย
+    dim_x_pos = x_left - 0.5 # ขยับซ้าย
     
-    # Arrow Bottom (L2/2 or Edge)
-    ax.annotate('', xy=(dim_x, 0), xytext=(dim_x, y_bot), arrowprops=dict(arrowstyle='<|-|>', color='green'))
-    ax.text(dim_x - 0.1, y_bot/2, l2_text_bot, rotation=90, va='center', ha='right', color='green', fontsize=9)
+    # Arrow for Total Width
+    ax.annotate('', xy=(dim_x_pos, y_bot), xytext=(dim_x_pos, y_top),
+                arrowprops=dict(arrowstyle='<|-|>', color='green', linewidth=1.5))
+    ax.text(dim_x_pos - 0.1, (y_top+y_bot)/2, f"L2 (Width) = {strip_width:.2f} m", 
+            va='center', ha='right', rotation=90, color='green', fontweight='bold', zorder=Z_TEXT)
 
-    # Summary Text
-    ax.text(L1*0.6, y_top + 0.5, 
-            f"DESIGN STRIP WIDTH (Frame Width):\n"
-            f"= {strip_width:.2f} m\n"
-            f"({col_loc} Condition)", 
-            fontsize=10, fontweight='bold', bbox=dict(facecolor='white', edgecolor='green'))
+    # Sub-dimensions (Components of L2)
+    # เช่นบอกว่า L2/2 หรือ Edge Distance
+    if col_loc == "Edge Column":
+        ax.text(dim_x_pos + 0.2, y_top/2, "L2/2", fontsize=8, color='green', ha='center', alpha=0.7)
+        ax.text(dim_x_pos + 0.2, y_bot/2, "Edge", fontsize=8, color='green', ha='center', alpha=0.7)
 
-    # Setup View
-    ax.set_title(f"EFM Plan View: {col_loc}\n(Correct Transverse Width)", fontweight='bold')
-    ax.set_xlim(-2, L1+1)
-    ax.set_ylim(y_bot - 1, y_top + 1)
+    # --- 5. FINISHING ---
+    ax.set_title(f"EFM Plan View: {col_loc}\n(Showing Analysis Strip)", fontweight='bold', pad=15)
+    
+    # Load Info Box
+    wu = 1.4*dl + 1.7*ll
+    info_text = f"DESIGN LOADS ($w_u$)\nTotal = {wu:.2f} kg/m²"
+    ax.text(L1*0.7, y_top + 0.5, info_text, fontsize=9, 
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9), zorder=Z_TEXT)
+
+    # Set Aspect Ratio & Limits
     ax.set_aspect('equal')
+    ax.set_xlim(x_left - 1.5, L1 + 1.5)
+    ax.set_ylim(y_bot - 1.5, y_top + 1.5)
     ax.axis('off')
-    
+
     return fig
 
 # --- Function วาดรูปตัด (Elevation) ---
