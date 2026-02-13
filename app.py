@@ -119,18 +119,28 @@ with col2:
     st.pyplot(fig)
 
 # --- 4. Slenderness & Stiffness Prep (Preview) ---
+# ... (โค้ดส่วนบน) ...
+
 st.header("📊 Calculation Preview (Next Step)")
 
 # คำนวณ Moment of Inertia พื้นฐาน
 Ig_col = (c2 * (c1**3)) / 12  # cm^4
-
 st.write(f"**Column Moment of Inertia ($I_g$):** {Ig_col:,.2f} cm$^4$")
 
-# แสดงผลสรุป (จุดที่เคย Error)
+# =================================================================
+# 🚑 SAFETY CHECK: ป้องกัน NameError ตรงนี้
+# ถ้าตัวแปรนี้ยังไม่เคยถูกสร้าง (เพราะไม่เข้าเงื่อนไข Foundation) ให้สร้างขึ้นมาเดี๋ยวนี้
+if 'support_condition' not in locals():
+    support_condition = "Fixed" 
+# =================================================================
+
+# แสดงผลสรุป
 if floor_scenario == "Typical Floor (Intermediate)":
     st.info("System will calculate stiffness for BOTH Upper ($K_{c,top}$) and Lower ($K_{c,bot}$) columns.")
+    
 elif floor_scenario == "Top Floor (Roof)":
     st.info("System will calculate stiffness for LOWER column only ($K_{c,bot}$). Upper Stiffness = 0.")
+    
 elif floor_scenario == "Foundation/First Floor":
-    # ตัวแปร support_condition ถูกประกาศไว้บนสุดแล้ว ไม่มีทาง Error
+    # บรรทัดที่เคย Error (ตอนนี้จะไม่ Error แล้ว เพราะมี Safety Check ด้านบน)
     st.info(f"System will calculate stiffness for Upper column ($K_{c,top}$) and Lower column with **{support_condition}** far-end condition.")
