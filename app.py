@@ -12,129 +12,112 @@ calc_data = {}
 
 # --- Function วาด Plan View (Top View) [UPDATED] ---
 
+
 def draw_plan_view(L1, L2, c1_m, c2_m, col_loc, dl, ll, has_drop, drop_w1, drop_w2):
     """
-    วาด Plan View แบบ Engineering Schematic
-    แสดง Grid Line และระยะ Center-to-Center เพื่อไม่ให้สับสน
+    วาด Plan View แบบ Grid Intersection (4 ด้าน)
+    แสดง Design Strip ที่ถูกต้องตามหลัก EFM
     """
-    fig, ax = plt.subplots(figsize=(10, 7))
+    fig, ax = plt.subplots(figsize=(10, 8))
     
-    # --- 1. SETTINGS ---
-    # สีและสไตล์
-    col_color = '#c0392b'      # สีเสา
-    drop_color = '#f39c12'     # สี Drop Panel
-    slab_color = '#ecf0f1'     # สีพื้น
-    grid_color = '#7f8c8d'     # สี Grid Line
-    dim_color = '#2980b9'      # สีเส้นบอกระยะ
+    # --- 1. SETTINGS & STYLES ---
+    grid_color = '#95a5a6'    # สีเส้น Grid
+    strip_color = '#e3f2fd'   # สี Design Strip (สีฟ้าอ่อน)
+    col_color = '#c0392b'     # สีเสา (แดงเข้ม)
+    dim_color = '#2980b9'     # สี Dimension
     
-    # --- 2. COORDINATES (Center at Main Column 0,0) ---
-    # เราจะวาดเสาหลักที่ (0,0) และเสาข้างเคียง (Ghost) เพื่ออ้างอิงระยะ
+    # --- 2. LAYOUT LOGIC ---
+    # Center Column อยู่ที่ (0,0)
+    # เราจะแสดง Design Strip ตามแกน X (Analysis Direction)
+    # ความยาวแสดง L1 เต็ม Span, ความกว้างแสดง L2 เต็ม Width
     
-    # กำหนดขอบเขต Slab (Tributary Area) ตาม Location
-    # Interior: -L1/2 ถึง L1/2
-    # Edge: เริ่มที่ 0 ถึง L1/2 (หรือตามระยะที่กำหนด)
+    # ขอบเขตภาพ (Limits)
+    x_margin = 1.5
+    y_margin = 1.5
     
-    # เพื่อความเข้าใจง่ายใน EFM เราจะวาด "Full Design Strip" (กว้าง L2, ยาว L1)
-    # โดยให้เสาหลักอยู่ทางซ้าย (Start Node) และเสาถัดไปอยู่ทางขวา (End Node)
+    # --- 3. DRAWING: DESIGN STRIP (L2 Width) ---
+    # นี่คือ "แถบพื้น" ที่เรากำลังวิเคราะห์
+    # กว้าง L2 (จาก -L2/2 ถึง L2/2)
+    # ยาว L1 (จาก 0 ถึง L1) -> จริงๆ Strip ยาวต่อเนื่อง แต่เรา Focus ช่วงนี้
     
-    # ** จุดสำคัญ: EFM วิเคราะห์ทีละช่วง (Span) **
-    # เราจะวาด Span L1 เต็มๆ คือจาก (0,0) ถึง (L1, 0)
+    # วาดพื้น (Slab Strip)
+    # เราวาดเลยออกไปทางซ้ายนิดหน่อย (-1m) เพื่อแสดงความต่อเนื่อง
+    rect_strip = patches.Rectangle((-1.0, -L2/2), L1 + 2.0, L2, 
+                                   facecolor=strip_color, edgecolor='none', alpha=0.6, label='Design Strip')
+    ax.add_patch(rect_strip)
     
-    # ขอบเขตความกว้าง Design Strip (L2)
-    y_top = L2 / 2
-    y_bot = -L2 / 2
+    # วาดเส้นขอบเขตความกว้าง L2 (Transverse Boundaries)
+    ax.axhline(y=L2/2, color='blue', linestyle='--', linewidth=0.8, alpha=0.5)  # ขอบบน
+    ax.axhline(y=-L2/2, color='blue', linestyle='--', linewidth=0.8, alpha=0.5) # ขอบล่าง
     
-    # --- 3. DRAWING LAYERS ---
+    # --- 4. DRAWING: GRID SYSTEM (4 Sides) ---
+    # Center Grid Lines (Main Axes)
+    ax.axvline(x=0, color=grid_color, linestyle='-.', linewidth=1.2) # แกน Y ตัดผ่านเสา
+    ax.axhline(y=0, color=grid_color, linestyle='-.', linewidth=1.2) # แกน X ตัดผ่านเสา
     
-    # A. The Design Strip (Slab) - พื้นที่รับแรง
-    # วาดสี่เหลี่ยมคลุม Span L1 และกว้าง L2
-    # ถ้าเป็น Interior เราวาดเกินไปทางซ้ายนิดหน่อยเพื่อให้เห็นความต่อเนื่อง
-    extension = 1.0 # เมตร (ระยะเลยเสาออกไป)
+    # Next Column Grid Line (ที่ระยะ L1)
+    ax.axvline(x=L1, color=grid_color, linestyle='-.', linewidth=1.0, alpha=0.6)
     
-    if col_loc == "Corner Column":
-        rect_slab = patches.Rectangle((-c1_m/2, -c2_m/2), L1 + c1_m, L2/2 + c2_m, 
-                                      facecolor=slab_color, edgecolor='gray', alpha=0.5)
-    elif col_loc == "Edge Column":
-        # สมมติ Edge อยู่ซ้าย
-        rect_slab = patches.Rectangle((-c1_m/2, -L2/2), L1 + c1_m, L2, 
-                                      facecolor=slab_color, edgecolor='gray', alpha=0.5)
-    else: # Interior
-        # วาด Strip ยาวคลุม 2 เสา
-        rect_slab = patches.Rectangle((-extension, -L2/2), L1 + extension*2, L2, 
-                                      facecolor=slab_color, edgecolor='gray', alpha=0.5)
-
-    ax.add_patch(rect_slab)
-    
-    # B. Grid Lines (Center Lines)
-    # Main Grid X (Horizontal)
-    ax.axhline(y=0, color=grid_color, linestyle='-.', linewidth=0.8)
-    # Main Grid Y (Vertical at Origin)
-    ax.axvline(x=0, color=grid_color, linestyle='-.', linewidth=0.8)
-    # Next Grid Y (Vertical at L1)
-    ax.axvline(x=L1, color=grid_color, linestyle='-.', linewidth=0.8, alpha=0.6)
-    
-    # C. Drop Panels (ถ้ามี)
+    # --- 5. DRAWING: DROP PANELS ---
     if has_drop:
         # Drop ที่เสาหลัก (0,0)
-        drop1 = patches.Rectangle((-drop_w1/2, -drop_w2/2), drop_w1, drop_w2,
-                                  facecolor=drop_color, edgecolor='#d35400', alpha=0.4, linestyle='--')
-        ax.add_patch(drop1)
-        ax.text(0, -drop_w2/2 - 0.2, f"Drop Size\n{drop_w1}x{drop_w2}m", 
-                ha='center', va='top', fontsize=8, color='#d35400')
+        # Drop Panel ก็ต้อง Center ที่เสา
+        drop_rect = patches.Rectangle((-drop_w1/2, -drop_w2/2), drop_w1, drop_w2,
+                                      facecolor='#f39c12', edgecolor='#d35400', alpha=0.5, linestyle='--')
+        ax.add_patch(drop_rect)
         
-        # Drop ที่เสาถัดไป (L1, 0) - แสดงเพื่อให้เห็นภาพรวม
-        drop2 = patches.Rectangle((L1 - drop_w1/2, -drop_w2/2), drop_w1, drop_w2,
-                                  facecolor=drop_color, edgecolor='#d35400', alpha=0.4, linestyle='--')
-        ax.add_patch(drop2)
+        # Label Drop
+        ax.text(drop_w1/2 + 0.1, drop_w2/2, f"Drop {drop_w1}x{drop_w2}m", 
+                fontsize=8, color='#d35400', va='bottom')
 
-    # D. Columns (เสา)
-    # เสาหลัก (Main Column) ที่ (0,0)
-    col1 = patches.Rectangle((-c1_m/2, -c2_m/2), c1_m, c2_m, 
-                             facecolor=col_color, edgecolor='black', hatch='///', zorder=10)
-    ax.add_patch(col1)
+    # --- 6. DRAWING: COLUMNS ---
+    # เสาหลัก (Center)
+    main_col = patches.Rectangle((-c1_m/2, -c2_m/2), c1_m, c2_m, 
+                                 facecolor=col_color, edgecolor='black', hatch='///', zorder=10)
+    ax.add_patch(main_col)
     
-    # เสาถัดไป (Next Column) ที่ (L1, 0) - วาดแบบจางๆ (Ghost)
-    col2 = patches.Rectangle((L1 - c1_m/2, -c2_m/2), c1_m, c2_m, 
-                             facecolor='white', edgecolor='black', linestyle='--', alpha=0.7, zorder=10)
-    ax.add_patch(col2)
-    ax.text(L1, 0, "Next\nCol", ha='center', va='center', fontsize=8, color='gray')
+    # เสาต้นถัดไป (Ghost Column ที่ระยะ L1)
+    next_col = patches.Rectangle((L1 - c1_m/2, -c2_m/2), c1_m, c2_m, 
+                                 facecolor='white', edgecolor='black', linestyle=':', alpha=0.5, zorder=10)
+    ax.add_patch(next_col)
 
-    # --- 4. DIMENSIONS (Engineering Style) ---
+    # --- 7. DIMENSIONS (Engineering Standard) ---
     
-    # L1 Dimension (Longitudinal) - Span ระหว่างเสา
-    ax.annotate('', xy=(0, 0), xytext=(L1, 0),
+    # A. Span L1 (Analysis Direction)
+    # วาดลูกศรบอกระยะระหว่าง Center เสา
+    ax.annotate('', xy=(0, 0.5), xytext=(L1, 0.5),
                 arrowprops=dict(arrowstyle='<|-|>', color=dim_color, linewidth=1.5))
-    
-    # Label L1 ตรงกลางเส้น
-    ax.text(L1/2, 0.2, f"L1 (Span) = {L1:.2f} m", 
-            ha='center', va='bottom', color=dim_color, fontweight='bold', backgroundcolor='white')
+    ax.text(L1/2, 0.6, f"L1 (Analysis Span) = {L1:.2f} m", 
+            ha='center', va='bottom', color=dim_color, fontweight='bold')
 
-    # L2 Dimension (Transverse) - ความกว้าง Strip
-    # วาดด้านข้างเพื่อไม่ให้รก
-    dim_x_pos = -0.8 # ขยับออกไปทางซ้าย
-    ax.annotate('', xy=(dim_x_pos, -L2/2), xytext=(dim_x_pos, L2/2),
+    # B. Width L2 (Transverse Direction)
+    # ต้องโชว์ว่า L2 คือความกว้างรวม (บน+ล่าง)
+    # วาด Dimension ทางด้านซ้ายของเสาหลัก
+    dim_x = -0.8
+    ax.annotate('', xy=(dim_x, -L2/2), xytext=(dim_x, L2/2),
                 arrowprops=dict(arrowstyle='<|-|>', color='green', linewidth=1.5))
-    ax.text(dim_x_pos - 0.1, 0, f"L2 (Width) = {L2:.2f} m", 
-            ha='right', va='center', rotation=90, color='green', fontweight='bold')
-
-    # --- 5. INFO BOX ---
-    wu = 1.4*dl + 1.7*ll
-    info_text = (
-        f"DESIGN PARAMETERS:\n"
-        f"------------------\n"
-        f"Span (L1) : {L1:.2f} m (c/c)\n"
-        f"Width (L2): {L2:.2f} m\n"
-        f"Load (Wu) : {wu:.2f} kg/m²"
-    )
-    props = dict(boxstyle='round', facecolor='wheat', alpha=0.9)
-    ax.text(L1*0.5, -L2/2 + 0.5, info_text, fontsize=9, bbox=props, ha='center')
-
-    # Final Config
-    ax.set_title(f"Equivalent Frame Model: {col_loc}", fontweight='bold', pad=15)
     
-    # Set Limits ให้สวยงาม
-    ax.set_xlim(-1.5, L1 + 1.5)
-    ax.set_ylim(-L2/2 - 1, L2/2 + 1)
+    # Label L2 (หมุน 90 องศา)
+    ax.text(dim_x - 0.1, 0, f"L2 (Design Strip Width) = {L2:.2f} m", 
+            ha='right', va='center', rotation=90, color='green', fontweight='bold')
+            
+    # เพิ่มเส้น Sub-dimension เพื่อบอกว่ามาจาก 4 ด้าน (L2/2 + L2/2)
+    # ถ้าเป็น Interior Column ปกติ L2 จะแบ่งครึ่งบนล่างเท่ากัน
+    ax.text(dim_x + 0.2, L2/4, f"L2/2", fontsize=8, color='green', ha='center', alpha=0.7)
+    ax.text(dim_x + 0.2, -L2/4, f"L2/2", fontsize=8, color='green', ha='center', alpha=0.7)
+
+    # --- 8. INFO & CONTEXT ---
+    # Title
+    ax.set_title(f"Equivalent Frame Model: {col_loc}\n(Showing Analysis Strip)", fontweight='bold')
+    
+    # Loads Box
+    wu = 1.4*dl + 1.7*ll
+    info_text = f"LOADS ($w_u$)\nTotal = {wu:.2f} kg/m²"
+    ax.text(L1*0.8, -L2/2 + 0.5, info_text, fontsize=9, bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+
+    # Set Axis Limits
+    ax.set_xlim(-1.5, L1 + 1.0)
+    ax.set_ylim(-L2/2 - 1.0, L2/2 + 1.0)
     ax.set_aspect('equal')
     ax.axis('off')
 
