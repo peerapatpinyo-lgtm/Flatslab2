@@ -6,11 +6,12 @@ import matplotlib.patches as patches
 st.set_page_config(page_title="Flat Slab EFM Design", layout="wide")
 
 # ==============================================================================
-# ✅ SAFETY ZONE: ประกาศตัวแปรทุกตัวไว้ที่นี่ (กัน Error 100%)
+# ✅ SYSTEM INITIALIZATION (ประกาศค่าเริ่มต้น กันตาย 100%)
 # ==============================================================================
+# กำหนดค่า Default ไว้ก่อนเลย ไม่ว่า Logic จะวิ่งไปทางไหน ตัวแปรพวกนี้จะมีค่าเสมอ
+support_condition = "Fixed" 
 h_upper = 0.0
 h_lower = 0.0
-support_condition = "Fixed" # ค่า Default ป้องกัน NameError
 # ==============================================================================
 
 # --- Function สำหรับวาดรูป (Diagram) ---
@@ -94,47 +95,43 @@ with col2:
     c1 = st.number_input("Column Dimension c1 (analysis dir) (cm)", value=30.0)
     c2 = st.number_input("Column Dimension c2 (transverse) (cm)", value=30.0)
     
-    # Logic ปรับค่าตาม Scenario
-    # 1. เสาบน
+    # -------------------------------------------------------
+    # Logic ปรับค่าตาม Scenario (อัปเดตตัวแปร Global)
+    # -------------------------------------------------------
+    
+    # 1. จัดการเสาบน (Upper Column)
     if floor_scenario != "Top Floor (Roof)":
         st.markdown("---")
         h_upper = st.number_input("Upper Storey Height (m)", value=3.0, key="h_up")
-        
-    # 2. เสาล่าง และ Support
+    else:
+        h_upper = 0.0 # ไม่แสดง Input แต่กำหนดค่าเป็น 0
+
+    # 2. จัดการเสาล่าง (Lower Column) และ Support Condition
+    st.markdown("---")
+    
     if floor_scenario == "Foundation/First Floor":
-        st.markdown("---")
         h_lower = st.number_input("Height to Foundation (m)", value=1.5, key="h_low")
-        # รับค่าและอัปเดตตัวแปร support_condition
+        # ตรงนี้คือจุดสำคัญ: Update ค่า support_condition จาก User
         support_condition = st.radio("Foundation Support Condition", ["Fixed", "Pinned"])
     else:
-        st.markdown("---")
         h_lower = st.number_input("Lower Storey Height (m)", value=3.0, key="h_low")
-        support_condition = "Fixed" # บังคับเป็น Fixed สำหรับชั้นอื่น
+        support_condition = "Fixed" # บังคับกลับเป็น Fixed สำหรับชั้นอื่นๆ
 
-    # แสดงรูป
+    # แสดงรูป (ส่งค่าตัวแปรที่อัปเดตแล้วเข้าไป)
     st.markdown("---")
     st.caption("Structural Model Visualization")
-    # เรียกใช้ฟังก์ชันวาดรูป (ตอนนี้ตัวแปรทุกตัวมีค่าครบแน่นอน)
     fig = draw_scenario(floor_scenario, col_location, h_upper, h_lower, support_condition)
     st.pyplot(fig)
 
 # --- 4. Slenderness & Stiffness Prep (Preview) ---
-# ... (โค้ดส่วนบน) ...
-
 st.header("📊 Calculation Preview (Next Step)")
 
 # คำนวณ Moment of Inertia พื้นฐาน
 Ig_col = (c2 * (c1**3)) / 12  # cm^4
+
 st.write(f"**Column Moment of Inertia ($I_g$):** {Ig_col:,.2f} cm$^4$")
 
-# =================================================================
-# 🚑 SAFETY CHECK: ป้องกัน NameError ตรงนี้
-# ถ้าตัวแปรนี้ยังไม่เคยถูกสร้าง (เพราะไม่เข้าเงื่อนไข Foundation) ให้สร้างขึ้นมาเดี๋ยวนี้
-if 'support_condition' not in locals():
-    support_condition = "Fixed" 
-# =================================================================
-
-# แสดงผลสรุป
+# แสดงผลสรุป (จุดที่เคย Error ตอนนี้หาย 100%)
 if floor_scenario == "Typical Floor (Intermediate)":
     st.info("System will calculate stiffness for BOTH Upper ($K_{c,top}$) and Lower ($K_{c,bot}$) columns.")
     
@@ -142,5 +139,5 @@ elif floor_scenario == "Top Floor (Roof)":
     st.info("System will calculate stiffness for LOWER column only ($K_{c,bot}$). Upper Stiffness = 0.")
     
 elif floor_scenario == "Foundation/First Floor":
-    # บรรทัดที่เคย Error (ตอนนี้จะไม่ Error แล้ว เพราะมี Safety Check ด้านบน)
+    # เรียกใช้ support_condition ได้อย่างปลอดภัย เพราะมีค่าแน่นอน
     st.info(f"System will calculate stiffness for Upper column ($K_{c,top}$) and Lower column with **{support_condition}** far-end condition.")
