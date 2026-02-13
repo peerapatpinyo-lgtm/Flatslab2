@@ -13,97 +13,109 @@ calc_data = {}
 # --- Function วาด Plan View (Top View) [UPDATED] ---
 def draw_plan_view(L1, L2, c1_m, c2_m, col_loc, dl, ll, has_drop, drop_w1, drop_w2):
     """
-    วาดแปลนพื้นพร้อมระบุ Load, Drop Panel และตำแหน่งเสา
+    วาดแปลนพื้นแบบ Professional: แยก Grid Line ออกจาก Slab Edge
     """
     fig, ax = plt.subplots(figsize=(8, 6))
     
-    # 1. Coordinate System Setup
-    # กำหนดจุดศูนย์กลางเสา (Col Center) ให้เป็น (0,0) เพื่อความง่ายในการวาด Drop Panel รอบเสา
-    # แล้วค่อยวาดขอบเขตพื้น (Slab Span) ตาม Location
+    # 1. Setup Coordinates
+    # ให้ Center เสาอยู่ที่ (0,0) เสมอ (จุดตัด Grid)
     
-    col_center = (0, 0)
+    # คำนวณขอบเขตของ "Tributary Area" (พื้นที่รับน้ำหนัก)
+    # Interior: รับน้ำหนักจาก L/2 ซ้าย ถึง L/2 ขวา
+    # Edge: รับน้ำหนักจาก L/2 ด้านใน ถึง ขอบอาคาร (สมมติยื่น c/2 หรือตามที่กำหนด)
     
-    # กำหนดขอบเขตพื้น (Slab Boundary) สัมพันธ์กับเสา
-    # x_range และ y_range คือขอบเขตที่จะวาด
+    # เพื่อความง่ายในการ Visualization แต่ถูกต้องทาง Concept:
+    # เราจะวาด Grid Line ยาวเต็ม L1, L2 แต่ตัวแผ่นพื้น (Slab Patch) จะหดตาม Location
+    
+    grid_color = '#7f8c8d'
+    slab_color = '#ecf0f1'
+    
+    # กำหนดขอบเขตการวาด (View Limits)
+    view_margin = 1.0
+    x_min, x_max = -L1/2, L1/2
+    y_min, y_max = -L2/2, L2/2
+    
+    # ปรับขอบเขตตามตำแหน่งเสา (เพื่อให้เห็นภาพจริง)
     if col_loc == "Corner Column":
-        # พื้นอยู่ที่ Quadrant 1 (ขวาบน) ของเสา
-        slab_origin = (0, 0)
-        slab_w, slab_h = L1, L2
-        # Text alignment
-        align_x, align_y = 0.5, 0.5
+        # พื้นอยู่ Quadrant 1 (ขวาบน)
+        slab_rect = patches.Rectangle((-c1_m/2, -c2_m/2), L1/2 + c1_m/2, L2/2 + c2_m/2, 
+                                      facecolor=slab_color, edgecolor='gray', alpha=0.5, label='Tributary Area')
+        # Grid Lines (Center Lines)
+        ax.axvline(x=0, color=grid_color, linestyle='-.', linewidth=1) # Grid Y
+        ax.axhline(y=0, color=grid_color, linestyle='-.', linewidth=1) # Grid X
+        
+        # Dimension Text (บอกว่าวัดจาก Grid)
+        dim_text_x = "L1/2 (To Mid-Span)"
+        dim_text_y = "L2/2 (To Mid-Span)"
         
     elif col_loc == "Edge Column":
-        # เสาอยู่ขอบซ้าย กลางแกน Y
-        slab_origin = (0, -L2/2)
-        slab_w, slab_h = L1, L2
-        align_x, align_y = 0.5, 0
+        # พื้นอยู่ด้านขวา (สมมติ Edge ซ้าย) หรือ ปรับตามต้องการ
+        # ในที่นี้สมมติเสาอยู่ซ้ายสุด พื้นยื่นไปทางขวา L1/2 และ บนล่าง L2/2
+        slab_rect = patches.Rectangle((-c1_m/2, -L2/2), L1/2 + c1_m/2, L2, 
+                                      facecolor=slab_color, edgecolor='gray', alpha=0.5)
         
-    else: # Interior Column
-        # เสาอยู่ตรงกลางแผ่น
-        slab_origin = (-L1/2, -L2/2)
-        slab_w, slab_h = L1, L2
-        align_x, align_y = 0, 0
+        ax.axvline(x=0, color=grid_color, linestyle='-.', linewidth=1) # Grid Y (Main Grid)
+        ax.axhline(y=0, color=grid_color, linestyle='-.', linewidth=1) # Grid X
+        
+    else: # Interior Column (เคสรูปของคุณ)
+        # พื้นเต็มแผ่น (-L1/2 ถึง L1/2)
+        slab_rect = patches.Rectangle((-L1/2, -L2/2), L1, L2, 
+                                      facecolor=slab_color, edgecolor='gray', alpha=0.5)
+        
+        # Grid Lines (ตัดกลางรูป)
+        ax.axvline(x=0, color=grid_color, linestyle='-.', linewidth=1, label='Grid Line')
+        ax.axhline(y=0, color=grid_color, linestyle='-.', linewidth=1)
+        
+        # วาด Grid ข้างๆ เพื่อบอกว่า L1 คือระยะไปหาเสาถัดไป
+        ax.axvline(x=-L1/2, color=grid_color, linestyle=':', alpha=0.5) # Mid-span Line Left
+        ax.axvline(x=L1/2, color=grid_color, linestyle=':', alpha=0.5)  # Mid-span Line Right
+        
+        ax.axhline(y=-L2/2, color=grid_color, linestyle=':', alpha=0.5) # Mid-span Line Bottom
+        ax.axhline(y=L2/2, color=grid_color, linestyle=':', alpha=0.5)  # Mid-span Line Top
 
-    # --- LAYER 1: SLAB (พื้นหลัง) ---
-    rect_slab = patches.Rectangle(slab_origin, slab_w, slab_h, 
-                                  linewidth=1, edgecolor='#7f8c8d', facecolor='#ecf0f1', alpha=0.6, label='Slab')
-    ax.add_patch(rect_slab)
-    
-    # --- LAYER 2: DROP PANEL (ถ้ามี) ---
+    ax.add_patch(slab_rect)
+
+    # --- DROP PANEL ---
     if has_drop:
-        # วาด Drop Panel โดยให้ center อยู่ที่ (0,0) เหมือนเสา
-        drop_origin = (-drop_w1/2, -drop_w2/2)
-        rect_drop = patches.Rectangle(drop_origin, drop_w1, drop_w2, 
-                                      linewidth=1.5, edgecolor='#d35400', facecolor='#f39c12', alpha=0.5, linestyle='--')
+        rect_drop = patches.Rectangle((-drop_w1/2, -drop_w2/2), drop_w1, drop_w2, 
+                                      linewidth=1.5, edgecolor='#d35400', facecolor='#f39c12', alpha=0.4, linestyle='--')
         ax.add_patch(rect_drop)
-        
-        # Dimension Drop Panel
-        ax.text(drop_w1/2, -drop_w2/2 - 0.2, f"Drop: {drop_w1:.2f}x{drop_w2:.2f} m", 
-                fontsize=9, color='#d35400', ha='center', fontweight='bold')
+        ax.text(0, -drop_w2/2 - 0.3, f"Drop: {drop_w1:.2f}x{drop_w2:.2f} m", 
+                ha='center', fontsize=9, color='#d35400', fontweight='bold')
 
-    # --- LAYER 3: COLUMN (เสา - อยู่บนสุด) ---
-    col_origin = (-c1_m/2, -c2_m/2)
-    rect_col = patches.Rectangle(col_origin, c1_m, c2_m, 
-                                 linewidth=1, edgecolor='black', facecolor='#c0392b', hatch='///')
+    # --- COLUMN ---
+    rect_col = patches.Rectangle((-c1_m/2, -c2_m/2), c1_m, c2_m, 
+                                 linewidth=1, edgecolor='black', facecolor='#c0392b', hatch='///', zorder=5)
     ax.add_patch(rect_col)
-    
-    # --- 4. Dimensions & Annotations ---
-    
-    # L1 Dimension (Analysis Direction)
-    # วาดเส้นบอกระยะ L1
-    ax.annotate('', xy=(slab_origin[0], slab_origin[1] - 0.5), xytext=(slab_origin[0]+slab_w, slab_origin[1] - 0.5),
-                arrowprops=dict(arrowstyle='<->', color='blue'))
-    ax.text(slab_origin[0] + slab_w/2, slab_origin[1] - 0.8, f"L1 (Analysis Span) = {L1:.2f} m", 
-            ha='center', color='blue', fontweight='bold')
 
-    # L2 Dimension (Transverse Direction)
-    ax.annotate('', xy=(slab_origin[0]-0.5, slab_origin[1]), xytext=(slab_origin[0]-0.5, slab_origin[1]+slab_h),
-                arrowprops=dict(arrowstyle='<->', color='green'))
-    ax.text(slab_origin[0]-0.8, slab_origin[1] + slab_h/2, f"L2 (Width) = {L2:.2f} m", 
-            va='center', rotation=90, color='green', fontweight='bold')
+    # --- DIMENSIONS (จุดสำคัญที่แก้ไข) ---
+    # เราจะวาดลูกศรบอกระยะ L1 เต็มสแปน แต่ถ้าเป็น Interior เราจะบอกว่า "Span (c/c)"
+    
+    if col_loc == "Interior Column":
+        # Arrow L1 (Analysis Direction)
+        ax.annotate('', xy=(-L1/2, -L2/2 - 0.5), xytext=(L1/2, -L2/2 - 0.5),
+                    arrowprops=dict(arrowstyle='<->', color='blue'))
+        ax.text(0, -L2/2 - 0.8, f"L1 (Grid-to-Grid) = {L1:.2f} m", ha='center', color='blue', fontweight='bold')
+        
+        # Arrow L2 (Transverse)
+        ax.annotate('', xy=(-L1/2 - 0.5, -L2/2), xytext=(-L1/2 - 0.5, L2/2),
+                    arrowprops=dict(arrowstyle='<->', color='green'))
+        ax.text(-L1/2 - 0.8, 0, f"L2 (Grid-to-Grid) = {L2:.2f} m", va='center', rotation=90, color='green', fontweight='bold')
+    
+    else:
+        # กรณีอื่นๆ อาจจะแสดงแค่ลูกศรชี้เข้าหา Grid
+        ax.text(0, -L2/2 - 0.8, f"Ref. Span L1 = {L1:.2f} m", ha='center', color='blue')
 
-    # Load Information Box
+    # Title & Info
     wu = 1.4*dl + 1.7*ll
-    info_text = (
-        f"DESIGN LOADS ($w_u$):\n"
-        f"DL (SDL) = {dl} kg/m²\n"
-        f"LL       = {ll} kg/m²\n"
-        f"Total $w_u$ = {wu:.2f} kg/m²"
-    )
-    # หาตำแหน่งวางกล่องข้อความที่ไม่บังรูป (วางมุมขวาบนของ Span)
-    text_x = slab_origin[0] + slab_w * 0.7
-    text_y = slab_origin[1] + slab_h * 0.8
+    info_text = (f"DESIGN LOADS ($w_u$):\nTotal = {wu:.2f} kg/m²")
     props = dict(boxstyle='round', facecolor='wheat', alpha=0.8)
-    ax.text(text_x, text_y, info_text, fontsize=9, verticalalignment='top', bbox=props)
-    
-    # Title & Settings
-    ax.set_title(f"Plan View: {col_loc} (Center at Column)", fontweight='bold', pad=15)
-    
-    # Set Lim ให้เห็นภาพรวม + Margin
-    ax.set_xlim(slab_origin[0]-1.5, slab_origin[0]+slab_w+1.5)
-    ax.set_ylim(slab_origin[1]-1.5, slab_origin[1]+slab_h+1.5)
+    ax.text(L1/4, L2/4, info_text, fontsize=9, bbox=props)
+
+    ax.set_title(f"Plan View: {col_loc} (Showing Tributary Area)", fontweight='bold')
     ax.set_aspect('equal')
-    ax.axis('off') # ปิดแกน XY เดิม
+    ax.autoscale_view()
+    ax.axis('off')
     
     return fig
 
