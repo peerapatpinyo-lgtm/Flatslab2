@@ -94,9 +94,13 @@ def draw_scenario(scenario, location, h_col_above, h_col_below, support_cond):
 with col2:
     st.markdown("### Column & Support Details")
     
-    # ตัวแปรสำหรับเก็บค่า
+    # ---------------------------------------------------------
+    # ✅ FIX: กำหนดค่าเริ่มต้นก่อน เพื่อป้องกัน NameError
     h_upper = 0.0
     h_lower = 0.0
+    support_condition = "Fixed"  # ค่า Default ป้องกัน error
+    # ---------------------------------------------------------
+
     c1 = st.number_input("Column Dimension c1 (direction of analysis) (cm)", value=30.0)
     c2 = st.number_input("Column Dimension c2 (transverse) (cm)", value=30.0)
     
@@ -106,21 +110,24 @@ with col2:
         st.markdown("**⬆️ Upper Column Properties**")
         h_upper = st.number_input("Upper Storey Height (m)", value=3.0, key="h_up")
         
-    # Logic: ถามหาเสาล่าง ถ้าไม่ใช่ชั้นฐานราก
+    # Logic: ถามหาเสาล่าง และ Support Condition
     if floor_scenario == "Foundation/First Floor":
         st.markdown("---")
         st.markdown("**⬇️ Lower Column (Foundation) Properties**")
         h_lower = st.number_input("Height to Foundation (m)", value=1.5, key="h_low")
+        # รับค่า Support Condition ที่นี่
         support_condition = st.radio("Foundation Support Condition", ["Fixed", "Pinned"])
+        
     elif floor_scenario != "Foundation/First Floor":
         st.markdown("---")
         st.markdown("**⬇️ Lower Column Properties**")
         h_lower = st.number_input("Lower Storey Height (m)", value=3.0, key="h_low")
-        support_condition = "Fixed" # สำหรับชั้น Typical มักสมมติ Far end เป็น Fixed หรือ Continuous
+        support_condition = "Fixed" # สำหรับชั้น Typical มักสมมติ Far end เป็น Fixed
 
     # --- แสดง Visualization ---
     st.markdown("---")
     st.caption("Structural Model Visualization")
+    # ตอนนี้ตัวแปรทุกตัวมีค่าแน่นอนแล้ว เรียกใช้ฟังก์ชันได้ไม่ error
     fig = draw_scenario(floor_scenario, col_location, h_upper, h_lower, support_condition)
     st.pyplot(fig)
 
