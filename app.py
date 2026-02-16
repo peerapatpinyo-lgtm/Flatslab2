@@ -273,7 +273,6 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
     
     return fig
 
-
 def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm):
     """
     วาดรูปตัด Elevation แบบ Shop Drawing (Clean Layout)
