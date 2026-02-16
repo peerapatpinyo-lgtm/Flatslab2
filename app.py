@@ -215,74 +215,121 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
 
 def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm):
     """
-    วาดรูปตัด Elevation แบบ True Scale (Professional Style with Hatching)
-    Fixed: แก้ไข Error การส่งค่า arguments ซ้ำซ้อน
+    วาดรูปตัด Elevation แบบ CAD Style (Engineering Grade)
+    - แก้ปัญหาตัวอักษรทับกัน (Text Overlap) ด้วยการแยกฝั่ง Dimension และใช้ Bbox
+    - แสดงระยะความสูงเสา (Story Height) พร้อม Break Line
     """
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(10, 7)) # เพิ่มขนาดรูปให้กว้างขึ้นเพื่อใส่ Dim ด้านข้าง
     
+    # 1. Prepare Data (Unit: Meters)
     s_m = h_slab_cm / 100
     d_m = h_drop_cm / 100 if has_drop else 0
     c_m = c1_cm / 100
     d_w = drop_w1 if has_drop else 0
+    
+    # Viewport Limits (ซูมดูเฉพาะช่วงรอยต่อ)
+    view_top = 0.8
+    view_bot = -(s_m + d_m + 0.8)
     view_width = 2.0
     
-    # --- FIX: ปรับ Hatch Style ให้ไม่ชนกับ Argument หลัก ---
-    # เราจะกำหนดเฉพาะลาย Hatch ที่นี่ ส่วนสีเส้นขอบจะกำหนดใน patches โดยตรง
-    # (ใน matplotlib สี Hatch จะตามสี edgecolor)
-    hatch_style = {'hatch': '///'} 
+    # Styles
+    concrete_color = '#E5E7E9'  # Light Gray
+    hatch_pattern = '///'       # Concrete Hatch
+    dim_color = '#2E4053'       # Dark Slate
+    center_line_color = '#E74C3C' # Red for CL
+    
+    # --- Helper: Draw Dimension Line (CAD Style) ---
+    def draw_vertical_dim(x_pos, y_start, y_end, label, color=dim_color, arrow_size=10):
+        # Line
+        ax.annotate('', xy=(x_pos, y_start), xytext=(x_pos, y_end),
+                    arrowprops=dict(arrowstyle='<|-|>', color=color, linewidth=0.8, shrinkA=0, shrinkB=0))
+        # Extension Lines (Tick marks)
+        tick_len = 0.05
+        ax.plot([x_pos-tick_len, x_pos+tick_len], [y_start, y_start], color=color, linewidth=0.8)
+        ax.plot([x_pos-tick_len, x_pos+tick_len], [y_end, y_end], color=color, linewidth=0.8)
+        # Text with Background (Prevent Overlap)
+        mid_y = (y_start + y_end) / 2
+        ax.text(x_pos, mid_y, label, ha='center', va='center', color=color, fontsize=9, fontweight='bold', rotation=90,
+                bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, pad=2))
 
-    # 1. Columns (Solid support, lighter color)
-    col_props = dict(facecolor=COLORS['concrete_plan'], edgecolor=COLORS['dim_line'], linewidth=1, zorder=1)
-    bottom_of_structure = -(s_m + d_m)
-    # Lower Column
-    ax.add_patch(patches.Rectangle((-c_m/2, -h_lo + bottom_of_structure), c_m, h_lo, **col_props))
+    # --- Helper: Draw Break Line (ZigZag) ---
+    def draw_break_line(x_center, y_pos, width, height=0.05):
+        x = [x_center - width/2, x_center - width/4, x_center + width/4, x_center + width/2]
+        y = [y_pos, y_pos - height, y_pos + height, y_pos]
+        ax.plot(x, y, color='black', linewidth=1)
+
+    # ==========================================================================
+    # 1. DRAW STRUCTURE
+    # ==========================================================================
+    
+    # 1.1 Columns (With Break Lines)
     # Upper Column
-    ax.add_patch(patches.Rectangle((-c_m/2, 0), c_m, h_up, **col_props))
-
-    # 2. Slab (Cut section with hatching)
-    # ใช้ edgecolor='black' เพื่อให้ขอบและลายเส้นคมชัด
-    slab_cut = patches.Rectangle((-view_width, -s_m), view_width*2, s_m, 
-                                 facecolor=COLORS['concrete_cut'], 
-                                 edgecolor='black', # ขอบสีดำ
-                                 linewidth=1.0, 
-                                 zorder=5, 
-                                 **hatch_style) # ใส่ลาย Hatch
-    ax.add_patch(slab_cut)
-
-    # 3. Drop Panel (Cut section with hatching, same material)
+    ax.add_patch(patches.Rectangle((-c_m/2, 0), c_m, view_top, facecolor='white', edgecolor='black', linewidth=1))
+    draw_break_line(0, view_top, c_m) # Top Break
+    
+    # Lower Column
+    bot_start = -(s_m + d_m)
+    ax.add_patch(patches.Rectangle((-c_m/2, view_bot), c_m, abs(view_bot - bot_start), facecolor='white', edgecolor='black', linewidth=1))
+    draw_break_line(0, view_bot, c_m) # Bottom Break
+    
+    # 1.2 Slab (Continuous)
+    slab = patches.Rectangle((-view_width, -s_m), view_width*2, s_m, 
+                             facecolor=concrete_color, edgecolor='black', hatch=hatch_pattern, zorder=2)
+    ax.add_patch(slab)
+    
+    # 1.3 Drop Panel
     if has_drop:
-        drop_cut = patches.Rectangle((-d_w/2, -(s_m + d_m)), d_w, d_m, 
-                                     facecolor=COLORS['concrete_cut'], 
-                                     edgecolor='black', 
-                                     linewidth=1.0, 
-                                     zorder=5, 
-                                     **hatch_style)
-        ax.add_patch(drop_cut)
-        
-        # Professional Dim for Drop
-        draw_dim_line(ax, (d_w/2, -s_m), (d_w/2, -(s_m+d_m)), f"Drop {h_drop_cm}cm", offset=-0.4, axis='y')
+        drop = patches.Rectangle((-d_w/2, -(s_m + d_m)), d_w, d_m, 
+                                 facecolor=concrete_color, edgecolor='black', hatch=hatch_pattern, zorder=2)
+        ax.add_patch(drop)
+        # Drop Dimension (Left Side - Inner Track)
+        draw_vertical_dim(-d_w/2 - 0.3, -s_m, -(s_m+d_m), f"Drop {h_drop_cm} cm")
 
-    # 4. Dimensions & Annotations
-    # Slab Thickness
-    draw_dim_line(ax, (-view_width/2, 0), (-view_width/2, -s_m), f"Slab {h_slab_cm}cm", offset=0.5, axis='y')
+    # ==========================================================================
+    # 2. DRAW DIMENSIONS (Separated Tracks to avoid overlap)
+    # ==========================================================================
 
-    # Center Line
-    ax.axvline(0, color=COLORS['dim_line'], linestyle='-.', linewidth=0.8, alpha=0.7)
+    # --- LEFT SIDE: Geometry Thickness ---
+    # Slab Thickness (Outer Track)
+    draw_vertical_dim(-view_width + 0.3, 0, -s_m, f"Slab {h_slab_cm} cm")
 
-    # Level Marker (Professional Style)
-    ax.annotate('▼ T.O. Slab (+0.00m)', xy=(0.1, 0), xytext=(0.4, 0.2),
-                arrowprops=dict(arrowstyle='->', color=COLORS['dim_line']),
-                fontsize=9, color=COLORS['column'], fontweight='bold')
+    # --- RIGHT SIDE: Story Heights (The missing part) ---
+    dist_r = 0.5 # Distance from center
+    
+    # Upper Story Height (h_up)
+    # Note: We draw the dim line mostly, but label it with the FULL value
+    draw_vertical_dim(c_m/2 + dist_r, 0, view_top, f"Upper Storey H = {h_up:.2f} m")
+    
+    # Lower Story Height (h_lo)
+    draw_vertical_dim(c_m/2 + dist_r, -(s_m + d_m), view_bot, f"Lower Storey H = {h_lo:.2f} m")
 
-    # View Settings
+    # ==========================================================================
+    # 3. ANNOTATIONS & DETAILS
+    # ==========================================================================
+    
+    # Center Line (CL)
+    ax.axvline(0, color=center_line_color, linestyle='-.', linewidth=0.8, alpha=0.6)
+    ax.text(0, view_top + 0.05, "CL", color=center_line_color, ha='center', fontweight='bold')
+
+    # Level Marker
+    ax.annotate('▼ T.O. Slab (+0.00)', xy=(0, 0), xytext=(0.6, 0.15),
+                arrowprops=dict(arrowstyle='->', color='blue'),
+                fontsize=9, color='blue', fontweight='bold', ha='left')
+
+    # Drop Panel Width Dimension (Horizontal)
+    if has_drop:
+        ax.annotate('', xy=(-d_w/2, -(s_m+d_m)-0.1), xytext=(d_w/2, -(s_m+d_m)-0.1),
+                    arrowprops=dict(arrowstyle='<|-|>', color=dim_color, linewidth=0.8))
+        ax.text(0, -(s_m+d_m)-0.25, f"Drop Width = {drop_w1:.2f} m", ha='center', color=dim_color, fontsize=8)
+
+    # --- Final Plot Settings ---
     ax.set_aspect('equal')
-    ax.set_xlim(-view_width, view_width)
-    ax.set_ylim(-(s_m + d_m + 0.8), 0.8)
+    ax.set_xlim(-view_width, view_width + 0.5) # เพิ่มที่ว่างด้านขวาให้ Dimension
+    ax.set_ylim(view_bot - 0.2, view_top + 0.2)
     ax.axis('off')
-    ax.set_title("True-Scale Section at Support A-A", pad=15)
+    ax.set_title("SECTION A-A: COLUMN & SLAB CONNECTION", fontsize=11, pad=20, loc='left', color='gray')
     
     return fig
-
 # ==============================================================================
 # 🚀 MAIN APPLICATION INTERFACE
 # ==============================================================================
