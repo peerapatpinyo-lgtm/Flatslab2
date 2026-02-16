@@ -12,9 +12,11 @@ class DesignCriteriaValidator:
     """
     def __init__(self, L1, L2, L1_l, L1_r, L2_t, L2_b, ll, dl, has_drop, cant_data, 
                  fy_ksc, col_location, h_slab_cm):
+        # รับค่าเข้ามาและแปลงหน่วยให้พร้อมคำนวณ
         self.L1 = L1
         self.L2 = L2
-        self.Ln_long = max(L1, L2) - 0.50 # Approx Ln based on max span
+        # ใช้ Span ที่ยาวที่สุดในการเช็คความหนา (Conservative)
+        self.Ln_long = max(L1, L2) - 0.50 
         self.L1_spans = [l for l in [L1_l, L1_r] if l > 0]
         self.L2_spans = [l for l in [L2_t, L2_b] if l > 0]
         self.ll = ll
@@ -22,7 +24,7 @@ class DesignCriteriaValidator:
         self.has_drop = has_drop
         self.cant = cant_data
         
-        # New attributes for checks
+        # แปลง Fy เป็น MPa เพื่อใช้กับสูตร ACI
         self.fy_mpa = (300 if fy_ksc == "SD30" else (400 if fy_ksc == "SD40" else 500))
         self.col_location = col_location # Interior, Edge, Corner
         self.h_slab_cm = h_slab_cm
@@ -32,49 +34,52 @@ class DesignCriteriaValidator:
         Calculates Minimum Slab Thickness based on ACI 318 Table 8.3.1.1
         Returns: (passed_boolean, min_h_cm, message)
         """
-        # ACI 318 Table 8.3.1.1 Denominators
-        # Setup denominators based on Location & Drop Panel
-        # Note: Assuming 'Edge/Corner' has no edge beam for worst case (Flat Plate)
-        
+        # ตรวจสอบว่าเป็นเสาขอบ/มุม หรือไม่ (ถ้าใช่ ACI บังคับให้พื้นหนากว่า)
         is_ext = (self.col_location in ["Edge Column", "Corner Column"])
         
+        # กำหนดตัวหาร (Denominator) ตามตาราง 8.3.1.1
         if self.has_drop:
-            # With Drop Panel
+            # มี Drop Panel (พื้นบางลงได้)
+            # Interior = 36, Exterior = 33
             denom = 36.0 if not is_ext else 33.0
         else:
-            # Without Drop Panel
+            # ไม่มี Drop Panel (Flat Plate)
+            # Interior = 33, Exterior = 30
             denom = 33.0 if not is_ext else 30.0
             
-        # Correction Factor for Fy other than 420 MPa (ACI 318-19)
+        # Correction Factor สำหรับเหล็กที่ไม่ใช่ Gr.60 (420 MPa)
         # Factor = (0.8 + fy/1400)
         fy_factor = 0.8 + (self.fy_mpa / 1400)
         
-        # Calculate Min Thickness (Ln is critical span)
-        # We use the longest clear span approximate
+        # คำนวณความหนาขั้นต่ำ (Ln/Denominator)
         min_h_m = (self.Ln_long * fy_factor) / denom
         min_h_cm = min_h_m * 100
-        min_h_cm = max(min_h_cm, 10.0 if self.has_drop else 12.5) # Absolute min limits
+        
+        # ACI กำหนดขั้นต่ำ Absolute: 10cm (มี Drop) หรือ 12.5cm (ไม่มี Drop)
+        abs_min = 10.0 if self.has_drop else 12.5
+        min_h_cm = max(min_h_cm, abs_min)
 
+        # ตรวจสอบผลลัพธ์
         status = self.h_slab_cm >= min_h_cm
-        msg = f"Req: {min_h_cm:.2f} cm (ACI Table 8.3.1.1)"
+        msg = f"Min Req: {min_h_cm:.2f} cm (ACI Table 8.3.1.1)"
         
         return status, min_h_cm, msg
 
     def check_drop_panel(self, h_drop_cm, drop_w1, drop_w2):
-        """Validates Drop Panel dimensions (Depth & Extension)."""
+        """ตรวจสอบขนาด Drop Panel: ความลึกและความกว้าง"""
         warnings = []
         if not self.has_drop:
             return warnings
 
-        # 1. Thickness Check (ACI: >= h_s/4 below slab)
+        # 1. เช็คความหนา (Depth): ต้องยื่นลงมา >= h_slab / 4
         req_drop_h = self.h_slab_cm / 4
         if h_drop_cm < req_drop_h:
             warnings.append(f"❌ **Depth:** Drop {h_drop_cm}cm < Min {req_drop_h:.2f}cm (h_s/4)")
         else:
             warnings.append(f"✅ **Depth:** {h_drop_cm}cm >= {req_drop_h:.2f}cm")
 
-        # 2. Extension Check (ACI: >= L/6 from center = L/3 total width if symmetric)
-        # Note: Checking against total Span L1 and L2
+        # 2. เช็คความกว้าง (Extension): ต้องยื่นออกไป >= L/6 จากศูนย์กลาง
+        # ดังนั้นความกว้างรวมต้อง >= 2*(L/6) = L/3
         req_w1 = self.L1 / 3
         req_w2 = self.L2 / 3
         
@@ -91,11 +96,11 @@ class DesignCriteriaValidator:
         return warnings
 
     def check_ddm(self):
-        """Checks Direct Design Method (DDM) criteria."""
+        """ตรวจสอบข้อกำหนด Direct Design Method (DDM)"""
         status = True
         reasons = []
 
-        # 1. Rectangular Ratio (L_long / L_short <= 2.0)
+        # 1. อัตราส่วนด้านยาวต่อด้านสั้นต้องไม่เกิน 2.0
         long_side = max(self.L1, self.L2)
         short_side = min(self.L1, self.L2)
         ratio = long_side / short_side if short_side > 0 else 0
@@ -106,7 +111,7 @@ class DesignCriteriaValidator:
         else:
             reasons.append(f"✅ **Panel Ratio:** {ratio:.2f} <= 2.0 (Pass)")
 
-        # 2. Load Ratio (LL/DL <= 2.0)
+        # 2. อัตราส่วน Live Load / Dead Load ต้องไม่เกิน 2.0
         load_ratio = self.ll / self.dl if self.dl > 0 else 0
         if load_ratio > 2.0:
             status = False
@@ -114,19 +119,11 @@ class DesignCriteriaValidator:
         else:
             reasons.append(f"✅ **Load Ratio:** {load_ratio:.2f} <= 2.0 (Pass)")
 
-        # 3. Cantilever Check (Warning only)
-        if self.cant['has_left'] and self.cant['L_left'] > (self.L1/3):
-             reasons.append(f"⚠️ **Cantilever (Left):** Length {self.cant['L_left']:.2f}m is large relative to span.")
-        if self.cant['has_right'] and self.cant['L_right'] > (self.L1/3):
-             reasons.append(f"⚠️ **Cantilever (Right):** Length {self.cant['L_right']:.2f}m is large relative to span.")
-
-        reasons.append("ℹ️ **Note:** DDM requires at least 3 continuous spans.")
         return status, reasons
 
     def check_efm(self):
-        """Checks Equivalent Frame Method (EFM) criteria."""
-        return True, ["✅ **General:** EFM is applicable for this geometry.", 
-                      "✅ **Loads:** No specific restrictions on LL/DL ratio."]
+        """EFM ใช้ได้แทบทุกกรณี"""
+        return True, ["✅ **General:** EFM is applicable for this geometry."]
 
 def prepare_calculation_data(
     h_slab_cm, h_drop_cm, has_drop, 
@@ -166,16 +163,14 @@ def prepare_calculation_data(
     ll_pa = ll_kgm2 * Units.KG_TO_N
     
     w_dead_pa = sw_pa + sdl_pa
-    w_u_pa = (lf_dl * w_dead_pa) + (lf_ll * ll_pa) # Area Load (N/m2)
+    w_u_pa = (lf_dl * w_dead_pa) + (lf_ll * ll_pa) 
     
     # Stiffness Factor Calculation
     I_col = (c2 * (c1**3)) / 12 
     
-    # Upper Column Stiffness
     k_factor_up = 3 if far_end_up == 'Pinned' else 4
     K_col_up = (k_factor_up * Ec_pa * I_col) / calc_h_up if calc_h_up > 0 else 0
     
-    # Lower Column Stiffness
     k_factor_lo = 3 if far_end_lo == 'Pinned' else 4
     K_col_lo = (k_factor_lo * Ec_pa * I_col) / h_lo if h_lo > 0 else 0
     
