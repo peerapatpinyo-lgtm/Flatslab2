@@ -2,129 +2,123 @@
 import numpy as np
 from app_config import Units
 
-# ==============================================================================
-# ENGINEERING LOGIC & VALIDATOR
-# ==============================================================================
-
 class DesignCriteriaValidator:
-    """
-    Validates design criteria according to ACI 318 for DDM, EFM, and Serviceability.
-    """
     def __init__(self, L1, L2, L1_l, L1_r, L2_t, L2_b, ll, dl, has_drop, cant_data, 
-                 fy_ksc, col_location, h_slab_cm):
-        # รับค่าเข้ามาและแปลงหน่วยให้พร้อมคำนวณ
+                 fy_ksc, col_location, h_slab_cm, c1, c2):
         self.L1 = L1
         self.L2 = L2
-        # ใช้ Span ที่ยาวที่สุดในการเช็คความหนา (Conservative)
-        self.Ln_long = max(L1, L2) - 0.50 
-        self.L1_spans = [l for l in [L1_l, L1_r] if l > 0]
-        self.L2_spans = [l for l in [L2_t, L2_b] if l > 0]
+        # ACI 318: Ln is clear span in long direction
+        # Ln = L_long - average_column_width (approx c1)
+        self.c_avg = (c1 + c2) / 2.0
+        self.Ln_long = max(L1, L2) - self.c_avg 
+        
         self.ll = ll
         self.dl = dl
         self.has_drop = has_drop
         self.cant = cant_data
         
-        # แปลง Fy เป็น MPa เพื่อใช้กับสูตร ACI
+        # Convert Fy ksc to MPa for ACI Formulas
+        # SD30=295MPa(approx 300), SD40=390MPa(approx 400), SD50=490MPa(approx 500)
         self.fy_mpa = (300 if fy_ksc == "SD30" else (400 if fy_ksc == "SD40" else 500))
-        self.col_location = col_location # Interior, Edge, Corner
+        self.col_location = col_location 
         self.h_slab_cm = h_slab_cm
 
-    def check_min_thickness(self):
+    def check_min_thickness_detailed(self):
         """
-        Calculates Minimum Slab Thickness based on ACI 318 Table 8.3.1.1
-        Returns: (passed_boolean, min_h_cm, message)
+        Returns detailed calculation steps for Minimum Slab Thickness
         """
-        # ตรวจสอบว่าเป็นเสาขอบ/มุม หรือไม่ (ถ้าใช่ ACI บังคับให้พื้นหนากว่า)
+        # 1. Determine Denominator (Based on ACI 318 Table 8.3.1.1)
         is_ext = (self.col_location in ["Edge Column", "Corner Column"])
         
-        # กำหนดตัวหาร (Denominator) ตามตาราง 8.3.1.1
         if self.has_drop:
-            # มี Drop Panel (พื้นบางลงได้)
-            # Interior = 36, Exterior = 33
             denom = 36.0 if not is_ext else 33.0
+            case_name = "With Drop Panel"
         else:
-            # ไม่มี Drop Panel (Flat Plate)
-            # Interior = 33, Exterior = 30
             denom = 33.0 if not is_ext else 30.0
-            
-        # Correction Factor สำหรับเหล็กที่ไม่ใช่ Gr.60 (420 MPa)
+            case_name = "Flat Plate (No Drop)"
+
+        if is_ext: case_name += " (Exterior)"
+        else: case_name += " (Interior)"
+
+        # 2. Fy Correction Factor (ACI 318-19)
         # Factor = (0.8 + fy/1400)
         fy_factor = 0.8 + (self.fy_mpa / 1400)
         
-        # คำนวณความหนาขั้นต่ำ (Ln/Denominator)
+        # 3. Calculation
         min_h_m = (self.Ln_long * fy_factor) / denom
-        min_h_cm = min_h_m * 100
+        min_h_cm_calc = min_h_m * 100
         
-        # ACI กำหนดขั้นต่ำ Absolute: 10cm (มี Drop) หรือ 12.5cm (ไม่มี Drop)
+        # 4. Absolute Minimum Limits
         abs_min = 10.0 if self.has_drop else 12.5
-        min_h_cm = max(min_h_cm, abs_min)
+        req_h_cm = max(min_h_cm_calc, abs_min)
 
-        # ตรวจสอบผลลัพธ์
-        status = self.h_slab_cm >= min_h_cm
-        msg = f"Min Req: {min_h_cm:.2f} cm (ACI Table 8.3.1.1)"
+        status = self.h_slab_cm >= req_h_cm
         
-        return status, min_h_cm, msg
+        # Return all variables needed for "Show Work"
+        return {
+            "status": status,
+            "Ln": self.Ln_long,
+            "fy_mpa": self.fy_mpa,
+            "denom": denom,
+            "case_name": case_name,
+            "calc_h": min_h_cm_calc,
+            "abs_min": abs_min,
+            "req_h": req_h_cm,
+            "actual_h": self.h_slab_cm
+        }
 
-    def check_drop_panel(self, h_drop_cm, drop_w1, drop_w2):
-        """ตรวจสอบขนาด Drop Panel: ความลึกและความกว้าง"""
-        warnings = []
+    def check_drop_panel_detailed(self, h_drop_cm, drop_w1, drop_w2):
+        """Returns details for Drop Panel Check"""
         if not self.has_drop:
-            return warnings
+            return None
 
-        # 1. เช็คความหนา (Depth): ต้องยื่นลงมา >= h_slab / 4
+        # 1. Thickness Check
         req_drop_h = self.h_slab_cm / 4
-        if h_drop_cm < req_drop_h:
-            warnings.append(f"❌ **Depth:** Drop {h_drop_cm}cm < Min {req_drop_h:.2f}cm (h_s/4)")
-        else:
-            warnings.append(f"✅ **Depth:** {h_drop_cm}cm >= {req_drop_h:.2f}cm")
+        chk_depth = h_drop_cm >= req_drop_h
 
-        # 2. เช็คความกว้าง (Extension): ต้องยื่นออกไป >= L/6 จากศูนย์กลาง
-        # ดังนั้นความกว้างรวมต้อง >= 2*(L/6) = L/3
+        # 2. Extension Check (Width)
+        # Must extend L/6 from center line => Total Width >= L/3
         req_w1 = self.L1 / 3
         req_w2 = self.L2 / 3
         
-        if drop_w1 < req_w1:
-            warnings.append(f"❌ **Width W1:** {drop_w1:.2f}m < Min {req_w1:.2f}m (L1/3)")
-        else:
-            warnings.append(f"✅ **Width W1:** Pass")
-            
-        if drop_w2 < req_w2:
-            warnings.append(f"❌ **Width W2:** {drop_w2:.2f}m < Min {req_w2:.2f}m (L2/3)")
-        else:
-            warnings.append(f"✅ **Width W2:** Pass")
-            
-        return warnings
+        chk_w1 = drop_w1 >= req_w1
+        chk_w2 = drop_w2 >= req_w2
+        
+        status = chk_depth and chk_w1 and chk_w2
+        
+        return {
+            "status": status,
+            "h_slab": self.h_slab_cm,
+            "req_drop_h": req_drop_h,
+            "act_drop_h": h_drop_cm,
+            "chk_depth": chk_depth,
+            "L1": self.L1, "req_w1": req_w1, "act_w1": drop_w1, "chk_w1": chk_w1,
+            "L2": self.L2, "req_w2": req_w2, "act_w2": drop_w2, "chk_w2": chk_w2
+        }
 
     def check_ddm(self):
-        """ตรวจสอบข้อกำหนด Direct Design Method (DDM)"""
+        # ... (เหมือนเดิม ไม่ต้องแก้ส่วนนี้) ...
         status = True
         reasons = []
-
-        # 1. อัตราส่วนด้านยาวต่อด้านสั้นต้องไม่เกิน 2.0
         long_side = max(self.L1, self.L2)
         short_side = min(self.L1, self.L2)
         ratio = long_side / short_side if short_side > 0 else 0
-        
         if ratio > 2.0:
             status = False
-            reasons.append(f"❌ **Panel Ratio:** Long/Short ({ratio:.2f}) > 2.0 (ACI Limit)")
+            reasons.append(f"❌ **Panel Ratio:** Long/Short ({ratio:.2f}) > 2.0")
         else:
-            reasons.append(f"✅ **Panel Ratio:** {ratio:.2f} <= 2.0 (Pass)")
-
-        # 2. อัตราส่วน Live Load / Dead Load ต้องไม่เกิน 2.0
+            reasons.append(f"✅ **Panel Ratio:** {ratio:.2f} <= 2.0")
+            
         load_ratio = self.ll / self.dl if self.dl > 0 else 0
         if load_ratio > 2.0:
             status = False
             reasons.append(f"❌ **Load Ratio:** LL/DL ({load_ratio:.2f}) > 2.0")
         else:
-            reasons.append(f"✅ **Load Ratio:** {load_ratio:.2f} <= 2.0 (Pass)")
+            reasons.append(f"✅ **Load Ratio:** {load_ratio:.2f} <= 2.0")
 
         return status, reasons
 
-    def check_efm(self):
-        """EFM ใช้ได้แทบทุกกรณี"""
-        return True, ["✅ **General:** EFM is applicable for this geometry."]
-
+# ... (ฟังก์ชัน prepare_calculation_data เหมือนเดิม 100% ไม่ต้องแปะทับก็ได้ หรือจะแปะทับเพื่อความชัวร์ก็ได้ครับ) ...
 def prepare_calculation_data(
     h_slab_cm, h_drop_cm, has_drop, 
     c1_cm, c2_cm, drop_w2,
