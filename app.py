@@ -201,7 +201,7 @@ with tab1:
         st.divider()
 
         # ======================================================================
-        #  MOVED SECTION: DESIGN CODE CHECKS (ACI 318)
+        #  DESIGN CODE CHECKS (ACI 318) - MOVED & IMPROVED
         # ======================================================================
         st.markdown("### 🔍 Design Code Checks (ACI 318)")
         
@@ -227,80 +227,95 @@ with tab1:
             st.write(f"- Absolute Code Min = **{thk_res['abs_min']} cm**")
             st.write(f"- **Final Required ($h_{{req}}$) = {thk_res['req_h']:.2f} cm**")
 
-        # --- 2. Drop Panel Dashboard (Moved Here) ---
+        # --- 2. Drop Panel Dashboard (With Detailed Math) ---
         if has_drop:
             drop_res = validator.check_drop_panel_detailed(h_drop_cm, drop_w1, drop_w2)
             
             st.markdown("#### 📉 Drop Panel Compliance Dashboard")
             
-            # Create a clean layout for comparisons
+            # --- CARD DASHBOARD ---
             d_c1, d_c2, d_c3 = st.columns(3)
             
-            # Helper Function
-            def display_check_card(col, title, req_val, prov_val, unit, label_req="Required", label_prov="Provided"):
+            def display_check_card(col, title, req_val, prov_val, unit):
                 ratio = prov_val / req_val if req_val > 0 else 0
                 is_pass = prov_val >= req_val
-                
                 with col:
                     st.markdown(f"**{title}**")
                     if is_pass:
-                        st.success(f"✅ **PASS** (Ratio: {ratio:.2f})")
+                        st.success(f"✅ **PASS**")
                     else:
-                        st.error(f"❌ **FAIL** (Ratio: {ratio:.2f})")
+                        st.error(f"❌ **FAIL**")
+                    st.metric(label="Provided (Actual)", value=f"{prov_val:.2f} {unit}")
+                    st.metric(label="Required (Min)", value=f"{req_val:.2f} {unit}", 
+                             delta=f"{req_val - prov_val:.2f} diff" if not is_pass else "OK", delta_color="inverse")
+                    st.progress(min(ratio / 2.0, 1.0))
+
+            display_check_card(d_c1, "1. Depth Check", drop_res['req_proj'], drop_res['act_proj'], "cm")
+            display_check_card(d_c2, "2. Width (Dir 1)", drop_res['req_total_w1'], drop_res['act_w1'], "m")
+            display_check_card(d_c3, "3. Width (Dir 2)", drop_res['req_total_w2'], drop_res['act_w2'], "m")
+
+            # --- DETAILED SUBSTITUTION VIEW ---
+            with st.expander("📝 ดูที่มาของตัวเลขและการคำนวณ (Detailed Calculation)", expanded=True):
+                st.info("💡 ACI 318-19 Section 8.2.4: Drop panel dimensions are based on **Slab Thickness ($h_s$)** and **Span Length ($L$)**.")
+                
+                # --- CHECK 1: DEPTH ---
+                st.markdown("##### 1️⃣ Depth Check ($h_{drop}$)")
+                c1_math, c2_math = st.columns([1, 2])
+                with c1_math:
+                    st.markdown("**Variable Source:**")
+                    st.caption(f"From Input 'Slab Thickness':")
+                    st.code(f"h_s = {h_slab_cm} cm")
+                with c2_math:
+                    st.markdown("**Calculation:**")
+                    st.latex(r"\text{Req } h_{drop} = \frac{h_s}{4}")
+                    # Substitution
+                    st.latex(f"= \\frac{{{h_slab_cm}}}{{4}} = \\mathbf{{{drop_res['req_proj']:.2f} \\text{{ cm}}}}")
                     
-                    # Comparison Metrics
-                    c_m1, c_m2 = st.columns(2)
-                    with c_m1:
-                        st.metric(label=label_prov, value=f"{prov_val:.2f} {unit}")
-                    with c_m2:
-                        st.metric(label=label_req, value=f"{req_val:.2f} {unit}", delta=f"{req_val - prov_val:.2f} diff" if not is_pass else None, delta_color="inverse")
-                    
-                    # Visual Bar
-                    prog_val = min(ratio / 2.0, 1.0)
-                    st.progress(prog_val)
-                    if is_pass:
-                        st.caption(f"Safe by {(ratio-1)*100:.0f}%")
+                    if drop_res['chk_depth']:
+                        st.markdown(f"✅ Provided **{drop_res['act_proj']} cm** $\ge$ Required **{drop_res['req_proj']:.2f} cm**")
                     else:
-                        st.caption(f"Insufficient by {(1-ratio)*100:.0f}%")
+                        st.markdown(f"❌ Provided **{drop_res['act_proj']} cm** < Required **{drop_res['req_proj']:.2f} cm**")
 
-            # Display Cards
-            display_check_card(d_c1, "1. Depth ($h_{drop}$)", 
-                               drop_res['req_proj'], drop_res['act_proj'], "cm",
-                               label_req="Min Req", label_prov="Actual")
+                st.divider()
 
-            display_check_card(d_c2, "2. Width Dir 1", 
-                               drop_res['req_total_w1'], drop_res['act_w1'], "m",
-                               label_req="Min Req", label_prov="Actual")
+                # --- CHECK 2: WIDTH L1 ---
+                st.markdown("##### 2️⃣ Width Check (Direction 1)")
+                c1_math, c2_math = st.columns([1, 2])
+                with c1_math:
+                    st.markdown("**Variable Source:**")
+                    st.caption(f"From Span 1 ($L_1$):")
+                    # ใช้ค่า L1 จาก geom object ที่ validator ใช้จริง
+                    val_L1 = calc_obj['geom']['L1']
+                    st.code(f"L1 = {val_L1:.2f} m")
+                with c2_math:
+                    st.markdown("**Calculation (Total Width):**")
+                    st.markdown("Extend $L/6$ each side $\\rightarrow$ Total $\ge L/3$")
+                    # Substitution
+                    st.latex(f"\\text{{Req }} W_1 = \\frac{{L_1}}{{3}} = \\frac{{{val_L1:.2f}}}{{3}} = \\mathbf{{{drop_res['req_total_w1']:.2f} \\text{{ m}}}}")
+                    
+                    if drop_res['chk_w1']:
+                         st.markdown(f"✅ Provided **{drop_res['act_w1']} m** $\ge$ Required **{drop_res['req_total_w1']:.2f} m**")
+                    else:
+                         st.markdown(f"❌ Provided **{drop_res['act_w1']} m** < Required **{drop_res['req_total_w1']:.2f} m**")
 
-            display_check_card(d_c3, "3. Width Dir 2", 
-                               drop_res['req_total_w2'], drop_res['act_w2'], "m",
-                               label_req="Min Req", label_prov="Actual")
+                st.divider()
 
-            # Detailed Math Expander
-            with st.expander("📝 View Detailed Math & Formulas (ACI 318 Ref.)", expanded=False):
-                st.markdown("### Engineering Calculations")
-                st.markdown("Reference: **ACI 318-19 Section 8.2.4 (Drop Panels)**")
-                
-                check_data = [
-                    {"Parameter": "Drop Depth (Projection)", "Formula": r"h_s / 4", 
-                     "Required": f"{drop_res['req_proj']:.2f} cm", "Provided": f"{drop_res['act_proj']:.2f} cm", 
-                     "Status": "✅ PASS" if drop_res['chk_depth'] else "❌ FAIL"},
-                    {"Parameter": "Total Width (Span 1)", "Formula": r"2 \times (L_1 / 6) = L_1 / 3", 
-                     "Required": f"{drop_res['req_total_w1']:.2f} m", "Provided": f"{drop_res['act_w1']:.2f} m", 
-                     "Status": "✅ PASS" if drop_res['chk_w1'] else "❌ FAIL"},
-                    {"Parameter": "Total Width (Span 2)", "Formula": r"2 \times (L_2 / 6) = L_2 / 3", 
-                     "Required": f"{drop_res['req_total_w2']:.2f} m", "Provided": f"{drop_res['act_w2']:.2f} m", 
-                     "Status": "✅ PASS" if drop_res['chk_w2'] else "❌ FAIL"}
-                ]
-                
-                st.markdown("#### Logic Verification")
-                for item in check_data:
-                    c1, c2, c3, c4 = st.columns([1.5, 1.5, 1, 1])
-                    c1.markdown(f"**{item['Parameter']}**")
-                    c2.latex(item['Formula'])
-                    c3.markdown(f"Req: `{item['Required']}`")
-                    c4.markdown(f"Prov: `{item['Provided']}` {item['Status']}")
-                    st.divider()
+                # --- CHECK 3: WIDTH L2 ---
+                st.markdown("##### 3️⃣ Width Check (Direction 2)")
+                c1_math, c2_math = st.columns([1, 2])
+                with c1_math:
+                    st.markdown("**Variable Source:**")
+                    st.caption(f"From Span 2 ($L_2$):")
+                    val_L2 = calc_obj['geom']['L2']
+                    st.code(f"L2 = {val_L2:.2f} m")
+                with c2_math:
+                    st.markdown("**Calculation (Total Width):**")
+                    st.latex(f"\\text{{Req }} W_2 = \\frac{{L_2}}{{3}} = \\frac{{{val_L2:.2f}}}{{3}} = \\mathbf{{{drop_res['req_total_w2']:.2f} \\text{{ m}}}}")
+                    
+                    if drop_res['chk_w2']:
+                         st.markdown(f"✅ Provided **{drop_res['act_w2']} m** $\ge$ Required **{drop_res['req_total_w2']:.2f} m**")
+                    else:
+                         st.markdown(f"❌ Provided **{drop_res['act_w2']} m** < Required **{drop_res['req_total_w2']:.2f} m**")
 
         # --- 3. DDM/EFM Validity Check ---
         st.markdown("#### ✅ Method Validity (DDM vs EFM)")
