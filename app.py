@@ -24,7 +24,7 @@ plt.rcParams.update({
     'figure.facecolor': 'white'
 })
 
-# Professional Color Palette (Restored)
+# Professional Color Palette
 COLORS = {
     'concrete_plan': '#F0F2F5',
     'concrete_cut': '#BDC3C7',
@@ -51,7 +51,7 @@ class Units:
     KSC_TO_MPA = 0.0980665
 
 # ==============================================================================
-# 3. ENGINEERING LOGIC & VALIDATOR (New Logic Integrated)
+# 3. ENGINEERING LOGIC & VALIDATOR
 # ==============================================================================
 
 class DesignCriteriaValidator:
@@ -140,7 +140,8 @@ def prepare_calculation_data(
     L1_l, L1_r, L2_t, L2_b,
     fc_ksc, fy_grade, 
     dl_kgm2, ll_kgm2,
-    auto_sw, lf_dl, lf_ll
+    auto_sw, lf_dl, lf_ll,
+    joint_type, h_up, h_lo 
 ):
     # Geometry
     h_s = h_slab_cm * Units.CM_TO_M
@@ -152,6 +153,10 @@ def prepare_calculation_data(
     L2 = L2_t + L2_b
     Ln = L1 - c1
     
+    # Roof Logic (Force h_up to 0 if Roof)
+    is_roof = (joint_type == 'Roof Joint')
+    calc_h_up = 0.0 if is_roof else h_up
+
     # Materials
     fc_pa = fc_ksc * Units.KSC_TO_PA
     Ec_pa = (4700 * np.sqrt(fc_ksc * Units.KSC_TO_MPA)) * 1e6
@@ -166,16 +171,25 @@ def prepare_calculation_data(
     
     w_dead_pa = sw_pa + sdl_pa
     wu_pa = (lf_dl * w_dead_pa) + (lf_ll * ll_pa)
+    
+    # Structural Concept Metadata
+    stiffness_concept = {
+        "joint_type": joint_type,
+        "rotation_resistance": "K_col_bot" if is_roof else "K_col_top + K_col_bot",
+        "unbalanced_moment_dist": "To Bottom Column Only" if is_roof else "Distributed to Top & Bottom"
+    }
 
     return {
         "geom": {"L1": L1, "L2": L2, "Ln": Ln, "c1": c1, "c2": c2, "h_s": h_s, "h_d": h_d, "b_drop": b_drop},
+        "vertical_geom": {"h_up": calc_h_up, "h_lo": h_lo, "is_roof": is_roof},
         "mat": {"Ec_pa": Ec_pa, "fc_pa": fc_pa, "fy_pa": fy_pa},
         "loads": {"wu_pa": wu_pa, "sw_pa": sw_pa, "sdl_pa": sdl_pa, "ll_pa": ll_pa, "w_dead": w_dead_pa},
-        "raw": {"dl": dl_kgm2, "ll": ll_kgm2}
+        "raw": {"dl": dl_kgm2, "ll": ll_kgm2},
+        "concept": stiffness_concept
     }
 
 # ==============================================================================
-# 4. VISUALIZATION SYSTEM (Original High-Detail Restored)
+# 4. VISUALIZATION SYSTEM
 # ==============================================================================
 
 def draw_dim_line(ax, start, end, text, offset=0.5, axis='x'):
@@ -184,26 +198,18 @@ def draw_dim_line(ax, start, end, text, offset=0.5, axis='x'):
     ext_line_style = dict(color=COLORS['dim_line'], linewidth=0.5, linestyle='-')
     
     if axis == 'x':
-        # Dimension Line
         ax.annotate('', xy=(start[0], start[1]-offset), xytext=(end[0], end[1]-offset), arrowprops=arrow_style)
-        # Extension Lines
         ax.plot([start[0], start[0]], [start[1]-0.1, start[1]-offset-0.2], **ext_line_style)
         ax.plot([end[0], end[0]], [end[1]-0.1, end[1]-offset-0.2], **ext_line_style)
-        # Text
         ax.text((start[0]+end[0])/2, start[1]-offset-0.3, text, ha='center', va='top', color=COLORS['dim_line'])
     elif axis == 'y':
-        # Dimension Line
         ax.annotate('', xy=(start[0]-offset, start[1]), xytext=(end[0]-offset, end[1]), arrowprops=arrow_style)
-        # Extension Lines
         ax.plot([start[0]-0.1, start[0]-offset-0.2], [start[1], start[1]], **ext_line_style)
         ax.plot([end[0]-0.1, end[0]-offset-0.2], [end[1], end[1]], **ext_line_style)
-        # Text
         ax.text(start[0]-offset-0.3, (start[1]+end[1])/2, text, ha='right', va='center', rotation=90, color=COLORS['dim_line'])
 
 def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1, d_w2):
-    """
-    High-fidelity Plan View with Zone Labeling and Dimensions
-    """
+    """High-fidelity Plan View with Zone Labeling and Dimensions"""
     fig, ax = plt.subplots(figsize=(12, 10))
     
     # 1. Config & Scales
@@ -216,27 +222,23 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
     slab_T = L2_t
     slab_B = c2_m/2 if col_loc in ["Edge Column", "Corner Column"] else L2_b
     
-    # 2. Draw Zones & Labels
-    # Base Layer (Middle Strip)
+    # 2. Draw Zones
     ax.add_patch(patches.Rectangle((-slab_L, -slab_B), slab_L + slab_R, slab_B + slab_T,
                                    facecolor=COLORS['ms_bg'], edgecolor='gray', linewidth=1, zorder=0))
     
-    # Column Strip Layer
     min_span = min(L1_l + L1_r, L2_t + L2_b)
     cs_width = 0.25 * min_span
     cs_top = min(cs_width, slab_T)
     cs_bot = min(cs_width, slab_B)
     
-    # Draw CS Rect
     ax.add_patch(patches.Rectangle((-slab_L, -cs_bot), slab_L + slab_R, cs_top + cs_bot,
                                    facecolor=COLORS['cs_bg'], edgecolor='none', alpha=0.6, zorder=1))
     
-    # Dashed Separators
     line_props = dict(color=COLORS['strip_line'], linestyle='--', linewidth=0.8, alpha=0.7)
     if cs_top < slab_T: ax.axhline(y=cs_top, **line_props)
     if cs_bot < slab_B: ax.axhline(y=-cs_bot, **line_props)
 
-    # Labeling Zones
+    # Labeling
     text_x_pos = slab_R * 0.6
     ax.text(text_x_pos, 0, "COLUMN STRIP", color=COLORS['cs_text'], 
             fontsize=10, fontweight='bold', ha='center', va='center',
@@ -244,32 +246,29 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
     
     if cs_top < slab_T:
         ax.text(text_x_pos, (cs_top + slab_T) / 2, "MIDDLE STRIP", color=COLORS['ms_text'], 
-                fontsize=9, fontweight='bold', ha='center', va='center')    
+                fontsize=9, fontweight='bold', ha='center', va='center')     
     if cs_bot < slab_B:
         ax.text(text_x_pos, -(cs_bot + slab_B) / 2, "MIDDLE STRIP", color=COLORS['ms_text'], 
                 fontsize=9, fontweight='bold', ha='center', va='center')
 
-    # 3. Drop Panel & Dimensions
+    # 3. Drop Panel
     if has_drop:
         ax.add_patch(patches.Rectangle((-d_w1/2, -d_w2/2), d_w1, d_w2, 
                                        facecolor='none', edgecolor=COLORS['drop_panel_plan'], 
                                        linestyle='-', linewidth=2, zorder=5))
-        # Internal Dimensions
         ax.text(0, d_w2/2 + 0.15, f"Drop W1 = {d_w1:.2f}m", color=COLORS['drop_panel_plan'], fontsize=8, fontweight='bold', ha='center')
         ax.text(d_w1/2 + 0.15, 0, f"Drop W2\n{d_w2:.2f}m", color=COLORS['drop_panel_plan'], fontsize=8, fontweight='bold', va='center')
 
     # 4. Columns
-    # Main Column
     ax.add_patch(patches.Rectangle((-c1_m/2, -c2_m/2), c1_m, c2_m, 
                                    facecolor=COLORS['column'], edgecolor='black', hatch='//', zorder=10))
-    # Ghost Columns
     ghost_props = dict(facecolor='white', edgecolor=COLORS['concrete_cut'], linestyle='--', linewidth=1.5, zorder=4)
     if L1_r > 0: ax.add_patch(patches.Rectangle((L1_r - c1_m/2, -c2_m/2), c1_m, c2_m, **ghost_props))
     if L1_l > 0 and col_loc != "Corner Column": ax.add_patch(patches.Rectangle((-L1_l - c1_m/2, -c2_m/2), c1_m, c2_m, **ghost_props))
     if L2_t > 0: ax.add_patch(patches.Rectangle((-c1_m/2, L2_t - c2_m/2), c1_m, c2_m, **ghost_props))
     if L2_b > 0 and col_loc == "Interior Column": ax.add_patch(patches.Rectangle((-c1_m/2, -L2_b - c2_m/2), c1_m, c2_m, **ghost_props))
 
-    # 5. External Dimensions
+    # 5. External Dimensions (Simplified for brevity in update, keep original logic)
     def draw_ext_dim(x1, y1, x2, y2, text, offset):
         mid_x, mid_y = (x1 + x2)/2, (y1 + y2)/2
         if x1 == x2: # Vertical
@@ -287,28 +286,22 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
         ax.text(mid_x, mid_y, text, rotation=rot, ha=ha, va=va, fontsize=9, color=COLORS['dim_line'], fontweight='bold',
                 bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, pad=1))
 
-    m_x = -slab_L - 0.8
-    m_y = -slab_B - 0.8
-    
+    m_x, m_y = -slab_L - 0.8, -slab_B - 0.8
     if L1_l > 0 and col_loc != "Corner Column": draw_ext_dim(-L1_l, -slab_B, 0, -slab_B, f"L1(L)={L1_l:.2f}", m_y - (-slab_B))
     draw_ext_dim(0, -slab_B, L1_r, -slab_B, f"L1(R)={L1_r:.2f}", m_y - (-slab_B))
     draw_ext_dim(-slab_L, 0, -slab_L, L2_t, f"L2(T)={L2_t:.2f}", m_x - (-slab_L))
     if L2_b > 0 and col_loc == "Interior Column": draw_ext_dim(-slab_L, -L2_b, -slab_L, 0, f"L2(B)={L2_b:.2f}", m_x - (-slab_L))
 
-    # Final Config
-    ax.axvline(0, color='red', linestyle='-.', lw=0.5, alpha=0.5)
-    ax.axhline(0, color='red', linestyle='-.', lw=0.5, alpha=0.5)
     ax.set_title(f"STRUCTURAL LAYOUT: {col_loc.upper()}", fontsize=12, pad=20, fontweight='bold', color='#566573')
     ax.set_xlim(-slab_L - 2.0, slab_R + 1.0)
     ax.set_ylim(-slab_B - 2.0, slab_T + 1.0)
     ax.set_aspect('equal')
     ax.axis('off')
-    
     return fig
 
-def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm):
+def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm, is_roof):
     """
-    High-fidelity Section View with Hatching, Break Lines, and Side Dims
+    High-fidelity Section View with Hatching, Break Lines, Side Dims, AND Joint Type Logic
     """
     fig, ax = plt.subplots(figsize=(10, 6))
     
@@ -317,42 +310,46 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
     c_m = c1_cm / 100
     d_w = drop_w1 if has_drop else 0
     
+    # View Settings
     view_width = 1.5
-    view_top = 0.8
+    view_top = 0.8 if not is_roof else 0.1 # Reduced top view if roof
     view_bot = -(s_m + d_m + 0.8)
     
     col_concrete = '#ECF0F1'
     col_hatch = '#BDC3C7'
     col_dim = '#2C3E50'
     
-    # Helper: Side Dimension with Extension Lines
+    # Helper: Side Dimension
     def draw_side_dim(y_start, y_end, x_loc, label, side='left'):
-        # Dim Line
         ax.annotate('', xy=(x_loc, y_start), xytext=(x_loc, y_end),
                     arrowprops=dict(arrowstyle='<|-|>', color=col_dim, linewidth=0.8, shrinkA=0, shrinkB=0))
-        # Extension
         ext_len = 0.1
         ax.plot([x_loc - ext_len/2, x_loc + ext_len/2], [y_start, y_start], color=col_dim, linewidth=0.6)
         ax.plot([x_loc - ext_len/2, x_loc + ext_len/2], [y_end, y_end], color=col_dim, linewidth=0.6)
-        # Connector
         connect_x = -view_width if side == 'left' else c_m/2
         ax.plot([connect_x, x_loc], [y_start, y_start], color=col_dim, linestyle=':', linewidth=0.5, alpha=0.5)
         ax.plot([connect_x, x_loc], [y_end, y_end], color=col_dim, linestyle=':', linewidth=0.5, alpha=0.5)
-        # Text
         mid_y = (y_start + y_end) / 2
         text_offset = -0.15 if side == 'left' else 0.15
         ax.text(x_loc + text_offset, mid_y, label, ha='center', va='center', rotation=90, 
                 fontsize=9, color=col_dim, fontweight='bold',
                 bbox=dict(facecolor='white', edgecolor='none', alpha=0.7, pad=1))
+    
+    def draw_break(x, y, w):
+        ax.plot([x-w/2, x-w/4, x+w/4, x+w/2], [y, y-0.05, y+0.05, y], color='black', linewidth=1)
 
-    # 1. Structure (Central Zone)
-    # Column Upper
-    ax.add_patch(patches.Rectangle((-c_m/2, 0), c_m, view_top, facecolor='white', edgecolor='black', linewidth=1))
+    # 1. Structure
+    # Column Upper (Only if not Roof)
+    if not is_roof:
+        ax.add_patch(patches.Rectangle((-c_m/2, 0), c_m, view_top, facecolor='white', edgecolor='black', linewidth=1))
+        draw_break(0, view_top, c_m)
+        
     # Column Lower
     bot_struct = -(s_m + d_m)
     ax.add_patch(patches.Rectangle((-c_m/2, view_bot), c_m, abs(view_bot - bot_struct), facecolor='white', edgecolor='black', linewidth=1))
+    draw_break(0, view_bot, c_m)
 
-    # Slab
+    # Slab (Continuous)
     ax.add_patch(patches.Rectangle((-view_width, -s_m), view_width*2, s_m, facecolor=col_concrete, edgecolor='black', linewidth=1, zorder=5))
     ax.add_patch(patches.Rectangle((-view_width, -s_m), view_width*2, s_m, fill=False, edgecolor=col_hatch, hatch='///', linewidth=0, zorder=6))
 
@@ -361,25 +358,18 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
         ax.add_patch(patches.Rectangle((-d_w/2, bot_struct), d_w, d_m, facecolor=col_concrete, edgecolor='black', linewidth=1, zorder=5))
         ax.add_patch(patches.Rectangle((-d_w/2, bot_struct), d_w, d_m, fill=False, edgecolor=col_hatch, hatch='///', linewidth=0, zorder=6))
 
-    # Break Lines
-    def draw_break(x, y, w):
-        ax.plot([x-w/2, x-w/4, x+w/4, x+w/2], [y, y-0.05, y+0.05, y], color='black', linewidth=1)
-    draw_break(0, view_top, c_m)
-    draw_break(0, view_bot, c_m)
-
     # 2. Dimensions
-    # Left: Thickness
     dim_x_left = -view_width - 0.5
     draw_side_dim(0, -s_m, dim_x_left, f"Slab {h_slab_cm} cm", side='left')
     if has_drop:
         draw_side_dim(-s_m, -(s_m+d_m), dim_x_left - 0.4, f"Drop {h_drop_cm} cm", side='left')
 
-    # Right: Heights
     dim_x_right = c_m/2 + 0.8
-    draw_side_dim(0, view_top, dim_x_right, f"Upper H. {h_up:.2f} m", side='right')
+    if not is_roof:
+        draw_side_dim(0, view_top, dim_x_right, f"Upper H. {h_up:.2f} m", side='right')
+    
     draw_side_dim(-(s_m+d_m), view_bot, dim_x_right, f"Lower H. {h_lo:.2f} m", side='right')
 
-    # Bottom: Drop Width
     if has_drop:
         dim_y_bot = view_bot - 0.2
         ax.annotate('', xy=(-d_w/2, dim_y_bot), xytext=(d_w/2, dim_y_bot), arrowprops=dict(arrowstyle='<|-|>', color=col_dim, linewidth=0.8))
@@ -395,7 +385,9 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
     ax.set_xlim(-view_width - 1.2, view_width + 1.2)
     ax.set_ylim(view_bot - 0.5, view_top + 0.2)
     ax.axis('off')
-    ax.set_title("SECTION DETAIL (TRUE SCALE)", fontsize=10, color='gray', pad=10)
+    
+    title_text = "SECTION DETAIL: INTERMEDIATE JOINT" if not is_roof else "SECTION DETAIL: ROOF JOINT"
+    ax.set_title(title_text, fontsize=10, color='gray', pad=10, fontweight='bold')
     return fig
 
 # ==============================================================================
@@ -437,9 +429,20 @@ with tab1:
 
         st.divider()
 
-        # 3. Geometry
-        st.subheader("3. Geometry")
-        col_location = st.selectbox("Column Location", ["Interior Column", "Edge Column", "Corner Column"])
+        # 3. Geometry (Updated with Joint Type)
+        st.subheader("3. Geometry & Boundary")
+        
+        # --- NEW: Joint Type Selection ---
+        st.markdown("##### 📍 Column Joint Condition")
+        joint_type = st.radio(
+            "Select Joint Type:",
+            ("Intermediate Floor (Upper & Lower Columns)", "Roof Joint (Lower Column Only)"),
+            help="Determines column stiffness contribution and moment distribution."
+        )
+        is_roof = "Roof" in joint_type
+        joint_code = "Roof Joint" if is_roof else "Intermediate Joint"
+        
+        col_location = st.selectbox("Plan Location", ["Interior Column", "Edge Column", "Corner Column"])
         is_corner = (col_location == "Corner Column")
         is_edge = (col_location == "Edge Column")
         
@@ -462,6 +465,16 @@ with tab1:
         with col_sz1: c1_cm = st.number_input("Column c1 (cm) [Analysis Dir]", value=50.0)
         with col_sz2: c2_cm = st.number_input("Column c2 (cm) [Transverse]", value=50.0)
 
+        # Storey Heights (Conditioned)
+        st.caption("Storey Heights")
+        h_up = 0.0
+        if not is_roof:
+            h_up = st.number_input("Upper Storey Height (m)", value=3.0)
+        else:
+            st.info("ℹ️ Roof Joint: No Upper Column")
+            
+        h_lo = st.number_input("Lower Storey Height (m)", value=3.0)
+
         has_drop = st.checkbox("Include Drop Panel", value=False)
         h_drop_cm, drop_w1, drop_w2 = 0.0, 0.0, 0.0
         if has_drop:
@@ -471,13 +484,11 @@ with tab1:
             with d_col2: drop_w1 = st.number_input("Drop Width L1 (m)", value=2.5)
             with d_col3: drop_w2 = st.number_input("Drop Width L2 (m)", value=2.5)
 
-        h_up = st.number_input("Upper Storey Height (m)", value=3.0)
-        h_lo = st.number_input("Lower Storey Height (m)", value=3.0)
-
         # --- Calculation & Validation ---
         calc_obj = prepare_calculation_data(
             h_slab_cm, h_drop_cm, has_drop, c1_cm, c2_cm, drop_w2,
-            L1_l, L1_r, L2_t, L2_b, fc, fy, dl, ll, auto_sw, lf_dl, lf_ll
+            L1_l, L1_r, L2_t, L2_b, fc, fy, dl, ll, auto_sw, lf_dl, lf_ll,
+            joint_code, h_up, h_lo
         )
 
         validator = DesignCriteriaValidator(
@@ -491,6 +502,7 @@ with tab1:
 
         # Sidebar Update
         with status_container:
+            st.markdown(f"**Joint:** `{joint_code}`")
             if ddm_ok: st.success("✅ **DDM:** Valid")
             else: st.error("❌ **DDM:** Invalid")
             st.info("✅ **EFM:** Valid")
@@ -504,11 +516,18 @@ with tab1:
             st.pyplot(fig_plan)
         
         with v_tab2:
-            fig_elev = draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm)
+            # Pass is_roof to visualization
+            fig_elev = draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm, is_roof)
             st.pyplot(fig_elev)
             
         # Analysis Report (Merged)
         st.markdown("### 📋 Analysis Results")
+        
+        st.markdown(f"""
+        **Structure Behavior ({joint_code}):**
+        - **Stiffness Source:** {calc_obj['concept']['rotation_resistance']}
+        - **Moment Distribution:** {calc_obj['concept']['unbalanced_moment_dist']}
+        """)
         
         if drop_warnings:
             st.warning("**⚠️ Drop Panel Geometry Warnings:**")
@@ -532,14 +551,32 @@ with tab1:
 with tab2:
     st.header("📘 Engineering Theory")
     st.markdown("""
-    ### 1. Direct Design Method (DDM)
+    ### 1. Joint Behavior & Stiffness ($K_{ec}$)
+    
+    The behavior of the slab-column connection depends critically on the **Joint Type** selected:
+
+    #### Case 1: Intermediate Joint (Floor Level)
+    This joint occurs at intermediate floors where columns exist both above and below the slab.
+    * **Stiffness ($K_{ec}$):** The joint is stiffened by both columns. 
+        $$ K_{col} \approx K_{col\_top} + K_{col\_bot} $$
+    * **Moment Transfer:** Unbalanced moments ($M_{unb}$) are distributed to both the upper and lower columns proportional to their stiffness.
+    
+    #### Case 2: Roof Joint (Top Level)
+    This joint occurs at the roof where there is no column above.
+    * **Stiffness ($K_{ec}$):** The joint relies solely on the column below.
+        $$ K_{col} \approx K_{col\_bot} $$
+    * **Moment Transfer:** All unbalanced moment must be resisted by the column below, often governing the design of the top-storey column.
+
+    ---
+
+    ### 2. Direct Design Method (DDM)
     Approximate method permissible if:
     - Minimum 3 continuous spans.
     - Rectangular panels with aspect ratio $\le 2.0$.
     - Successive span lengths differ by $\le 33\%$.
     - Unfactored LL/DL $\le 2.0$.
 
-    ### 2. Equivalent Frame Method (EFM)
+    ### 3. Equivalent Frame Method (EFM)
     - Represents the 3D slab system as a series of 2D frames.
     - Accounts for the stiffness of the slab, columns, and torsional members.
     - Applicable to irregular layouts and loading where DDM fails.
