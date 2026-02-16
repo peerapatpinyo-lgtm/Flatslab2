@@ -1,9 +1,9 @@
-# app_main.py
+# app.py
 import streamlit as st
 from app_config import Units
 import app_calc
 import app_viz
-import app_theory  # <--- IMPORT ไฟล์ทฤษฎี
+import app_theory 
 
 # ==============================================================================
 # MAIN APPLICATION INTERFACE
@@ -148,13 +148,33 @@ with tab1:
 
         validator = app_calc.DesignCriteriaValidator(
             calc_obj['geom']['L1'], calc_obj['geom']['L2'], L1_l, L1_r, L2_t, L2_b,
-            ll, (calc_obj['loads']['w_dead'] / Units.G), has_drop, cant_params
+            ll, (calc_obj['loads']['w_dead'] / Units.G), has_drop, cant_params,
+            fy, col_location, h_slab_cm
         )
 
-        ddm_ok, ddm_reasons = validator.check_ddm()
-        efm_ok, efm_reasons = validator.check_efm()
-        drop_warnings = validator.check_drop_panel(h_slab_cm, h_drop_cm, drop_w1, drop_w2, L1_l, L1_r, L2_t, L2_b)
+        # --- NEW: Checks Section ---
+        st.markdown("### 🔍 Pre-Analysis Checks")
+        
+        # 1. Minimum Thickness Check
+        thk_ok, min_req, thk_msg = validator.check_min_thickness()
+        if thk_ok:
+            st.success(f"✅ Slab Thickness: {h_slab_cm} cm (Passed) | {thk_msg}")
+        else:
+            st.error(f"❌ Slab Thickness: {h_slab_cm} cm (Too Thin) | {thk_msg}")
+            
+        # 2. Drop Panel Check
+        if has_drop:
+            drop_warnings = validator.check_drop_panel(h_drop_cm, drop_w1, drop_w2)
+            if not drop_warnings:
+                st.info("✅ Drop Panel Dimensions: OK")
+            else:
+                with st.expander("⚠️ Drop Panel Issues", expanded=True):
+                    for w in drop_warnings:
+                        if "✅" in w: st.write(w)
+                        else: st.error(w)
 
+        ddm_ok, ddm_reasons = validator.check_ddm()
+        
         # Sidebar Update
         with status_container:
             st.markdown(f"**Condition:** `{joint_code}`")
@@ -199,15 +219,12 @@ with tab1:
                 if cant_params['has_right']: st.metric("Right Moment (Neg)", f"{m_data['M_cant_R']/1000:.2f} kN.m")
         
         st.divider()
-        with st.expander(f"Code Check Details", expanded=False):
-            if drop_warnings:
-                st.warning("Drop Panel Geometry Warnings:")
-                for w in drop_warnings: st.write(f"- {w}")
+        with st.expander(f"Code Check Details (DDM/EFM)", expanded=False):
             for r in ddm_reasons: st.markdown(r)
 
 # ==============================================================================
 # TAB 2: ENGINEERING THEORY (MODULARIZED)
 # ==============================================================================
 with tab2:
-    # ⚠️ FIXED LINE: Passing calc_obj as an argument
+    # Use the new module for theory display
     app_theory.display_theory(calc_obj)
