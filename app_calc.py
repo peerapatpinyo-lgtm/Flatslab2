@@ -8,17 +8,87 @@ from app_config import Units
 
 class DesignCriteriaValidator:
     """
-    Validates design criteria according to ACI 318 for DDM and EFM.
+    Validates design criteria according to ACI 318 for DDM, EFM, and Serviceability.
     """
-    def __init__(self, L1, L2, L1_l, L1_r, L2_t, L2_b, ll, dl, has_drop, cant_data):
+    def __init__(self, L1, L2, L1_l, L1_r, L2_t, L2_b, ll, dl, has_drop, cant_data, 
+                 fy_ksc, col_location, h_slab_cm):
         self.L1 = L1
         self.L2 = L2
+        self.Ln_long = max(L1, L2) - 0.50 # Approx Ln based on max span
         self.L1_spans = [l for l in [L1_l, L1_r] if l > 0]
         self.L2_spans = [l for l in [L2_t, L2_b] if l > 0]
         self.ll = ll
         self.dl = dl
         self.has_drop = has_drop
         self.cant = cant_data
+        
+        # New attributes for checks
+        self.fy_mpa = (300 if fy_ksc == "SD30" else (400 if fy_ksc == "SD40" else 500))
+        self.col_location = col_location # Interior, Edge, Corner
+        self.h_slab_cm = h_slab_cm
+
+    def check_min_thickness(self):
+        """
+        Calculates Minimum Slab Thickness based on ACI 318 Table 8.3.1.1
+        Returns: (passed_boolean, min_h_cm, message)
+        """
+        # ACI 318 Table 8.3.1.1 Denominators
+        # Setup denominators based on Location & Drop Panel
+        # Note: Assuming 'Edge/Corner' has no edge beam for worst case (Flat Plate)
+        
+        is_ext = (self.col_location in ["Edge Column", "Corner Column"])
+        
+        if self.has_drop:
+            # With Drop Panel
+            denom = 36.0 if not is_ext else 33.0
+        else:
+            # Without Drop Panel
+            denom = 33.0 if not is_ext else 30.0
+            
+        # Correction Factor for Fy other than 420 MPa (ACI 318-19)
+        # Factor = (0.8 + fy/1400)
+        fy_factor = 0.8 + (self.fy_mpa / 1400)
+        
+        # Calculate Min Thickness (Ln is critical span)
+        # We use the longest clear span approximate
+        min_h_m = (self.Ln_long * fy_factor) / denom
+        min_h_cm = min_h_m * 100
+        min_h_cm = max(min_h_cm, 10.0 if self.has_drop else 12.5) # Absolute min limits
+
+        status = self.h_slab_cm >= min_h_cm
+        msg = f"Req: {min_h_cm:.2f} cm (ACI Table 8.3.1.1)"
+        
+        return status, min_h_cm, msg
+
+    def check_drop_panel(self, h_drop_cm, drop_w1, drop_w2):
+        """Validates Drop Panel dimensions (Depth & Extension)."""
+        warnings = []
+        if not self.has_drop:
+            return warnings
+
+        # 1. Thickness Check (ACI: >= h_s/4 below slab)
+        req_drop_h = self.h_slab_cm / 4
+        if h_drop_cm < req_drop_h:
+            warnings.append(f"❌ **Depth:** Drop {h_drop_cm}cm < Min {req_drop_h:.2f}cm (h_s/4)")
+        else:
+            warnings.append(f"✅ **Depth:** {h_drop_cm}cm >= {req_drop_h:.2f}cm")
+
+        # 2. Extension Check (ACI: >= L/6 from center = L/3 total width if symmetric)
+        # Note: Checking against total Span L1 and L2
+        req_w1 = self.L1 / 3
+        req_w2 = self.L2 / 3
+        
+        if drop_w1 < req_w1:
+            warnings.append(f"❌ **Width W1:** {drop_w1:.2f}m < Min {req_w1:.2f}m (L1/3)")
+        else:
+            warnings.append(f"✅ **Width W1:** Pass")
+            
+        if drop_w2 < req_w2:
+            warnings.append(f"❌ **Width W2:** {drop_w2:.2f}m < Min {req_w2:.2f}m (L2/3)")
+        else:
+            warnings.append(f"✅ **Width W2:** Pass")
+            
+        return warnings
 
     def check_ddm(self):
         """Checks Direct Design Method (DDM) criteria."""
@@ -58,18 +128,7 @@ class DesignCriteriaValidator:
         return True, ["✅ **General:** EFM is applicable for this geometry.", 
                       "✅ **Loads:** No specific restrictions on LL/DL ratio."]
 
-    def check_drop_panel(self, h_slab, h_drop, drop_w1, drop_w2, L1_l, L1_r, L2_t, L2_b):
-        """Validates Drop Panel dimensions."""
-        warnings = []
-        if not self.has_drop:
-            return warnings
-
-        # Thickness
-        if h_drop < (h_slab / 4):
-            warnings.append(f"⚠️ **Drop Thickness:** {h_drop} cm < Min {h_slab/4:.2f} cm (h_slab/4)")
-            
-        return warnings
-
+# ... (Keep prepare_calculation_data function as is) ...
 def prepare_calculation_data(
     h_slab_cm, h_drop_cm, has_drop, 
     c1_cm, c2_cm, drop_w2,
