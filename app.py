@@ -3,7 +3,7 @@ import streamlit as st
 from app_config import Units
 import app_calc
 import app_viz
-import app_theory  # <--- IMPORT ไฟล์ทฤษฎีใหม่
+import app_theory  # <--- IMPORT ไฟล์ทฤษฎี
 
 # ==============================================================================
 # MAIN APPLICATION INTERFACE
@@ -209,5 +209,5 @@ with tab1:
 # TAB 2: ENGINEERING THEORY (MODULARIZED)
 # ==============================================================================
 with tab2:
-    # Use the new module for theory display
-    app_theory.display_theory()
+    # ⚠️ FIXED LINE: Passing calc_obj as an argument
+    app_theory.display_theory(calc_obj)
