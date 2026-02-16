@@ -176,32 +176,11 @@ with tab1:
                                                          is_roof, far_end_up, far_end_lo, cant_params)
             st.pyplot(fig_elev)
             
-        # Analysis Report
-        st.markdown("### 📋 Analysis Results")
+        # Analysis Report (REMOVED K and MOMENT Sections)
+        st.markdown("### 📋 Preliminary Checks")
         
-        # 1. Stiffness Report
-        st.markdown("#### 1. Column Stiffness ($K_{col}$)")
-        k_data = calc_obj['stiffness']
-        c_k1, c_k2, c_k3 = st.columns(3)
-        with c_k1: st.metric("K Top", f"{k_data['K_up']/1e6:.2f}", f"Factor: {k_data['k_fac_up']}EI")
-        with c_k2: st.metric("K Bottom", f"{k_data['K_lo']/1e6:.2f}", f"Factor: {k_data['k_fac_lo']}EI")
-        with c_k3: st.metric("Sum Kec", f"{k_data['Sum_K']/1e6:.2f}", "MN.m")
-        
-        # 2. Cantilever Moment Report
-        if cant_params['has_left'] or cant_params['has_right']:
-            st.markdown("#### 2. Cantilever Balancing Moment ($M_{cant}$)")
-            st.caption("Moment from Cantilever helps balance the interior span moment.")
-            m_data = calc_obj['moments']
-            mc1, mc2 = st.columns(2)
-            with mc1: 
-                if cant_params['has_left']: st.metric("Left Moment (Neg)", f"{m_data['M_cant_L']/1000:.2f} kN.m")
-            with mc2:
-                if cant_params['has_right']: st.metric("Right Moment (Neg)", f"{m_data['M_cant_R']/1000:.2f} kN.m")
-        
-        st.divider()
-
         # ======================================================================
-        #  DESIGN CODE CHECKS (ACI 318) - MOVED & IMPROVED
+        #  DESIGN CODE CHECKS (ACI 318)
         # ======================================================================
         st.markdown("### 🔍 Design Code Checks (ACI 318)")
         
