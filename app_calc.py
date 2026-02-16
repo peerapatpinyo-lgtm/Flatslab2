@@ -8,7 +8,6 @@ class DesignCriteriaValidator:
         self.L1 = L1
         self.L2 = L2
         # ACI 318: Ln is clear span in long direction
-        # Ln = L_long - average_column_width (approx c1)
         self.c_avg = (c1 + c2) / 2.0
         self.Ln_long = max(L1, L2) - self.c_avg 
         
@@ -17,17 +16,13 @@ class DesignCriteriaValidator:
         self.has_drop = has_drop
         self.cant = cant_data
         
-        # Convert Fy ksc to MPa for ACI Formulas
-        # SD30=295MPa(approx 300), SD40=390MPa(approx 400), SD50=490MPa(approx 500)
+        # Materials
         self.fy_mpa = (300 if fy_ksc == "SD30" else (400 if fy_ksc == "SD40" else 500))
         self.col_location = col_location 
         self.h_slab_cm = h_slab_cm
 
     def check_min_thickness_detailed(self):
-        """
-        Returns detailed calculation steps for Minimum Slab Thickness
-        """
-        # 1. Determine Denominator (Based on ACI 318 Table 8.3.1.1)
+        """Returns detailed calculation steps for Minimum Slab Thickness"""
         is_ext = (self.col_location in ["Edge Column", "Corner Column"])
         
         if self.has_drop:
@@ -40,66 +35,69 @@ class DesignCriteriaValidator:
         if is_ext: case_name += " (Exterior)"
         else: case_name += " (Interior)"
 
-        # 2. Fy Correction Factor (ACI 318-19)
-        # Factor = (0.8 + fy/1400)
+        # Fy Correction Factor (ACI 318-19)
         fy_factor = 0.8 + (self.fy_mpa / 1400)
         
-        # 3. Calculation
+        # Calculation
         min_h_m = (self.Ln_long * fy_factor) / denom
         min_h_cm_calc = min_h_m * 100
         
-        # 4. Absolute Minimum Limits
+        # Absolute Minimum Limits
         abs_min = 10.0 if self.has_drop else 12.5
         req_h_cm = max(min_h_cm_calc, abs_min)
 
         status = self.h_slab_cm >= req_h_cm
         
-        # Return all variables needed for "Show Work"
         return {
-            "status": status,
-            "Ln": self.Ln_long,
-            "fy_mpa": self.fy_mpa,
-            "denom": denom,
-            "case_name": case_name,
-            "calc_h": min_h_cm_calc,
-            "abs_min": abs_min,
-            "req_h": req_h_cm,
-            "actual_h": self.h_slab_cm
+            "status": status, "Ln": self.Ln_long, "fy_mpa": self.fy_mpa,
+            "denom": denom, "case_name": case_name, "calc_h": min_h_cm_calc,
+            "abs_min": abs_min, "req_h": req_h_cm, "actual_h": self.h_slab_cm
         }
 
     def check_drop_panel_detailed(self, h_drop_cm, drop_w1, drop_w2):
-        """Returns details for Drop Panel Check"""
+        """Returns VERY detailed calculation for Drop Panel Check (ACI 318)"""
         if not self.has_drop:
             return None
 
-        # 1. Thickness Check
-        req_drop_h = self.h_slab_cm / 4
-        chk_depth = h_drop_cm >= req_drop_h
+        # --- 1. Depth Check (ACI 8.2.4) ---
+        # Projection below slab must be >= h_s / 4
+        req_proj = self.h_slab_cm / 4
+        act_proj = h_drop_cm # In this app, input is the projection depth
+        chk_depth = act_proj >= req_proj
 
-        # 2. Extension Check (Width)
-        # Must extend L/6 from center line => Total Width >= L/3
-        req_w1 = self.L1 / 3
-        req_w2 = self.L2 / 3
+        # --- 2. Extension Check (ACI 8.2.4) ---
+        # Extend >= L/6 from center of support in each direction.
+        # Total Width >= 2 * (L/6) = L/3
         
-        chk_w1 = drop_w1 >= req_w1
-        chk_w2 = drop_w2 >= req_w2
+        # Direction 1 (L1)
+        req_ext_1 = self.L1 / 6.0
+        req_total_w1 = self.L1 / 3.0
+        chk_w1 = drop_w1 >= req_total_w1
+        
+        # Direction 2 (L2)
+        req_ext_2 = self.L2 / 6.0
+        req_total_w2 = self.L2 / 3.0
+        chk_w2 = drop_w2 >= req_total_w2
         
         status = chk_depth and chk_w1 and chk_w2
         
         return {
             "status": status,
             "h_slab": self.h_slab_cm,
-            "req_drop_h": req_drop_h,
-            "act_drop_h": h_drop_cm,
-            "chk_depth": chk_depth,
-            "L1": self.L1, "req_w1": req_w1, "act_w1": drop_w1, "chk_w1": chk_w1,
-            "L2": self.L2, "req_w2": req_w2, "act_w2": drop_w2, "chk_w2": chk_w2
+            # Depth Data
+            "req_proj": req_proj, "act_proj": act_proj, "chk_depth": chk_depth,
+            # Width Data 1
+            "L1": self.L1, "req_ext_1": req_ext_1, "req_total_w1": req_total_w1, 
+            "act_w1": drop_w1, "chk_w1": chk_w1,
+            # Width Data 2
+            "L2": self.L2, "req_ext_2": req_ext_2, "req_total_w2": req_total_w2, 
+            "act_w2": drop_w2, "chk_w2": chk_w2
         }
 
     def check_ddm(self):
-        # ... (เหมือนเดิม ไม่ต้องแก้ส่วนนี้) ...
         status = True
         reasons = []
+        # Aspect Ratio
         long_side = max(self.L1, self.L2)
         short_side = min(self.L1, self.L2)
         ratio = long_side / short_side if short_side > 0 else 0
@@ -109,6 +107,7 @@ class DesignCriteriaValidator:
         else:
             reasons.append(f"✅ **Panel Ratio:** {ratio:.2f} <= 2.0")
             
+        # Load Ratio
         load_ratio = self.ll / self.dl if self.dl > 0 else 0
         if load_ratio > 2.0:
             status = False
@@ -118,7 +117,7 @@ class DesignCriteriaValidator:
 
         return status, reasons
 
-# ... (ฟังก์ชัน prepare_calculation_data เหมือนเดิม 100% ไม่ต้องแปะทับก็ได้ หรือจะแปะทับเพื่อความชัวร์ก็ได้ครับ) ...
+# ... (prepare_calculation_data function remains exactly the same) ...
 def prepare_calculation_data(
     h_slab_cm, h_drop_cm, has_drop, 
     c1_cm, c2_cm, drop_w2,
