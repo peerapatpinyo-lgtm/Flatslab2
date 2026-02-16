@@ -216,6 +216,7 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
 def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm):
     """
     วาดรูปตัด Elevation แบบ True Scale (Professional Style with Hatching)
+    Fixed: แก้ไข Error การส่งค่า arguments ซ้ำซ้อน
     """
     fig, ax = plt.subplots(figsize=(8, 6))
     
@@ -225,8 +226,10 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
     d_w = drop_w1 if has_drop else 0
     view_width = 2.0
     
-    # Concrete Hatch Style
-    hatch_style = {'hatch': '///', 'edgecolor': COLORS['hatch_color'], 'linewidth': 0.5}
+    # --- FIX: ปรับ Hatch Style ให้ไม่ชนกับ Argument หลัก ---
+    # เราจะกำหนดเฉพาะลาย Hatch ที่นี่ ส่วนสีเส้นขอบจะกำหนดใน patches โดยตรง
+    # (ใน matplotlib สี Hatch จะตามสี edgecolor)
+    hatch_style = {'hatch': '///'} 
 
     # 1. Columns (Solid support, lighter color)
     col_props = dict(facecolor=COLORS['concrete_plan'], edgecolor=COLORS['dim_line'], linewidth=1, zorder=1)
@@ -237,14 +240,23 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
     ax.add_patch(patches.Rectangle((-c_m/2, 0), c_m, h_up, **col_props))
 
     # 2. Slab (Cut section with hatching)
+    # ใช้ edgecolor='black' เพื่อให้ขอบและลายเส้นคมชัด
     slab_cut = patches.Rectangle((-view_width, -s_m), view_width*2, s_m, 
-                                 facecolor=COLORS['concrete_cut'], edgecolor='black', linewidth=1.2, zorder=5, **hatch_style)
+                                 facecolor=COLORS['concrete_cut'], 
+                                 edgecolor='black', # ขอบสีดำ
+                                 linewidth=1.0, 
+                                 zorder=5, 
+                                 **hatch_style) # ใส่ลาย Hatch
     ax.add_patch(slab_cut)
 
     # 3. Drop Panel (Cut section with hatching, same material)
     if has_drop:
         drop_cut = patches.Rectangle((-d_w/2, -(s_m + d_m)), d_w, d_m, 
-                                     facecolor=COLORS['concrete_cut'], edgecolor='black', linewidth=1.2, zorder=5, **hatch_style)
+                                     facecolor=COLORS['concrete_cut'], 
+                                     edgecolor='black', 
+                                     linewidth=1.0, 
+                                     zorder=5, 
+                                     **hatch_style)
         ax.add_patch(drop_cut)
         
         # Professional Dim for Drop
