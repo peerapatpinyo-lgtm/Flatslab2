@@ -4,14 +4,14 @@ import matplotlib.patches as patches
 import numpy as np
 
 # ==============================================================================
-# 1. SETUP & CONFIGURATION (Global Settings)
+# 1. SETUP & CONFIGURATION
 # ==============================================================================
 st.set_page_config(page_title="Flat Slab Design Pro", layout="wide")
 
-# Professional Plotting Style
+# Professional Matplotlib Style
 plt.rcParams.update({
     'font.family': 'sans-serif',
-    'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans'],
+    'font.sans-serif': ['Helvetica', 'Arial', 'DejaVu Sans'],
     'font.size': 9,
     'axes.titlesize': 11,
     'axes.labelsize': 9,
@@ -24,127 +24,117 @@ plt.rcParams.update({
     'figure.facecolor': 'white'
 })
 
-# Color Palette (Engineering Standard)
+# Professional Color Palette (Restored)
 COLORS = {
-    'concrete': '#F0F2F5',
-    'concrete_cut': '#E5E7E9',
-    'column': '#2C3E50',
+    'concrete_plan': '#F0F2F5',
+    'concrete_cut': '#BDC3C7',
+    'column': '#34495E',
+    'drop_panel_plan': '#F39C12', 
+    'drop_panel_cut': '#9BA4B0', 
     'dim_line': '#566573',
-    'highlight': '#E74C3C',    # Red for errors/warnings
-    'pass': '#27AE60',         # Green for pass
-    'drop_panel': '#F39C12',
-    'text_main': '#17202A'
+    'strip_line': '#3498DB', 
+    'hatch_color': '#7F8C8D',
+    'cs_bg': '#D6EAF8',
+    'cs_text': '#154360',
+    'ms_bg': '#FDFEFE',
+    'ms_text': '#566573'
 }
 
 # ==============================================================================
-# 2. ENGINEERING CONSTANTS & UTILITIES
+# 2. UNIT CONVERSION & CONSTANTS
 # ==============================================================================
 class Units:
-    G = 9.80665
+    G = 9.80665  # m/s^2
     CM_TO_M = 0.01
-    KG_TO_N = G
-    KSC_TO_PA = 98066.5
+    KG_TO_N = G  # 1 kgf = 9.80665 N
+    KSC_TO_PA = 98066.5 
     KSC_TO_MPA = 0.0980665
 
 # ==============================================================================
-# 3. CRITERIA CHECK ENGINE (ACI 318 Logic)
+# 3. ENGINEERING LOGIC & VALIDATOR (New Logic Integrated)
 # ==============================================================================
+
 class DesignCriteriaValidator:
     """
-    คลาสสำหรับตรวจสอบเงื่อนไขการออกแบบตามมาตรฐาน ACI 318
-    แยกตรวจสอบระหว่าง DDM และ EFM
+    Validates design criteria according to ACI 318 for DDM and EFM.
     """
     def __init__(self, L1, L2, L1_l, L1_r, L2_t, L2_b, ll, dl, has_drop):
-        self.L1 = L1  # Total L1 (Analysis Direction)
-        self.L2 = L2  # Total L2 (Transverse)
-        self.L1_spans = [l for l in [L1_l, L1_r] if l > 0] # Filter 0 out (corner/edge)
+        self.L1 = L1
+        self.L2 = L2
+        self.L1_spans = [l for l in [L1_l, L1_r] if l > 0]
         self.L2_spans = [l for l in [L2_t, L2_b] if l > 0]
         self.ll = ll
         self.dl = dl
         self.has_drop = has_drop
 
     def check_ddm(self):
-        """ตรวจสอบเงื่อนไข Direct Design Method (DDM)"""
+        """Checks Direct Design Method (DDM) criteria."""
         status = True
         reasons = []
 
-        # 1. เช็ค Rectangular Ratio (L_long / L_short <= 2.0)
+        # 1. Rectangular Ratio (L_long / L_short <= 2.0)
         long_side = max(self.L1, self.L2)
         short_side = min(self.L1, self.L2)
         ratio = long_side / short_side if short_side > 0 else 0
         
         if ratio > 2.0:
             status = False
-            reasons.append(f"❌ **Panel Ratio:** อัตราส่วนด้านยาว/สั้น ({ratio:.2f}) > 2.0 (ACI 318 Limit)")
+            reasons.append(f"❌ **Panel Ratio:** Long/Short ({ratio:.2f}) > 2.0 (ACI Limit)")
         else:
             reasons.append(f"✅ **Panel Ratio:** {ratio:.2f} <= 2.0 (Pass)")
 
-        # 2. เช็ค Load Ratio (LL/DL <= 2.0)
+        # 2. Load Ratio (LL/DL <= 2.0)
         load_ratio = self.ll / self.dl if self.dl > 0 else 0
         if load_ratio > 2.0:
             status = False
-            reasons.append(f"❌ **Load Ratio:** Live Load / Dead Load ({load_ratio:.2f}) > 2.0")
+            reasons.append(f"❌ **Load Ratio:** LL/DL ({load_ratio:.2f}) > 2.0")
         else:
             reasons.append(f"✅ **Load Ratio:** {load_ratio:.2f} <= 2.0 (Pass)")
 
-        # 3. เช็คความต่างของช่วงเสา (Successive Span Length)
-        # Note: เช็คจาก L1_left และ L1_right (ถ้ามีทั้งคู่)
+        # 3. Successive Span Difference
         if len(self.L1_spans) == 2:
             l_max = max(self.L1_spans)
             l_min = min(self.L1_spans)
             diff_ratio = (l_max - l_min) / l_max
             if diff_ratio > 0.33:
                 status = False
-                reasons.append(f"❌ **Span Difference:** ความยาวช่วงเสาต่างกัน {diff_ratio*100:.1f}% > 33%")
+                reasons.append(f"❌ **Span Diff:** Difference {diff_ratio*100:.1f}% > 33%")
             else:
-                reasons.append(f"✅ **Span Difference:** ช่วงเสาใกล้เคียงกัน (Diff {diff_ratio*100:.1f}%)")
+                reasons.append(f"✅ **Span Diff:** Pass ({diff_ratio*100:.1f}%)")
         
-        # 4. General Warning for 3 Spans (Limitations of Single Strip Input)
-        reasons.append("ℹ️ **Note:** DDM ต้องการช่วงเสาต่อเนื่องอย่างน้อย 3 ช่วงในแต่ละทิศทาง (โปรดตรวจสอบภาพรวมอาคาร)")
-
+        reasons.append("ℹ️ **Note:** DDM requires at least 3 continuous spans.")
         return status, reasons
 
     def check_efm(self):
-        """ตรวจสอบเงื่อนไข Equivalent Frame Method (EFM)"""
-        # EFM ยืดหยุ่นกว่า DDM มาก ใช้ได้เกือบทุกกรณีถ้ายอมรับสมมติฐานการวิเคราะห์ได้
-        status = True
-        reasons = []
-        
-        reasons.append("✅ **General:** EFM สามารถใช้ได้ทั่วไป แม้โครงสร้างจะไม่เป็นสี่เหลี่ยมผืนผ้าสมบูรณ์")
-        reasons.append("✅ **Loads:** ไม่จำกัดอัตราส่วน LL/DL เหมือน DDM")
-        
-        return status, reasons
+        """Checks Equivalent Frame Method (EFM) criteria."""
+        return True, ["✅ **General:** EFM is applicable for this geometry.", 
+                      "✅ **Loads:** No specific restrictions on LL/DL ratio."]
 
-    def check_drop_panel_geometry(self, h_slab, h_drop, drop_w1, drop_w2, L1_l, L1_r, L2_t, L2_b):
-        """ตรวจสอบขนาด Drop Panel ตาม ACI"""
+    def check_drop_panel(self, h_slab, h_drop, drop_w1, drop_w2, L1_l, L1_r, L2_t, L2_b):
+        """Validates Drop Panel dimensions."""
         warnings = []
         if not self.has_drop:
             return warnings
 
-        # ความหนา Drop
-        min_h_drop = h_slab / 4
-        if h_drop < min_h_drop:
-            warnings.append(f"⚠️ **Drop Thickness:** {h_drop} cm < ขั้นต่ำ {min_h_drop:.2f} cm (t_slab/4)")
+        # Thickness
+        if h_drop < (h_slab / 4):
+            warnings.append(f"⚠️ **Drop Thickness:** {h_drop} cm < Min {h_slab/4:.2f} cm (h_slab/4)")
 
-        # ระยะยื่น (Projection)
-        # เช็ค L1 Direction
+        # Extension L1
         max_L1 = max(L1_l, L1_r) if (L1_l + L1_r) > 0 else 1.0
-        req_proj_L1 = max_L1 / 6
-        if (drop_w1 / 2) < req_proj_L1:
-            warnings.append(f"⚠️ **Drop Width L1:** ระยะยื่น {drop_w1/2:.2f} m < ขั้นต่ำ {req_proj_L1:.2f} m (L1/6)")
+        min_ext_L1 = max_L1 / 6
+        if (drop_w1 / 2) < min_ext_L1:
+            warnings.append(f"⚠️ **Drop Width L1:** Extension {drop_w1/2:.2f} m < Min {min_ext_L1:.2f} m (L1/6)")
 
-        # เช็ค L2 Direction
+        # Extension L2
         max_L2 = max(L2_t, L2_b) if (L2_t + L2_b) > 0 else 1.0
-        req_proj_L2 = max_L2 / 6
-        if (drop_w2 / 2) < req_proj_L2:
-            warnings.append(f"⚠️ **Drop Width L2:** ระยะยื่น {drop_w2/2:.2f} m < ขั้นต่ำ {req_proj_L2:.2f} m (L2/6)")
+        min_ext_L2 = max_L2 / 6
+        if (drop_w2 / 2) < min_ext_L2:
+            warnings.append(f"⚠️ **Drop Width L2:** Extension {drop_w2/2:.2f} m < Min {min_ext_L2:.2f} m (L2/6)")
             
         return warnings
 
-# ==============================================================================
-# 4. CALCULATION ENGINE (Preparation)
-# ==============================================================================
-def prepare_data(
+def prepare_calculation_data(
     h_slab_cm, h_drop_cm, has_drop, 
     c1_cm, c2_cm, drop_w2,
     L1_l, L1_r, L2_t, L2_b,
@@ -152,7 +142,7 @@ def prepare_data(
     dl_kgm2, ll_kgm2,
     auto_sw, lf_dl, lf_ll
 ):
-    # Geometry Conversion
+    # Geometry
     h_s = h_slab_cm * Units.CM_TO_M
     h_d = (h_slab_cm + h_drop_cm) * Units.CM_TO_M if has_drop else h_s
     c1 = c1_cm * Units.CM_TO_M
@@ -162,105 +152,164 @@ def prepare_data(
     L2 = L2_t + L2_b
     Ln = L1 - c1
     
-    # Material
+    # Materials
     fc_pa = fc_ksc * Units.KSC_TO_PA
     Ec_pa = (4700 * np.sqrt(fc_ksc * Units.KSC_TO_MPA)) * 1e6
     fy_ksc = 3000 if fy_grade == "SD30" else (4000 if fy_grade == "SD40" else 5000)
-    
-    # Load Calculation
-    density_conc = 2400 # kg/m3
-    sw_pa = h_s * density_conc * Units.G if auto_sw else 0.0
+    fy_pa = fy_ksc * Units.KSC_TO_PA
+
+    # Loads
+    density_conc_kg = 2400
+    sw_pa = h_s * density_conc_kg * Units.G if auto_sw else 0.0
     sdl_pa = dl_kgm2 * Units.KG_TO_N
     ll_pa = ll_kgm2 * Units.KG_TO_N
     
     w_dead_pa = sw_pa + sdl_pa
     wu_pa = (lf_dl * w_dead_pa) + (lf_ll * ll_pa)
-    
-    # Stiffness Prep (Inertia)
-    Ig_slab = (L2 * (h_s**3)) / 12
-    # Simple Gross Inertia approximation for display
-    Ig_drop = (b_drop*(h_d**3))/12 + ((L2-b_drop)*(h_s**3))/12 if has_drop else Ig_slab
 
     return {
-        "geom": {"L1": L1, "L2": L2, "Ln": Ln, "h_s": h_s},
-        "load": {"sw": sw_pa, "sdl": sdl_pa, "ll": ll_pa, "wu": wu_pa, "w_dead": w_dead_pa},
-        "mat": {"fc": fc_pa, "Ec": Ec_pa, "fy": fy_ksc},
-        "raw": {"dl_kgm2": dl_kgm2, "ll_kgm2": ll_kgm2} # store for validator
+        "geom": {"L1": L1, "L2": L2, "Ln": Ln, "c1": c1, "c2": c2, "h_s": h_s, "h_d": h_d, "b_drop": b_drop},
+        "mat": {"Ec_pa": Ec_pa, "fc_pa": fc_pa, "fy_pa": fy_pa},
+        "loads": {"wu_pa": wu_pa, "sw_pa": sw_pa, "sdl_pa": sdl_pa, "ll_pa": ll_pa, "w_dead": w_dead_pa},
+        "raw": {"dl": dl_kgm2, "ll": ll_kgm2}
     }
 
 # ==============================================================================
-# 5. VISUALIZATION ENGINE (Professional Drawings)
+# 4. VISUALIZATION SYSTEM (Original High-Detail Restored)
 # ==============================================================================
 
+def draw_dim_line(ax, start, end, text, offset=0.5, axis='x'):
+    """Helper function for professional engineering dimension lines"""
+    arrow_style = dict(arrowstyle='<|-|>', color=COLORS['dim_line'], linewidth=1.0, shrinkA=0, shrinkB=0)
+    ext_line_style = dict(color=COLORS['dim_line'], linewidth=0.5, linestyle='-')
+    
+    if axis == 'x':
+        # Dimension Line
+        ax.annotate('', xy=(start[0], start[1]-offset), xytext=(end[0], end[1]-offset), arrowprops=arrow_style)
+        # Extension Lines
+        ax.plot([start[0], start[0]], [start[1]-0.1, start[1]-offset-0.2], **ext_line_style)
+        ax.plot([end[0], end[0]], [end[1]-0.1, end[1]-offset-0.2], **ext_line_style)
+        # Text
+        ax.text((start[0]+end[0])/2, start[1]-offset-0.3, text, ha='center', va='top', color=COLORS['dim_line'])
+    elif axis == 'y':
+        # Dimension Line
+        ax.annotate('', xy=(start[0]-offset, start[1]), xytext=(end[0]-offset, end[1]), arrowprops=arrow_style)
+        # Extension Lines
+        ax.plot([start[0]-0.1, start[0]-offset-0.2], [start[1], start[1]], **ext_line_style)
+        ax.plot([end[0]-0.1, end[0]-offset-0.2], [end[1], end[1]], **ext_line_style)
+        # Text
+        ax.text(start[0]-offset-0.3, (start[1]+end[1])/2, text, ha='right', va='center', rotation=90, color=COLORS['dim_line'])
+
 def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1, d_w2):
-    """ Plan View with Column Strip / Middle Strip Labeling """
+    """
+    High-fidelity Plan View with Zone Labeling and Dimensions
+    """
     fig, ax = plt.subplots(figsize=(12, 10))
     
+    # 1. Config & Scales
     c1_m = c1_cm / 100
     c2_m = c2_cm / 100
     
-    # Boundaries
+    # Boundary Calculation
     slab_L = c1_m/2 if col_loc == "Corner Column" else L1_l
     slab_R = L1_r
     slab_T = L2_t
     slab_B = c2_m/2 if col_loc in ["Edge Column", "Corner Column"] else L2_b
     
-    # 1. Base Layer (Middle Strip)
+    # 2. Draw Zones & Labels
+    # Base Layer (Middle Strip)
     ax.add_patch(patches.Rectangle((-slab_L, -slab_B), slab_L + slab_R, slab_B + slab_T,
-                                   facecolor='white', edgecolor='gray', linewidth=1))
+                                   facecolor=COLORS['ms_bg'], edgecolor='gray', linewidth=1, zorder=0))
     
-    # 2. Column Strip Layer
+    # Column Strip Layer
     min_span = min(L1_l + L1_r, L2_t + L2_b)
     cs_width = 0.25 * min_span
     cs_top = min(cs_width, slab_T)
     cs_bot = min(cs_width, slab_B)
     
-    # Draw CS Rect (Light Blue Area)
+    # Draw CS Rect
     ax.add_patch(patches.Rectangle((-slab_L, -cs_bot), slab_L + slab_R, cs_top + cs_bot,
-                                   facecolor='#D6EAF8', edgecolor='none', alpha=0.5))
+                                   facecolor=COLORS['cs_bg'], edgecolor='none', alpha=0.6, zorder=1))
     
-    # Strip Labels
-    ax.text(slab_R * 0.6, 0, "COLUMN STRIP", color='#2874A6', fontweight='bold', ha='center', va='center', fontsize=10)
-    if cs_top < slab_T:
-        ax.text(slab_R * 0.6, (cs_top + slab_T)/2, "MIDDLE STRIP", color='gray', ha='center', va='center', fontsize=9)
-    if cs_bot < slab_B:
-        ax.text(slab_R * 0.6, -(cs_bot + slab_B)/2, "MIDDLE STRIP", color='gray', ha='center', va='center', fontsize=9)
+    # Dashed Separators
+    line_props = dict(color=COLORS['strip_line'], linestyle='--', linewidth=0.8, alpha=0.7)
+    if cs_top < slab_T: ax.axhline(y=cs_top, **line_props)
+    if cs_bot < slab_B: ax.axhline(y=-cs_bot, **line_props)
 
-    # 3. Drop Panel
+    # Labeling Zones
+    text_x_pos = slab_R * 0.6
+    ax.text(text_x_pos, 0, "COLUMN STRIP", color=COLORS['cs_text'], 
+            fontsize=10, fontweight='bold', ha='center', va='center',
+            bbox=dict(facecolor='white', edgecolor='none', alpha=0.3, pad=1))
+    
+    if cs_top < slab_T:
+        ax.text(text_x_pos, (cs_top + slab_T) / 2, "MIDDLE STRIP", color=COLORS['ms_text'], 
+                fontsize=9, fontweight='bold', ha='center', va='center')    
+    if cs_bot < slab_B:
+        ax.text(text_x_pos, -(cs_bot + slab_B) / 2, "MIDDLE STRIP", color=COLORS['ms_text'], 
+                fontsize=9, fontweight='bold', ha='center', va='center')
+
+    # 3. Drop Panel & Dimensions
     if has_drop:
         ax.add_patch(patches.Rectangle((-d_w1/2, -d_w2/2), d_w1, d_w2, 
-                                       facecolor='none', edgecolor=COLORS['drop_panel'], 
-                                       linestyle='--', linewidth=1.5))
-        # Drop Dims
-        ax.text(d_w1/2, -d_w2/2 - 0.2, f"Drop {d_w1:.2f}x{d_w2:.2f}m", color=COLORS['drop_panel'], ha='center', fontsize=8)
+                                       facecolor='none', edgecolor=COLORS['drop_panel_plan'], 
+                                       linestyle='-', linewidth=2, zorder=5))
+        # Internal Dimensions
+        ax.text(0, d_w2/2 + 0.15, f"Drop W1 = {d_w1:.2f}m", color=COLORS['drop_panel_plan'], fontsize=8, fontweight='bold', ha='center')
+        ax.text(d_w1/2 + 0.15, 0, f"Drop W2\n{d_w2:.2f}m", color=COLORS['drop_panel_plan'], fontsize=8, fontweight='bold', va='center')
 
     # 4. Columns
-    # Center Column
+    # Main Column
     ax.add_patch(patches.Rectangle((-c1_m/2, -c2_m/2), c1_m, c2_m, 
-                                   facecolor=COLORS['column'], edgecolor='black', hatch='//'))
-    
-    # Ghost Columns (Context)
-    ghost_props = dict(facecolor='white', edgecolor='gray', linestyle=':', linewidth=1)
+                                   facecolor=COLORS['column'], edgecolor='black', hatch='//', zorder=10))
+    # Ghost Columns
+    ghost_props = dict(facecolor='white', edgecolor=COLORS['concrete_cut'], linestyle='--', linewidth=1.5, zorder=4)
     if L1_r > 0: ax.add_patch(patches.Rectangle((L1_r - c1_m/2, -c2_m/2), c1_m, c2_m, **ghost_props))
     if L1_l > 0 and col_loc != "Corner Column": ax.add_patch(patches.Rectangle((-L1_l - c1_m/2, -c2_m/2), c1_m, c2_m, **ghost_props))
-    
-    # 5. Dimensions
-    def draw_dim(x1, y1, x2, y2, text, offset=0.5):
-        ax.annotate('', xy=(x1, y1+offset), xytext=(x2, y2+offset),
-                    arrowprops=dict(arrowstyle='<|-|>', color=COLORS['dim_line'], lw=0.8))
-        ax.text((x1+x2)/2, y1+offset+0.1, text, ha='center', va='bottom', color=COLORS['dim_line'], fontweight='bold')
-        
-    draw_dim(0, -slab_B, L1_r, -slab_B, f"L1(R)={L1_r:.2f}m", offset=-0.5)
-    if L1_l > 0 and col_loc != "Corner Column":
-        draw_dim(-L1_l, -slab_B, 0, -slab_B, f"L1(L)={L1_l:.2f}m", offset=-0.5)
+    if L2_t > 0: ax.add_patch(patches.Rectangle((-c1_m/2, L2_t - c2_m/2), c1_m, c2_m, **ghost_props))
+    if L2_b > 0 and col_loc == "Interior Column": ax.add_patch(patches.Rectangle((-c1_m/2, -L2_b - c2_m/2), c1_m, c2_m, **ghost_props))
 
+    # 5. External Dimensions
+    def draw_ext_dim(x1, y1, x2, y2, text, offset):
+        mid_x, mid_y = (x1 + x2)/2, (y1 + y2)/2
+        if x1 == x2: # Vertical
+            x1 += offset; x2 += offset; mid_x += offset
+            rot = 90; ha, va = ('right', 'center') if offset < 0 else ('left', 'center')
+            ax.plot([x1-0.1, x1+0.1], [y1, y1], color=COLORS['dim_line'], lw=0.5)
+            ax.plot([x2-0.1, x2+0.1], [y2, y2], color=COLORS['dim_line'], lw=0.5)
+        else: # Horizontal
+            y1 += offset; y2 += offset; mid_y += offset
+            rot = 0; ha, va = ('center', 'top') if offset < 0 else ('center', 'bottom')
+            ax.plot([x1, x1], [y1-0.1, y1+0.1], color=COLORS['dim_line'], lw=0.5)
+            ax.plot([x2, x2], [y2-0.1, y2+0.1], color=COLORS['dim_line'], lw=0.5)
+            
+        ax.annotate('', xy=(x1, y1), xytext=(x2, y2), arrowprops=dict(arrowstyle='<|-|>', color=COLORS['dim_line'], lw=0.8))
+        ax.text(mid_x, mid_y, text, rotation=rot, ha=ha, va=va, fontsize=9, color=COLORS['dim_line'], fontweight='bold',
+                bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, pad=1))
+
+    m_x = -slab_L - 0.8
+    m_y = -slab_B - 0.8
+    
+    if L1_l > 0 and col_loc != "Corner Column": draw_ext_dim(-L1_l, -slab_B, 0, -slab_B, f"L1(L)={L1_l:.2f}", m_y - (-slab_B))
+    draw_ext_dim(0, -slab_B, L1_r, -slab_B, f"L1(R)={L1_r:.2f}", m_y - (-slab_B))
+    draw_ext_dim(-slab_L, 0, -slab_L, L2_t, f"L2(T)={L2_t:.2f}", m_x - (-slab_L))
+    if L2_b > 0 and col_loc == "Interior Column": draw_ext_dim(-slab_L, -L2_b, -slab_L, 0, f"L2(B)={L2_b:.2f}", m_x - (-slab_L))
+
+    # Final Config
+    ax.axvline(0, color='red', linestyle='-.', lw=0.5, alpha=0.5)
+    ax.axhline(0, color='red', linestyle='-.', lw=0.5, alpha=0.5)
+    ax.set_title(f"STRUCTURAL LAYOUT: {col_loc.upper()}", fontsize=12, pad=20, fontweight='bold', color='#566573')
+    ax.set_xlim(-slab_L - 2.0, slab_R + 1.0)
+    ax.set_ylim(-slab_B - 2.0, slab_T + 1.0)
     ax.set_aspect('equal')
     ax.axis('off')
-    ax.set_title(f"STRUCTURAL LAYOUT: {col_loc.upper()}", pad=15, fontweight='bold')
+    
     return fig
 
-def draw_elevation_view(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm):
-    """ Section View (True Scale) with Side Dimensions """
+def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm):
+    """
+    High-fidelity Section View with Hatching, Break Lines, and Side Dims
+    """
     fig, ax = plt.subplots(figsize=(10, 6))
     
     s_m = h_slab_cm / 100
@@ -268,202 +317,230 @@ def draw_elevation_view(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_
     c_m = c1_cm / 100
     d_w = drop_w1 if has_drop else 0
     
-    view_w = 1.5
+    view_width = 1.5
+    view_top = 0.8
+    view_bot = -(s_m + d_m + 0.8)
     
-    # 1. Structure
-    # Column
-    ax.add_patch(patches.Rectangle((-c_m/2, -3.5), c_m, 4.5, facecolor='white', edgecolor='black'))
+    col_concrete = '#ECF0F1'
+    col_hatch = '#BDC3C7'
+    col_dim = '#2C3E50'
     
+    # Helper: Side Dimension with Extension Lines
+    def draw_side_dim(y_start, y_end, x_loc, label, side='left'):
+        # Dim Line
+        ax.annotate('', xy=(x_loc, y_start), xytext=(x_loc, y_end),
+                    arrowprops=dict(arrowstyle='<|-|>', color=col_dim, linewidth=0.8, shrinkA=0, shrinkB=0))
+        # Extension
+        ext_len = 0.1
+        ax.plot([x_loc - ext_len/2, x_loc + ext_len/2], [y_start, y_start], color=col_dim, linewidth=0.6)
+        ax.plot([x_loc - ext_len/2, x_loc + ext_len/2], [y_end, y_end], color=col_dim, linewidth=0.6)
+        # Connector
+        connect_x = -view_width if side == 'left' else c_m/2
+        ax.plot([connect_x, x_loc], [y_start, y_start], color=col_dim, linestyle=':', linewidth=0.5, alpha=0.5)
+        ax.plot([connect_x, x_loc], [y_end, y_end], color=col_dim, linestyle=':', linewidth=0.5, alpha=0.5)
+        # Text
+        mid_y = (y_start + y_end) / 2
+        text_offset = -0.15 if side == 'left' else 0.15
+        ax.text(x_loc + text_offset, mid_y, label, ha='center', va='center', rotation=90, 
+                fontsize=9, color=col_dim, fontweight='bold',
+                bbox=dict(facecolor='white', edgecolor='none', alpha=0.7, pad=1))
+
+    # 1. Structure (Central Zone)
+    # Column Upper
+    ax.add_patch(patches.Rectangle((-c_m/2, 0), c_m, view_top, facecolor='white', edgecolor='black', linewidth=1))
+    # Column Lower
+    bot_struct = -(s_m + d_m)
+    ax.add_patch(patches.Rectangle((-c_m/2, view_bot), c_m, abs(view_bot - bot_struct), facecolor='white', edgecolor='black', linewidth=1))
+
     # Slab
-    ax.add_patch(patches.Rectangle((-view_w, -s_m), view_w*2, s_m, 
-                                   facecolor=COLORS['concrete_cut'], edgecolor='black', hatch='///'))
-    
-    # Drop
+    ax.add_patch(patches.Rectangle((-view_width, -s_m), view_width*2, s_m, facecolor=col_concrete, edgecolor='black', linewidth=1, zorder=5))
+    ax.add_patch(patches.Rectangle((-view_width, -s_m), view_width*2, s_m, fill=False, edgecolor=col_hatch, hatch='///', linewidth=0, zorder=6))
+
+    # Drop Panel
     if has_drop:
-        ax.add_patch(patches.Rectangle((-d_w/2, -(s_m+d_m)), d_w, d_m, 
-                                       facecolor=COLORS['concrete_cut'], edgecolor='black', hatch='///'))
+        ax.add_patch(patches.Rectangle((-d_w/2, bot_struct), d_w, d_m, facecolor=col_concrete, edgecolor='black', linewidth=1, zorder=5))
+        ax.add_patch(patches.Rectangle((-d_w/2, bot_struct), d_w, d_m, fill=False, edgecolor=col_hatch, hatch='///', linewidth=0, zorder=6))
 
-    # 2. Dimensions (Side)
-    def draw_side_dim(y1, y2, x_pos, text):
-        ax.annotate('', xy=(x_pos, y1), xytext=(x_pos, y2),
-                    arrowprops=dict(arrowstyle='<|-|>', color=COLORS['dim_line']))
-        ax.plot([x_pos-0.05, x_pos+0.05], [y1, y1], color=COLORS['dim_line']) # Tick
-        ax.plot([x_pos-0.05, x_pos+0.05], [y2, y2], color=COLORS['dim_line']) # Tick
-        ax.text(x_pos+0.1, (y1+y2)/2, text, rotation=90, va='center', color=COLORS['dim_line'])
+    # Break Lines
+    def draw_break(x, y, w):
+        ax.plot([x-w/2, x-w/4, x+w/4, x+w/2], [y, y-0.05, y+0.05, y], color='black', linewidth=1)
+    draw_break(0, view_top, c_m)
+    draw_break(0, view_bot, c_m)
 
-    # Height Dims
-    draw_side_dim(0, 1.0, c_m/2 + 0.5, f"Upper")
-    draw_side_dim(-(s_m+d_m), -2.0, c_m/2 + 0.5, f"Lower")
-    
-    # Thickness Dims (Left)
-    draw_side_dim(0, -s_m, -view_w - 0.3, f"Slab {h_slab_cm}cm")
+    # 2. Dimensions
+    # Left: Thickness
+    dim_x_left = -view_width - 0.5
+    draw_side_dim(0, -s_m, dim_x_left, f"Slab {h_slab_cm} cm", side='left')
     if has_drop:
-        draw_side_dim(-s_m, -(s_m+d_m), -view_w - 0.3, f"Drop {h_drop_cm}cm")
+        draw_side_dim(-s_m, -(s_m+d_m), dim_x_left - 0.4, f"Drop {h_drop_cm} cm", side='left')
 
-    # Center Line
-    ax.axhline(0, color='blue', linestyle='-.', lw=0.5, label='T.O.Slab')
-    ax.text(-view_w, 0.05, "▼ T.O.S (+0.00)", color='blue', fontsize=8)
+    # Right: Heights
+    dim_x_right = c_m/2 + 0.8
+    draw_side_dim(0, view_top, dim_x_right, f"Upper H. {h_up:.2f} m", side='right')
+    draw_side_dim(-(s_m+d_m), view_bot, dim_x_right, f"Lower H. {h_lo:.2f} m", side='right')
 
-    ax.set_xlim(-view_w - 1, view_w + 1)
-    ax.set_ylim(-2.5, 1.5)
+    # Bottom: Drop Width
+    if has_drop:
+        dim_y_bot = view_bot - 0.2
+        ax.annotate('', xy=(-d_w/2, dim_y_bot), xytext=(d_w/2, dim_y_bot), arrowprops=dict(arrowstyle='<|-|>', color=col_dim, linewidth=0.8))
+        ax.text(0, dim_y_bot - 0.15, f"Drop Width {drop_w1:.2f} m", ha='center', color=col_dim, fontsize=9)
+        ax.plot([-d_w/2, -d_w/2], [-(s_m+d_m), dim_y_bot], linestyle=':', color='gray', linewidth=0.5)
+        ax.plot([d_w/2, d_w/2], [-(s_m+d_m), dim_y_bot], linestyle=':', color='gray', linewidth=0.5)
+
+    # T.O.S Marker
+    ax.text(-view_width + 0.2, 0.05, "▼ T.O. Slab (+0.00)", color='blue', fontsize=8, fontweight='bold')
+    ax.axhline(0, color='blue', linestyle='-.', linewidth=0.5, alpha=0.5)
+
     ax.set_aspect('equal')
+    ax.set_xlim(-view_width - 1.2, view_width + 1.2)
+    ax.set_ylim(view_bot - 0.5, view_top + 0.2)
     ax.axis('off')
-    ax.set_title("SECTION DETAIL A-A", pad=10, fontweight='bold')
+    ax.set_title("SECTION DETAIL (TRUE SCALE)", fontsize=10, color='gray', pad=10)
     return fig
 
 # ==============================================================================
-# 6. MAIN APPLICATION UI
+# 5. MAIN APPLICATION INTERFACE
 # ==============================================================================
-st.title("🏗️ Flat Slab Design: EFM & DDM Analysis")
+
+st.title("🏗️ Flat Slab Design: Equivalent Frame Method (EFM)")
 st.markdown("---")
 
-# Session State for future expansion
-if 'col_loc' not in st.session_state: st.session_state['col_loc'] = "Interior Column"
+if 'col_loc' not in st.session_state:
+    st.session_state['col_loc'] = "Interior Column"
 
-# --- SIDEBAR: METHOD ASSESSMENT REPORT (NEW FEATURE) ---
-st.sidebar.header("📊 Method Eligibility Report")
-st.sidebar.markdown("ผลการประเมินเบื้องต้นจาก Input ปัจจุบัน:")
-
-# Placeholder for dynamic status
+# --- Sidebar Report ---
+st.sidebar.header("📊 Design Report")
 status_container = st.sidebar.container()
 
-# --- MAIN INPUT AREA ---
-tab1, tab2 = st.tabs(["📝 Input Parameters & Criteria Check", "📘 Engineering Theory"])
+tab1, tab2 = st.tabs(["📝 Input Parameters", "📘 Engineering Theory"])
 
 with tab1:
     col_input, col_viz = st.columns([1.2, 1.4])
-    
+
     with col_input:
-        st.subheader("1. Project & Materials")
-        c1, c2 = st.columns(2)
-        with c1: fc = st.selectbox("Concrete f'c (ksc)", [240, 280, 320, 350, 400], index=1)
-        with c2: fy = st.selectbox("Rebar fy", ["SD30", "SD40", "SD50"], index=1)
+        # 1. Materials
+        st.subheader("1. Materials")
+        c1_mat, c2_mat = st.columns(2)
+        with c1_mat: fc = st.selectbox("Concrete f'c (ksc)", [240, 280, 320, 350, 400], index=1)
+        with c2_mat: fy = st.selectbox("Steel Grade (fy)", ["SD30", "SD40", "SD50"], index=1)
+
+        # 2. Loads
+        st.subheader("2. Loads & Factors")
+        lf_col1, lf_col2 = st.columns(2)
+        with lf_col1: lf_dl = st.number_input("DL Factor", value=1.2, step=0.1, format="%.2f")
+        with lf_col2: lf_ll = st.number_input("LL Factor", value=1.6, step=0.1, format="%.2f")
         
-        st.subheader("2. Loading Condition")
-        l1, l2 = st.columns(2)
-        with l1: lf_dl = st.number_input("DL Factor", 1.2, 1.6, 1.4, 0.1)
-        with l2: lf_ll = st.number_input("LL Factor", 1.6, 2.0, 1.7, 0.1)
-        
-        auto_sw = st.checkbox("Include Self-Weight automatically", True)
-        dl_label = "Superimposed DL (SDL) [kg/m²]" if auto_sw else "Total Dead Load [kg/m²]"
-        dl_val = st.number_input(dl_label, value=100.0)
-        ll_val = st.number_input("Live Load (LL) [kg/m²]", value=200.0)
-        
+        auto_sw = st.checkbox("✅ Auto-calculate Self-weight (Concrete 2400 kg/m³)", value=True)
+        dl_label = "Superimposed Dead Load (SDL) [kg/m²]" if auto_sw else "Total Dead Load (SW + SDL) [kg/m²]"
+        dl = st.number_input(dl_label, value=100, step=10)
+        ll = st.number_input("Live Load (LL) [kg/m²]", value=200, step=50)
+
         st.divider()
-        
-        st.subheader("3. Geometry & Dimensions")
-        col_location = st.selectbox("Column Strip Location", ["Interior Column", "Edge Column", "Corner Column"])
+
+        # 3. Geometry
+        st.subheader("3. Geometry")
+        col_location = st.selectbox("Column Location", ["Interior Column", "Edge Column", "Corner Column"])
         is_corner = (col_location == "Corner Column")
+        is_edge = (col_location == "Edge Column")
         
-        # Span Inputs
-        sp1, sp2 = st.columns(2)
-        with sp1: 
-            L1_l = st.number_input("Span L1 Left (m)", value=0.0 if is_corner else 5.0, disabled=is_corner)
-        with sp2: 
-            L1_r = st.number_input("Span L1 Right (m)", value=5.0)
+        col_l1a, col_l1b = st.columns(2)
+        with col_l1a:
+            l1_l_val = 0.0 if is_corner else 4.0
+            L1_l = st.number_input("L1 - Left Span (m)", value=l1_l_val, disabled=is_corner)
+        with col_l1b:
+            L1_r = st.number_input("L1 - Right Span (m)", value=4.0)
             
-        sp3, sp4 = st.columns(2)
-        with sp3: L2_t = st.number_input("Span L2 Top (m)", value=4.0)
-        with sp4: L2_b = st.number_input("Span L2 Bottom (m)", value=4.0)
-        
-        # Member Sizes
-        h_slab = st.number_input("Slab Thickness (cm)", value=20.0)
-        cz1, cz2 = st.columns(2)
-        with cz1: c1_size = st.number_input("Col c1 (Analysis Dir.) [cm]", value=50.0)
-        with cz2: c2_size = st.number_input("Col c2 (Transverse) [cm]", value=50.0)
-        
-        # Drop Panel
-        has_drop = st.checkbox("Add Drop Panel", False)
-        h_drop, dw1, dw2 = 0.0, 0.0, 0.0
+        col_l2a, col_l2b = st.columns(2)
+        with col_l2a:
+            L2_t = st.number_input("L2 - Top Half (m)", value=4.0)
+        with col_l2b:
+            l2_b_val = 0.0 if (is_edge or is_corner) else 4.0
+            L2_b = st.number_input("L2 - Bottom Half (m)", value=l2_b_val, disabled=(is_edge or is_corner))
+
+        h_slab_cm = st.number_input("Slab Thickness (cm)", value=20.0, step=1.0)
+        col_sz1, col_sz2 = st.columns(2)
+        with col_sz1: c1_cm = st.number_input("Column c1 (cm) [Analysis Dir]", value=50.0)
+        with col_sz2: c2_cm = st.number_input("Column c2 (cm) [Transverse]", value=50.0)
+
+        has_drop = st.checkbox("Include Drop Panel", value=False)
+        h_drop_cm, drop_w1, drop_w2 = 0.0, 0.0, 0.0
         if has_drop:
-            dp1, dp2, dp3 = st.columns(3)
-            with dp1: h_drop = st.number_input("Drop Depth (cm)", value=10.0)
-            with dp2: dw1 = st.number_input("Drop Width L1 (m)", value=2.5)
-            with dp3: dw2 = st.number_input("Drop Width L2 (m)", value=2.5)
+            st.caption("Drop Panel Settings")
+            d_col1, d_col2, d_col3 = st.columns(3)
+            with d_col1: h_drop_cm = st.number_input("Drop Depth (cm)", value=10.0)
+            with d_col2: drop_w1 = st.number_input("Drop Width L1 (m)", value=2.5)
+            with d_col3: drop_w2 = st.number_input("Drop Width L2 (m)", value=2.5)
 
-        # Storey Height
-        h_story = st.number_input("Storey Height (m)", value=3.0)
+        h_up = st.number_input("Upper Storey Height (m)", value=3.0)
+        h_lo = st.number_input("Lower Storey Height (m)", value=3.0)
 
-        # --- RUN VALIDATION & CALCULATIONS ---
-        # 1. Prepare Data
-        data = prepare_data(
-            h_slab, h_drop, has_drop, c1_size, c2_size, dw2,
-            L1_l, L1_r, L2_t, L2_b, fc, fy, dl_val, ll_val, auto_sw, lf_dl, lf_ll
+        # --- Calculation & Validation ---
+        calc_obj = prepare_calculation_data(
+            h_slab_cm, h_drop_cm, has_drop, c1_cm, c2_cm, drop_w2,
+            L1_l, L1_r, L2_t, L2_b, fc, fy, dl, ll, auto_sw, lf_dl, lf_ll
         )
-        
-        # 2. Run Criteria Checks (THE NEW PART)
+
         validator = DesignCriteriaValidator(
-            data['geom']['L1'], data['geom']['L2'], 
-            L1_l, L1_r, L2_t, L2_b,
-            data['raw']['ll_kgm2'], 
-            (data['load']['sw'] + data['load']['sdl'])/Units.G, # Total DL for ratio check
-            has_drop
+            calc_obj['geom']['L1'], calc_obj['geom']['L2'], L1_l, L1_r, L2_t, L2_b,
+            ll, (calc_obj['loads']['w_dead'] / Units.G), has_drop
         )
-        
+
         ddm_ok, ddm_reasons = validator.check_ddm()
         efm_ok, efm_reasons = validator.check_efm()
-        drop_warnings = validator.check_drop_panel_geometry(h_slab, h_drop, dw1, dw2, L1_l, L1_r, L2_t, L2_b)
+        drop_warnings = validator.check_drop_panel(h_slab_cm, h_drop_cm, drop_w1, drop_w2, L1_l, L1_r, L2_t, L2_b)
 
-        # 3. Update Sidebar with Results
+        # Sidebar Update
         with status_container:
-            # DDM Status
-            if ddm_ok:
-                st.success("✅ **DDM:** สามารถใช้วิธี DDM ได้")
-            else:
-                st.error("❌ **DDM:** ไม่แนะนำให้ใช้ (ดูรายละเอียด)")
-            
-            # EFM Status
-            st.info("✅ **EFM:** แนะนำให้ใช้ (ครอบคลุมกว่า)")
+            if ddm_ok: st.success("✅ **DDM:** Valid")
+            else: st.error("❌ **DDM:** Invalid")
+            st.info("✅ **EFM:** Valid")
 
-    # --- VISUALIZATION & DETAILED CHECK RESULTS ---
     with col_viz:
-        st.subheader("👁️ Geometry Visualization")
+        st.subheader("👁️ Visualization & Analysis")
+        v_tab1, v_tab2 = st.tabs(["📐 Plan View", "🔍 True-Scale Section"])
         
-        # Tabs for Visuals
-        v1, v2 = st.tabs(["Plan View", "Section View"])
-        with v1:
-            st.pyplot(draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_size, c2_size, col_location, has_drop, dw1, dw2))
-        with v2:
-            st.pyplot(draw_elevation_view(h_story, h_story, has_drop, h_drop, dw1, c1_size, h_slab))
-
-        # --- CRITERIA DETAIL BOX (IMPORTANT UPDATE) ---
-        st.markdown("### 📋 Design Criteria Assessment")
+        with v_tab1:
+            fig_plan = draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_location, has_drop, drop_w1, drop_w2)
+            st.pyplot(fig_plan)
         
-        # Drop Panel Warnings
+        with v_tab2:
+            fig_elev = draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm)
+            st.pyplot(fig_elev)
+            
+        # Analysis Report (Merged)
+        st.markdown("### 📋 Analysis Results")
+        
         if drop_warnings:
-            st.warning("⚠️ **Drop Panel Geometry Issues:**")
+            st.warning("**⚠️ Drop Panel Geometry Warnings:**")
             for w in drop_warnings: st.write(f"- {w}")
-        
-        # Method Expanders
+
         with st.expander(f"Direct Design Method (DDM) Criteria [{'PASS' if ddm_ok else 'FAIL'}]", expanded=not ddm_ok):
-            for r in ddm_reasons:
-                st.markdown(r)
-        
-        with st.expander("Equivalent Frame Method (EFM) Criteria [PASS]", expanded=False):
-            for r in efm_reasons:
-                st.markdown(r)
-                
+            for r in ddm_reasons: st.markdown(r)
+            
+        with st.expander("Equivalent Frame Method (EFM) Criteria", expanded=False):
+            for r in efm_reasons: st.markdown(r)
+
         # Load Summary
+        loads = calc_obj['loads']
         st.info(f"""
-        **Load Summary:**
-        - $w_{{DL}} = {(data['load']['w_dead']/Units.G):.1f}$ kg/m²
-        - $w_{{LL}} = {(data['load']['ll']/Units.G):.1f}$ kg/m²
-        - **Design Load ($w_u$): {(data['load']['wu']/Units.G):.1f} kg/m²**
+        **Design Load Summary:**
+        - Total DL: `{loads['w_dead']/Units.G:.1f}` kg/m²
+        - Live Load: `{loads['ll_pa']/Units.G:.1f}` kg/m²
+        - **Factored Load ($w_u$):** `{loads['wu_pa']/Units.G:.1f}` kg/m²
         """)
 
 with tab2:
-    st.header("📘 Engineering Theory: DDM vs EFM")
+    st.header("📘 Engineering Theory")
     st.markdown("""
-    ### 1. Direct Design Method (DDM) Limitations
-    วิธี DDM เป็นวิธีอย่างง่าย (Approximate Method) ที่ใช้สัมประสิทธิ์โมเมนต์ ($\alpha$) ได้เลย แต่มีข้อจำกัดเคร่งครัดตาม ACI 318:
-    * ต้องมีช่วงเสาต่อเนื่องอย่างน้อย 3 ช่วงในทิศทางที่พิจารณา
-    * แผ่นพื้นต้องเป็นรูปสี่เหลี่ยมผืนผ้า โดยอัตราส่วนด้านยาว/ด้านสั้น $\le 2.0$
-    * ความยาวช่วงเสาที่ติดกันต้องต่างกันไม่เกิน 1/3 ของช่วงยาว
-    * อัตราส่วน Live Load / Dead Load ต้องไม่เกิน 2.0 (Unfactored)
-    
+    ### 1. Direct Design Method (DDM)
+    Approximate method permissible if:
+    - Minimum 3 continuous spans.
+    - Rectangular panels with aspect ratio $\le 2.0$.
+    - Successive span lengths differ by $\le 33\%$.
+    - Unfactored LL/DL $\le 2.0$.
+
     ### 2. Equivalent Frame Method (EFM)
-    วิธี EFM จำลองโครงสร้างเป็น Portal Frame 2 มิติ โดยรวม Stiffness ของพื้น เสา และ Torsional Member เข้าด้วยกัน:
-    * **แม่นยำกว่า:** เพราะคำนวณการกระจายโมเมนต์จริง (Moment Distribution)
-    * **ยืดหยุ่นกว่า:** ใช้ได้กับ Load ที่ไม่สม่ำเสมอ หรือ Geometry ที่แปลกไปจากมาตรฐาน
-    * โปรแกรมนี้เตรียม Parameters (Inertia Slab $I_s$, Inertia Drop $I_d$) ไว้รองรับการคำนวณ Stiffness Matrix ใน Tab ถัดไปแล้ว
+    - Represents the 3D slab system as a series of 2D frames.
+    - Accounts for the stiffness of the slab, columns, and torsional members.
+    - Applicable to irregular layouts and loading where DDM fails.
     """)
