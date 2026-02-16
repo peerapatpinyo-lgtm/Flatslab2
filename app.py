@@ -29,6 +29,9 @@ tab1, tab2 = st.tabs(["📝 Input Parameters", "📘 Engineering Theory"])
 with tab1:
     col_input, col_viz = st.columns([1.2, 1.4])
 
+    # --------------------------------------------------------------------------
+    # LEFT COLUMN: INPUTS ONLY
+    # --------------------------------------------------------------------------
     with col_input:
         # 1. Materials
         st.subheader("1. Materials & Loads")
@@ -139,7 +142,7 @@ with tab1:
             with d_col2: drop_w1 = st.number_input("Drop W1 (m)", value=2.5)
             with d_col3: drop_w2 = st.number_input("Drop W2 (m)", value=2.5)
 
-        # --- Calculation Trigger ---
+        # --- PROCESS DATA (BUT DON'T SHOW YET) ---
         calc_obj = app_calc.prepare_calculation_data(
             h_slab_cm, h_drop_cm, has_drop, c1_cm, c2_cm, drop_w2,
             L1_l, L1_r, L2_t, L2_b, fc, fy, dl, ll, auto_sw, lf_dl, lf_ll,
@@ -151,93 +154,15 @@ with tab1:
             ll, (calc_obj['loads']['w_dead'] / Units.G), has_drop, cant_params,
             fy, col_location, h_slab_cm, (c1_cm/100), (c2_cm/100)
         )
-
-        # --- CHECK RESULTS SECTION (UPDATED) ---
-        st.markdown("### 🔍 Design Code Checks (ACI 318)")
         
-        # 1. Minimum Thickness Check (Detailed)
+        # Run Checks (Data only)
         thk_res = validator.check_min_thickness_detailed()
-        
-        # Display Box
-        if thk_res['status']:
-            st.success(f"✅ **Slab Thickness OK** (Prov: {thk_res['actual_h']} cm >= Req: {thk_res['req_h']:.2f} cm)")
-        else:
-            st.error(f"❌ **Slab Thickness NOT OK** (Prov: {thk_res['actual_h']} cm < Req: {thk_res['req_h']:.2f} cm)")
-
-        # Detailed Calculation (Toggle)
-        with st.expander("📝 Show Calculation Steps: Slab Thickness"):
-            st.markdown(f"**Case:** {thk_res['case_name']}")
-            st.markdown(r"**Formula (ACI 318 Table 8.3.1.1):**")
-            st.latex(r"h_{min} = \frac{L_n (0.8 + \frac{f_y}{1400})}{Denominator}")
-            
-            st.markdown("**Substitution:**")
-            sub_str = r"h_{min} = \frac{" + f"{thk_res['Ln']:.2f}" + r"(" + f"0.8 + \\frac{{{thk_res['fy_mpa']}}}{{1400}}" + r")}{" + f"{thk_res['denom']}" + r"}"
-            st.latex(sub_str)
-            
-            st.markdown("**Results:**")
-            st.write(f"- Calculated Min = **{thk_res['calc_h']:.2f} cm**")
-            st.write(f"- Absolute Code Min = **{thk_res['abs_min']} cm**")
-            st.write(f"- **Final Required ($h_{{req}}$) = {thk_res['req_h']:.2f} cm**")
-
-        # 2. Drop Panel Check (VERY Detailed - English)
-        if has_drop:
-            drop_res = validator.check_drop_panel_detailed(h_drop_cm, drop_w1, drop_w2)
-            if drop_res['status']:
-                st.info("✅ **Drop Panel Geometry OK**")
-            else:
-                st.error("⚠️ **Drop Panel Geometry Issues**")
-            
-            with st.expander("📝 Show Calculation Steps: Drop Panel (ACI 318)", expanded=False):
-                st.markdown("To classify as a drop panel, the dimensions must satisfy **ACI 318 Section 8.2.4**.")
-
-                # --- PART 1: DEPTH CHECK ---
-                st.markdown("#### 1. Drop Depth Check ($h_{drop}$)")
-                st.markdown("The drop panel must project below the slab at least $h_s/4$.")
-                
-                # Formula
-                st.latex(r"h_{drop, req} = \frac{h_s}{4}")
-                
-                # Substitution
-                st.latex(f"h_{{drop, req}} = \\frac{{{drop_res['h_slab']}}}{{4}} = {drop_res['req_proj']:.2f} \\text{{ cm}}")
-                
-                # Check
-                d_check_text = "PASSED" if drop_res['chk_depth'] else "FAILED"
-                d_color = "green" if drop_res['chk_depth'] else "red"
-                st.markdown(f"**Provided:** ${drop_res['act_proj']:.2f} \\text{{ cm}}$")
-                st.markdown(f"**Status:** :{d_color}[{d_check_text}] (${drop_res['act_proj']:.2f} \\ge {drop_res['req_proj']:.2f}$)")
-                
-                st.divider()
-
-                # --- PART 2: EXTENSION CHECK ---
-                st.markdown("#### 2. Extension Width Check ($W_{drop}$)")
-                st.markdown("The drop panel must extend at least $L/6$ from the center of support in each direction.")
-                st.markdown("Therefore, the total minimum width required is:")
-                st.latex(r"W_{min} = 2 \times \frac{L}{6} = \frac{L}{3}")
-
-                # Direction 1
-                st.markdown(f"**Direction 1 (Span L1 = {drop_res['L1']:.2f} m):**")
-                st.latex(f"W_{{1, req}} = \\frac{{{drop_res['L1']:.2f}}}{{3}} = {drop_res['req_total_w1']:.2f} \\text{{ m}}")
-                w1_text = "PASSED" if drop_res['chk_w1'] else "FAILED"
-                w1_color = "green" if drop_res['chk_w1'] else "red"
-                st.markdown(f"Provided $W_1$: **{drop_res['act_w1']:.2f} m** $\\rightarrow$ :{w1_color}[{w1_text}]")
-
-                # Direction 2
-                st.markdown(f"**Direction 2 (Span L2 = {drop_res['L2']:.2f} m):**")
-                st.latex(f"W_{{2, req}} = \\frac{{{drop_res['L2']:.2f}}}{{3}} = {drop_res['req_total_w2']:.2f} \\text{{ m}}")
-                w2_text = "PASSED" if drop_res['chk_w2'] else "FAILED"
-                w2_color = "green" if drop_res['chk_w2'] else "red"
-                st.markdown(f"Provided $W_2$: **{drop_res['act_w2']:.2f} m** $\\rightarrow$ :{w2_color}[{w2_text}]")
-
         ddm_ok, ddm_reasons = validator.check_ddm()
-        
-        # Sidebar Update
-        with status_container:
-            st.markdown(f"**Condition:** `{joint_code}`")
-            st.markdown(f"**Far Ends:** Top `{far_end_up}` | Bot `{far_end_lo}`")
-            if ddm_ok: st.success("✅ **DDM:** Valid")
-            else: st.error("❌ **DDM:** Invalid")
-            st.info("✅ **EFM:** Valid")
 
+
+    # --------------------------------------------------------------------------
+    # RIGHT COLUMN: VISUALIZATION & RESULTS
+    # --------------------------------------------------------------------------
     with col_viz:
         st.subheader("👁️ Visualization & Analysis")
         v_tab1, v_tab2 = st.tabs(["📐 Plan View", "🔍 True-Scale Section"])
@@ -274,12 +199,124 @@ with tab1:
                 if cant_params['has_right']: st.metric("Right Moment (Neg)", f"{m_data['M_cant_R']/1000:.2f} kN.m")
         
         st.divider()
-        with st.expander(f"Code Check Details (DDM/EFM)", expanded=False):
+
+        # ======================================================================
+        #  MOVED SECTION: DESIGN CODE CHECKS (ACI 318)
+        # ======================================================================
+        st.markdown("### 🔍 Design Code Checks (ACI 318)")
+        
+        # --- 1. Minimum Thickness Check ---
+        # Display Box
+        if thk_res['status']:
+            st.success(f"✅ **Slab Thickness OK** (Prov: {thk_res['actual_h']} cm >= Req: {thk_res['req_h']:.2f} cm)")
+        else:
+            st.error(f"❌ **Slab Thickness NOT OK** (Prov: {thk_res['actual_h']} cm < Req: {thk_res['req_h']:.2f} cm)")
+
+        # Detailed Calculation (Toggle)
+        with st.expander("📝 Show Calculation Steps: Slab Thickness"):
+            st.markdown(f"**Case:** {thk_res['case_name']}")
+            st.markdown(r"**Formula (ACI 318 Table 8.3.1.1):**")
+            st.latex(r"h_{min} = \frac{L_n (0.8 + \frac{f_y}{1400})}{Denominator}")
+            
+            st.markdown("**Substitution:**")
+            sub_str = r"h_{min} = \frac{" + f"{thk_res['Ln']:.2f}" + r"(" + f"0.8 + \\frac{{{thk_res['fy_mpa']}}}{{1400}}" + r")}{" + f"{thk_res['denom']}" + r"}"
+            st.latex(sub_str)
+            
+            st.markdown("**Results:**")
+            st.write(f"- Calculated Min = **{thk_res['calc_h']:.2f} cm**")
+            st.write(f"- Absolute Code Min = **{thk_res['abs_min']} cm**")
+            st.write(f"- **Final Required ($h_{{req}}$) = {thk_res['req_h']:.2f} cm**")
+
+        # --- 2. Drop Panel Dashboard (Moved Here) ---
+        if has_drop:
+            drop_res = validator.check_drop_panel_detailed(h_drop_cm, drop_w1, drop_w2)
+            
+            st.markdown("#### 📉 Drop Panel Compliance Dashboard")
+            
+            # Create a clean layout for comparisons
+            d_c1, d_c2, d_c3 = st.columns(3)
+            
+            # Helper Function
+            def display_check_card(col, title, req_val, prov_val, unit, label_req="Required", label_prov="Provided"):
+                ratio = prov_val / req_val if req_val > 0 else 0
+                is_pass = prov_val >= req_val
+                
+                with col:
+                    st.markdown(f"**{title}**")
+                    if is_pass:
+                        st.success(f"✅ **PASS** (Ratio: {ratio:.2f})")
+                    else:
+                        st.error(f"❌ **FAIL** (Ratio: {ratio:.2f})")
+                    
+                    # Comparison Metrics
+                    c_m1, c_m2 = st.columns(2)
+                    with c_m1:
+                        st.metric(label=label_prov, value=f"{prov_val:.2f} {unit}")
+                    with c_m2:
+                        st.metric(label=label_req, value=f"{req_val:.2f} {unit}", delta=f"{req_val - prov_val:.2f} diff" if not is_pass else None, delta_color="inverse")
+                    
+                    # Visual Bar
+                    prog_val = min(ratio / 2.0, 1.0)
+                    st.progress(prog_val)
+                    if is_pass:
+                        st.caption(f"Safe by {(ratio-1)*100:.0f}%")
+                    else:
+                        st.caption(f"Insufficient by {(1-ratio)*100:.0f}%")
+
+            # Display Cards
+            display_check_card(d_c1, "1. Depth ($h_{drop}$)", 
+                               drop_res['req_proj'], drop_res['act_proj'], "cm",
+                               label_req="Min Req", label_prov="Actual")
+
+            display_check_card(d_c2, "2. Width Dir 1", 
+                               drop_res['req_total_w1'], drop_res['act_w1'], "m",
+                               label_req="Min Req", label_prov="Actual")
+
+            display_check_card(d_c3, "3. Width Dir 2", 
+                               drop_res['req_total_w2'], drop_res['act_w2'], "m",
+                               label_req="Min Req", label_prov="Actual")
+
+            # Detailed Math Expander
+            with st.expander("📝 View Detailed Math & Formulas (ACI 318 Ref.)", expanded=False):
+                st.markdown("### Engineering Calculations")
+                st.markdown("Reference: **ACI 318-19 Section 8.2.4 (Drop Panels)**")
+                
+                check_data = [
+                    {"Parameter": "Drop Depth (Projection)", "Formula": r"h_s / 4", 
+                     "Required": f"{drop_res['req_proj']:.2f} cm", "Provided": f"{drop_res['act_proj']:.2f} cm", 
+                     "Status": "✅ PASS" if drop_res['chk_depth'] else "❌ FAIL"},
+                    {"Parameter": "Total Width (Span 1)", "Formula": r"2 \times (L_1 / 6) = L_1 / 3", 
+                     "Required": f"{drop_res['req_total_w1']:.2f} m", "Provided": f"{drop_res['act_w1']:.2f} m", 
+                     "Status": "✅ PASS" if drop_res['chk_w1'] else "❌ FAIL"},
+                    {"Parameter": "Total Width (Span 2)", "Formula": r"2 \times (L_2 / 6) = L_2 / 3", 
+                     "Required": f"{drop_res['req_total_w2']:.2f} m", "Provided": f"{drop_res['act_w2']:.2f} m", 
+                     "Status": "✅ PASS" if drop_res['chk_w2'] else "❌ FAIL"}
+                ]
+                
+                st.markdown("#### Logic Verification")
+                for item in check_data:
+                    c1, c2, c3, c4 = st.columns([1.5, 1.5, 1, 1])
+                    c1.markdown(f"**{item['Parameter']}**")
+                    c2.latex(item['Formula'])
+                    c3.markdown(f"Req: `{item['Required']}`")
+                    c4.markdown(f"Prov: `{item['Provided']}` {item['Status']}")
+                    st.divider()
+
+        # --- 3. DDM/EFM Validity Check ---
+        st.markdown("#### ✅ Method Validity (DDM vs EFM)")
+        with st.expander(f"Code Check Details", expanded=True):
             for r in ddm_reasons: st.markdown(r)
+        
+        # Sidebar Update
+        with status_container:
+            st.markdown(f"**Condition:** `{joint_code}`")
+            st.markdown(f"**Far Ends:** Top `{far_end_up}` | Bot `{far_end_lo}`")
+            if ddm_ok: st.success("✅ **DDM:** Valid")
+            else: st.error("❌ **DDM:** Invalid")
+            st.info("✅ **EFM:** Valid")
 
 # ==============================================================================
-# TAB 2: ENGINEERING THEORY (MODULARIZED)
+# TAB 2: ENGINEERING THEORY
 # ==============================================================================
 with tab2:
-    # Use the new module for theory display
     app_theory.display_theory(calc_obj)
