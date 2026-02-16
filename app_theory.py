@@ -26,18 +26,13 @@ def display_theory(calc_data):
         st.markdown("The factored load is calculated based on the Load Factors (LF) provided.")
 
         # Prepare variables for display (Convert Pa to kN/m2 for readability)
-        wd_kn = loads['w_dead'] / 1000
         wu_kn = loads['wu_pa'] / 1000
-        # Back-calculate LL (approx) assuming standard factors were used in substitution, 
-        # or just display the total since we have the final wu.
         
         st.latex(r"""
         w_u = (LF_{DL} \cdot w_{DL}) + (LF_{LL} \cdot w_{LL})
         """)
         
         st.write(f"Substituting the calculated area loads:")
-        
-        # Displaying the final summation
         st.latex(f"w_u = {wu_kn:.2f} \\text{{ kN/m}}^2")
         
         st.markdown("---")
@@ -56,13 +51,11 @@ def display_theory(calc_data):
     # ==========================================================================
     with st.expander("2. Total Static Moment ($M_o$)", expanded=True):
         st.markdown("The total factored static moment for the span is determined by:")
-        st.info("💡 This moment represents the total capacity required for the strip (sum of positive + negative moments).")
         
         # Formula
         st.latex(r"M_o = \frac{w_u L_2 L_n^2}{8}")
         
         # Substitution
-        # wu is in Pa (N/m2), L is in m. Result in N.m -> /1000 for kN.m
         wu_val = loads['wu_pa']
         l2_val = g['L2']
         ln_val = g['Ln']
@@ -76,14 +69,12 @@ def display_theory(calc_data):
         
         # Result
         st.latex(f"M_o = \\mathbf{{{mo_val_kNm:.2f}}} \\text{{ kN}} \\cdot \\text{{m}}")
-        
-        
 
     # ==========================================================================
     # 3. EQUIVALENT FRAME PROPERTIES
     # ==========================================================================
     with st.expander("3. Equivalent Column Stiffness ($K_{ec}$)", expanded=False):
-        st.markdown("The equivalent column stiffness ($K_{ec}$) accounts for the flexibility of the slab-column joint (torsional flexibility).")
+        st.markdown("The equivalent column stiffness ($K_{ec}$) accounts for the flexibility of the slab-column joint.")
         
         st.latex(r"\frac{1}{K_{ec}} = \frac{1}{\Sigma K_c} + \frac{1}{K_t}")
         
@@ -93,14 +84,11 @@ def display_theory(calc_data):
         k_lo = stiff['K_lo']
         sum_kc = stiff['Sum_K']
         
-        st.latex(r"K_c = \frac{kEI}{L}")
         st.write("Using effective length factors (k) based on far-end conditions:")
         
         st.latex(f"K_{{c,top}} = {k_up/1e6:.2f} \\text{{ MN}} \\cdot \\text{{m}}")
         st.latex(f"K_{{c,bot}} = {k_lo/1e6:.2f} \\text{{ MN}} \\cdot \\text{{m}}")
         st.latex(f"\\Sigma K_c = {sum_kc/1e6:.2f} \\text{{ MN}} \\cdot \\text{{m}}")
-        
-        
 
     # ==========================================================================
     # 4. SHEAR CAPACITY CHECK
@@ -117,9 +105,7 @@ def display_theory(calc_data):
         st.markdown("**Concrete Strength Used:**")
         st.latex(f"f'_c = {fc_mpa:.1f} \\text{{ MPa}}")
         
-        st.markdown("> *Note: This calculation requires determining the effective depth ($d$) and critical perimeter ($b_o$), which depends on the rebar layout and cover.*")
-        
-        
+        st.markdown("> *Note: This calculation requires determining the effective depth ($d$) and critical perimeter ($b_o$).*")
 
     # ==========================================================================
     # 5. CANTILEVER MOMENT
