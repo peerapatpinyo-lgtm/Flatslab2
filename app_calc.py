@@ -128,7 +128,6 @@ class DesignCriteriaValidator:
         return True, ["✅ **General:** EFM is applicable for this geometry.", 
                       "✅ **Loads:** No specific restrictions on LL/DL ratio."]
 
-# ... (Keep prepare_calculation_data function as is) ...
 def prepare_calculation_data(
     h_slab_cm, h_drop_cm, has_drop, 
     c1_cm, c2_cm, drop_w2,
