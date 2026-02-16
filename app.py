@@ -146,7 +146,6 @@ with tab1:
             joint_type, h_up, h_lo, far_end_up, far_end_lo, cant_params
         )
 
-        # Pass c1_cm, c2_cm to Validator now
         validator = app_calc.DesignCriteriaValidator(
             calc_obj['geom']['L1'], calc_obj['geom']['L2'], L1_l, L1_r, L2_t, L2_b,
             ll, (calc_obj['loads']['w_dead'] / Units.G), has_drop, cant_params,
@@ -154,7 +153,7 @@ with tab1:
         )
 
         # --- CHECK RESULTS SECTION (UPDATED) ---
-        st.markdown("### 🔍 Pre-Analysis Checks")
+        st.markdown("### 🔍 Design Code Checks (ACI 318)")
         
         # 1. Minimum Thickness Check (Detailed)
         thk_res = validator.check_min_thickness_detailed()
@@ -165,23 +164,22 @@ with tab1:
         else:
             st.error(f"❌ **Slab Thickness NOT OK** (Prov: {thk_res['actual_h']} cm < Req: {thk_res['req_h']:.2f} cm)")
 
-        # Display Detailed Calculation (Toggle)
-        with st.expander("📝 แสดงวิธีทำ (Calculation Steps)"):
+        # Detailed Calculation (Toggle)
+        with st.expander("📝 Show Calculation Steps: Slab Thickness"):
             st.markdown(f"**Case:** {thk_res['case_name']}")
             st.markdown(r"**Formula (ACI 318 Table 8.3.1.1):**")
             st.latex(r"h_{min} = \frac{L_n (0.8 + \frac{f_y}{1400})}{Denominator}")
             
-            st.markdown("**Substitution (แทนค่า):**")
-            # Create substitution string
+            st.markdown("**Substitution:**")
             sub_str = r"h_{min} = \frac{" + f"{thk_res['Ln']:.2f}" + r"(" + f"0.8 + \\frac{{{thk_res['fy_mpa']}}}{{1400}}" + r")}{" + f"{thk_res['denom']}" + r"}"
             st.latex(sub_str)
             
-            st.markdown("**Result (ผลลัพธ์):**")
-            st.write(f"- Min Calculation = **{thk_res['calc_h']:.2f} cm**")
-            st.write(f"- Absolute Min Limit = **{thk_res['abs_min']} cm**")
+            st.markdown("**Results:**")
+            st.write(f"- Calculated Min = **{thk_res['calc_h']:.2f} cm**")
+            st.write(f"- Absolute Code Min = **{thk_res['abs_min']} cm**")
             st.write(f"- **Final Required ($h_{{req}}$) = {thk_res['req_h']:.2f} cm**")
 
-        # 2. Drop Panel Check (Detailed)
+        # 2. Drop Panel Check (VERY Detailed - English)
         if has_drop:
             drop_res = validator.check_drop_panel_detailed(h_drop_cm, drop_w1, drop_w2)
             if drop_res['status']:
@@ -189,23 +187,46 @@ with tab1:
             else:
                 st.error("⚠️ **Drop Panel Geometry Issues**")
             
-            with st.expander("📝 ตรวจสอบ Drop Panel (Check Details)"):
-                c_d1, c_d2 = st.columns(2)
-                with c_d1:
-                    st.markdown("**1. Depth Check ($h_d \ge h_s/4$)**")
-                    if drop_res['chk_depth']:
-                        st.markdown(f"✅ Prov: **{drop_res['act_drop_h']} cm** $\ge$ Req: {drop_res['req_drop_h']:.2f} cm")
-                    else:
-                        st.markdown(f"❌ Prov: **{drop_res['act_drop_h']} cm** < Req: {drop_res['req_drop_h']:.2f} cm")
+            with st.expander("📝 Show Calculation Steps: Drop Panel (ACI 318)", expanded=False):
+                st.markdown("To classify as a drop panel, the dimensions must satisfy **ACI 318 Section 8.2.4**.")
+
+                # --- PART 1: DEPTH CHECK ---
+                st.markdown("#### 1. Drop Depth Check ($h_{drop}$)")
+                st.markdown("The drop panel must project below the slab at least $h_s/4$.")
                 
-                with c_d2:
-                    st.markdown("**2. Width Check (Total $\ge L/3$)**")
-                    # W1
-                    w1_status = "✅" if drop_res['chk_w1'] else "❌"
-                    st.markdown(f"{w1_status} $W_1$: **{drop_res['act_w1']:.2f}m** (Req: {drop_res['req_w1']:.2f}m)")
-                    # W2
-                    w2_status = "✅" if drop_res['chk_w2'] else "❌"
-                    st.markdown(f"{w2_status} $W_2$: **{drop_res['act_w2']:.2f}m** (Req: {drop_res['req_w2']:.2f}m)")
+                # Formula
+                st.latex(r"h_{drop, req} = \frac{h_s}{4}")
+                
+                # Substitution
+                st.latex(f"h_{{drop, req}} = \\frac{{{drop_res['h_slab']}}}{{4}} = {drop_res['req_proj']:.2f} \\text{{ cm}}")
+                
+                # Check
+                d_check_text = "PASSED" if drop_res['chk_depth'] else "FAILED"
+                d_color = "green" if drop_res['chk_depth'] else "red"
+                st.markdown(f"**Provided:** ${drop_res['act_proj']:.2f} \\text{{ cm}}$")
+                st.markdown(f"**Status:** :{d_color}[{d_check_text}] (${drop_res['act_proj']:.2f} \\ge {drop_res['req_proj']:.2f}$)")
+                
+                st.divider()
+
+                # --- PART 2: EXTENSION CHECK ---
+                st.markdown("#### 2. Extension Width Check ($W_{drop}$)")
+                st.markdown("The drop panel must extend at least $L/6$ from the center of support in each direction.")
+                st.markdown("Therefore, the total minimum width required is:")
+                st.latex(r"W_{min} = 2 \times \frac{L}{6} = \frac{L}{3}")
+
+                # Direction 1
+                st.markdown(f"**Direction 1 (Span L1 = {drop_res['L1']:.2f} m):**")
+                st.latex(f"W_{{1, req}} = \\frac{{{drop_res['L1']:.2f}}}{{3}} = {drop_res['req_total_w1']:.2f} \\text{{ m}}")
+                w1_text = "PASSED" if drop_res['chk_w1'] else "FAILED"
+                w1_color = "green" if drop_res['chk_w1'] else "red"
+                st.markdown(f"Provided $W_1$: **{drop_res['act_w1']:.2f} m** $\\rightarrow$ :{w1_color}[{w1_text}]")
+
+                # Direction 2
+                st.markdown(f"**Direction 2 (Span L2 = {drop_res['L2']:.2f} m):**")
+                st.latex(f"W_{{2, req}} = \\frac{{{drop_res['L2']:.2f}}}{{3}} = {drop_res['req_total_w2']:.2f} \\text{{ m}}")
+                w2_text = "PASSED" if drop_res['chk_w2'] else "FAILED"
+                w2_color = "green" if drop_res['chk_w2'] else "red"
+                st.markdown(f"Provided $W_2$: **{drop_res['act_w2']:.2f} m** $\\rightarrow$ :{w2_color}[{w2_text}]")
 
         ddm_ok, ddm_reasons = validator.check_ddm()
         
