@@ -146,13 +146,14 @@ with tab1:
             joint_type, h_up, h_lo, far_end_up, far_end_lo, cant_params
         )
 
+        # Pass ALL required arguments to the validator
         validator = app_calc.DesignCriteriaValidator(
             calc_obj['geom']['L1'], calc_obj['geom']['L2'], L1_l, L1_r, L2_t, L2_b,
             ll, (calc_obj['loads']['w_dead'] / Units.G), has_drop, cant_params,
             fy, col_location, h_slab_cm
         )
 
-        # --- NEW: Checks Section ---
+        # --- CHECK RESULTS SECTION ---
         st.markdown("### 🔍 Pre-Analysis Checks")
         
         # 1. Minimum Thickness Check
