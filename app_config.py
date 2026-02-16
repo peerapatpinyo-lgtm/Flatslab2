@@ -1,3 +1,4 @@
+# app_config.py
 import matplotlib.pyplot as plt
 
 # ==============================================================================
@@ -5,15 +6,15 @@ import matplotlib.pyplot as plt
 # ==============================================================================
 COLORS = {
     'bg_canvas': '#FFFFFF',       # พื้นหลังขาว
-    'concrete': '#EAECEE',        # สีคอนกรีตเทาอ่อน (ที่ Error ถามหา)
-    'concrete_outline': '#2C3E50',# เส้นขอบคอนกรีต (ที่ Error ถามหา)
-    'rebar': '#C0392B',           # สีเหล็กเสริม/Drop Panel (แดงเข้ม)
+    'concrete': '#EAECEE',        # สีคอนกรีตเทาอ่อน
+    'concrete_outline': '#2C3E50',# เส้นขอบคอนกรีต (Dark Blue/Grey)
+    'rebar': '#C0392B',           # สีเหล็กเสริม (แดงเข้ม)
     'dim_line': '#2E4053',        # สีเส้นบอกระยะ
-    'dim_text_bg': '#FFFFFF',     # พื้นหลังตัวเลข
-    'center_line': '#E74C3C',     # เส้น Center Line (แดงจาง)
+    'dim_text_bg': '#FFFFFF',     # พื้นหลังตัวเลขบอกระยะ
+    'center_line': '#E74C3C',     # เส้น Center Line (แดงจาง/Dash)
+    'hatch': '#BDC3C7',           # ลาย Hatch
     'cantilever': '#D7BDE2',      # สีไฮไลท์ส่วนยื่น (ม่วงอ่อน)
-    'support': '#212F3C',         # สีจุดรองรับ
-    'text_main': '#17202A'        # สีตัวหนังสือหลัก
+    'support': '#212F3C'          # สีจุดรองรับ
 }
 
 # ==============================================================================
