@@ -143,12 +143,11 @@ def draw_dim_line(ax, start, end, text, offset=0.5, axis='x'):
 
 def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1, d_w2):
     """
-    วาดรูปแปลนพื้น (Plan View) แบบ Ultimate Engineering Layout
-    - แก้ไข: ย้าย Dimension ช่วงเสา (L1, L2) ออกไปด้านนอก (External Dim) เพื่อไม่ให้ทับเสา
-    - แก้ไข: นำ Dimension ของ Drop Panel กลับมา และจัดวางไม่ให้ซ้อนทับ
-    - แสดง: Zones (Column/Middle Strip) และ Neighbor Columns
+    วาดรูปแปลนพื้น (Plan View) แบบ Professional Engineering
+    - เพิ่ม: Label ระบุชื่อ "COLUMN STRIP" และ "MIDDLE STRIP" ชัดเจน ไม่ต้องเดาสี
+    - คงเดิม: Dimension ภายนอกไม่ทับเสา, Drop Panel Dimension ครบถ้วน
     """
-    fig, ax = plt.subplots(figsize=(12, 10)) # ขยายขนาดรูปให้กว้างขึ้น
+    fig, ax = plt.subplots(figsize=(12, 10))
     
     # --- 1. CONFIG & SCALES ---
     c1_m = c1_cm / 100
@@ -160,161 +159,115 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
     slab_T = L2_t
     slab_B = c2_m/2 if col_loc in ["Edge Column", "Corner Column"] else L2_b
     
-    # Colors Palette (Professional)
-    COLOR_CS = '#D4E6F1'       # Light Blue (Column Strip)
-    COLOR_MS = '#FDFEFE'       # White (Middle Strip)
-    COLOR_COL_MAIN = '#2C3E50' # Dark Slate (Main Column)
-    COLOR_COL_GHOST = '#95A5A6'# Grey (Ghost Column)
-    COLOR_DROP = '#F39C12'     # Orange (Drop Panel)
-    COLOR_DIM = '#17202A'      # Black (Dimensions)
+    # Colors Palette
+    COLOR_CS_BG = '#D6EAF8'    # Light Blue (Column Strip Background)
+    COLOR_CS_TEXT = '#154360'  # Dark Blue (Column Strip Text)
+    COLOR_MS_BG = '#FDFEFE'    # White (Middle Strip Background)
+    COLOR_MS_TEXT = '#566573'  # Dark Gray (Middle Strip Text)
+    COLOR_COL_MAIN = '#2C3E50' 
+    COLOR_COL_GHOST = '#95A5A6'
+    COLOR_DROP = '#F39C12'
+    COLOR_DIM = '#17202A'
     
-    # --- 2. HELPER: DIMENSION DRAWING ---
-    def draw_dim(x1, y1, x2, y2, text, offset=0.0, color=COLOR_DIM, inside=False):
-        """
-        วาด Dimension Line
-        offset: ระยะห่างจากจุดวัด (+ หรือ -)
-        inside: ถ้า True จะวาดเส้นแบบสั้นๆ (สำหรับ Drop Panel)
-        """
-        mid_x, mid_y = (x1 + x2)/2, (y1 + y2)/2
-        
-        # ปรับตำแหน่งตาม Offset
-        if x1 == x2: # Vertical Line
-            x1 += offset; x2 += offset; mid_x += offset
-            rot = 90
-            ha, va = ('right', 'center') if offset < 0 else ('left', 'center')
-        else: # Horizontal Line
-            y1 += offset; y2 += offset; mid_y += offset
-            rot = 0
-            ha, va = ('center', 'top') if offset < 0 else ('center', 'bottom')
-            
-        # Draw Arrow Line
-        arrow = dict(arrowstyle='<|-|>', color=color, linewidth=0.8, shrinkA=0, shrinkB=0)
-        ax.annotate('', xy=(x1, y1), xytext=(x2, y2), arrowprops=arrow)
-        
-        # Draw Extension Lines (เส้นขีดๆ ที่ลากจากวัตถุมาหาเส้น Dim)
-        ext_len = 0.1 if inside else 0.2
-        if x1 == x2: # Vert ext
-            ax.plot([x1-ext_len, x1+ext_len], [y1, y1], color=color, linewidth=0.5)
-            ax.plot([x2-ext_len, x2+ext_len], [y2, y2], color=color, linewidth=0.5)
-        else: # Horz ext
-            ax.plot([x1, x1], [y1-ext_len, y1+ext_len], color=color, linewidth=0.5)
-            ax.plot([x2, x2], [y2-ext_len, y2+ext_len], color=color, linewidth=0.5)
-            
-        # Text Label with Background
-        ax.text(mid_x, mid_y, text, rotation=rot, ha=ha, va=va, fontsize=9, color=color, fontweight='bold',
-                bbox=dict(facecolor='white', edgecolor='none', alpha=0.7, pad=2))
-
-    # ==========================================================================
-    # 3. DRAW ZONES (STRIPS)
-    # ==========================================================================
-    # Draw Slab Base (Middle Strip Color)
+    # --- 2. DRAW ZONES & LABELS (แก้ไข: ระบุชื่อ Zone ชัดเจน) ---
+    
+    # 2.1 Base Layer (Middle Strip)
     ax.add_patch(patches.Rectangle((-slab_L, -slab_B), slab_L + slab_R, slab_B + slab_T,
-                                   facecolor=COLOR_MS, edgecolor='gray', linewidth=1, zorder=0))
+                                   facecolor=COLOR_MS_BG, edgecolor='gray', linewidth=1, zorder=0))
     
-    # Draw Column Strip (Highlight)
+    # 2.2 Column Strip Layer
     min_span = min(L1_l + L1_r, L2_t + L2_b)
     cs_width = 0.25 * min_span
     cs_top = min(cs_width, slab_T)
     cs_bot = min(cs_width, slab_B)
     
-    # Strip Zone
+    # Draw CS Rect
     ax.add_patch(patches.Rectangle((-slab_L, -cs_bot), slab_L + slab_R, cs_top + cs_bot,
-                                   facecolor=COLOR_CS, edgecolor='none', alpha=0.4, zorder=1))
+                                   facecolor=COLOR_CS_BG, edgecolor='none', alpha=0.6, zorder=1))
     
-    # Strip Boundary Lines
-    dash_style = dict(color='#5DADE2', linestyle='--', linewidth=0.8)
-    if cs_top < slab_T: ax.axhline(y=cs_top, **dash_style)
-    if cs_bot < slab_B: ax.axhline(y=-cs_bot, **dash_style)
+    # Draw Dashed Lines Separating Zones
+    line_props = dict(color='#3498DB', linestyle='--', linewidth=0.8, alpha=0.7)
+    if cs_top < slab_T: ax.axhline(y=cs_top, **line_props)
+    if cs_bot < slab_B: ax.axhline(y=-cs_bot, **line_props)
 
-    # ==========================================================================
-    # 4. DRAW DROP PANEL (Layer 2)
-    # ==========================================================================
+    # --- [IMPORTANT] LABELING ZONES ---
+    # หาตำแหน่งวาง Text ให้สวยงาม (วางฝั่งขวา ที่ว่างๆ)
+    text_x_pos = slab_R * 0.6  # วางที่ 60% ของความยาวด้านขวา
+    
+    # Label: COLUMN STRIP (วางตรงกลางแกน Y)
+    ax.text(text_x_pos, 0, "COLUMN STRIP", color=COLOR_CS_TEXT, 
+            fontsize=10, fontweight='bold', ha='center', va='center',
+            bbox=dict(facecolor='white', edgecolor='none', alpha=0.3, pad=1))
+    
+    # Label: MIDDLE STRIP (วางด้านบนและล่าง ถ้ามีพื้นที่)
+    if cs_top < slab_T: # มี Middle Strip ด้านบน
+        mid_y_pos = (cs_top + slab_T) / 2
+        ax.text(text_x_pos, mid_y_pos, "MIDDLE STRIP", color=COLOR_MS_TEXT, 
+                fontsize=9, fontweight='bold', ha='center', va='center')
+                
+    if cs_bot < slab_B: # มี Middle Strip ด้านล่าง
+        mid_y_pos = -(cs_bot + slab_B) / 2
+        ax.text(text_x_pos, mid_y_pos, "MIDDLE STRIP", color=COLOR_MS_TEXT, 
+                fontsize=9, fontweight='bold', ha='center', va='center')
+
+    # --- 3. DRAW DROP PANEL & DIMENSIONS ---
     if has_drop:
-        # Draw Drop
+        # Drop Rect
         ax.add_patch(patches.Rectangle((-d_w1/2, -d_w2/2), d_w1, d_w2, 
                                        facecolor='none', edgecolor=COLOR_DROP, linestyle='-', linewidth=2, zorder=5))
-        
-        # --- [FIXED] DROP PANEL DIMENSIONS (INTERNAL) ---
-        # วางไว้ใกล้ๆ Drop Panel แต่อย่าทับ Center
-        # Dim Width (แนวนอน) - ไว้ด้านบน Drop Panel
-        draw_dim(-d_w1/2, d_w2/2, d_w1/2, d_w2/2, f"Drop W1 = {d_w1:.2f}m", offset=0.25, color=COLOR_DROP, inside=True)
-        
-        # Dim Length (แนวตั้ง) - ไว้ด้านขวา Drop Panel
-        draw_dim(d_w1/2, -d_w2/2, d_w1/2, d_w2/2, f"Drop W2 = {d_w2:.2f}m", offset=0.25, color=COLOR_DROP, inside=True)
+        # Internal Dimensions for Drop (วางชิดกรอบ ไม่ทับเสา)
+        # Width Dim
+        ax.text(0, d_w2/2 + 0.15, f"Drop W1 = {d_w1:.2f}m", color=COLOR_DROP, fontsize=8, fontweight='bold', ha='center')
+        # Length Dim
+        ax.text(d_w1/2 + 0.15, 0, f"Drop W2\n{d_w2:.2f}m", color=COLOR_DROP, fontsize=8, fontweight='bold', va='center')
 
-    # ==========================================================================
-    # 5. DRAW COLUMNS (Layer 3)
-    # ==========================================================================
-    # Main Column
+    # --- 4. DRAW COLUMNS ---
+    # Main
     ax.add_patch(patches.Rectangle((-c1_m/2, -c2_m/2), c1_m, c2_m, 
                                    facecolor=COLOR_COL_MAIN, edgecolor='black', hatch='//', zorder=10))
-    
     # Ghost Columns (Neighboring)
     ghost_props = dict(facecolor='white', edgecolor=COLOR_COL_GHOST, linestyle='--', linewidth=1.5, zorder=4)
-    if L1_r > 0: # Right
-        ax.add_patch(patches.Rectangle((L1_r - c1_m/2, -c2_m/2), c1_m, c2_m, **ghost_props))
-    if L1_l > 0 and col_loc != "Corner Column": # Left
-        ax.add_patch(patches.Rectangle((-L1_l - c1_m/2, -c2_m/2), c1_m, c2_m, **ghost_props))
-    if L2_t > 0: # Top
-        ax.add_patch(patches.Rectangle((-c1_m/2, L2_t - c2_m/2), c1_m, c2_m, **ghost_props))
-    if L2_b > 0 and col_loc == "Interior Column": # Bot
-        ax.add_patch(patches.Rectangle((-c1_m/2, -L2_b - c2_m/2), c1_m, c2_m, **ghost_props))
+    if L1_r > 0: ax.add_patch(patches.Rectangle((L1_r - c1_m/2, -c2_m/2), c1_m, c2_m, **ghost_props))
+    if L1_l > 0 and col_loc != "Corner Column": ax.add_patch(patches.Rectangle((-L1_l - c1_m/2, -c2_m/2), c1_m, c2_m, **ghost_props))
+    if L2_t > 0: ax.add_patch(patches.Rectangle((-c1_m/2, L2_t - c2_m/2), c1_m, c2_m, **ghost_props))
+    if L2_b > 0 and col_loc == "Interior Column": ax.add_patch(patches.Rectangle((-c1_m/2, -L2_b - c2_m/2), c1_m, c2_m, **ghost_props))
 
-    # ==========================================================================
-    # 6. DRAW MAIN SPAN DIMENSIONS (Layer 4 - EXTERNAL)
-    # ==========================================================================
-    # --- [FIXED] ย้าย Dimension ออกไปด้านนอกทั้งหมด เพื่อไม่ให้ทับเสา ---
-    
-    # ระยะห่างของเส้น Dimension จากขอบรูป
-    dim_margin = 0.6 
-    
-    # 6.1 Horizontal Spans (L1) -> วางด้านล่าง (Bottom)
-    y_pos_dim = -slab_B - dim_margin
-    
-    # Draw L1 Left
-    if L1_l > 0 and col_loc != "Corner Column":
-        draw_dim(-L1_l, -slab_B, 0, -slab_B, f"Span L1(L) = {L1_l:.2f} m", offset=-dim_margin)
-        # Extension line from ghost column to dim line
-        ax.plot([-L1_l, -L1_l], [-slab_B, y_pos_dim], color='gray', linestyle=':', linewidth=0.5)
+    # --- 5. EXTERNAL DIMENSIONS (SPAN LENGTHS) ---
+    def draw_ext_dim(x1, y1, x2, y2, text, offset):
+        mid_x, mid_y = (x1 + x2)/2, (y1 + y2)/2
+        if x1 == x2: # Vert
+            x1 += offset; x2 += offset; mid_x += offset
+            rot = 90; ha, va = ('right', 'center') if offset < 0 else ('left', 'center')
+            ax.plot([x1-0.1, x1+0.1], [y1, y1], color=COLOR_DIM, lw=0.5)
+            ax.plot([x2-0.1, x2+0.1], [y2, y2], color=COLOR_DIM, lw=0.5)
+        else: # Horz
+            y1 += offset; y2 += offset; mid_y += offset
+            rot = 0; ha, va = ('center', 'top') if offset < 0 else ('center', 'bottom')
+            ax.plot([x1, x1], [y1-0.1, y1+0.1], color=COLOR_DIM, lw=0.5)
+            ax.plot([x2, x2], [y2-0.1, y2+0.1], color=COLOR_DIM, lw=0.5)
+            
+        ax.annotate('', xy=(x1, y1), xytext=(x2, y2), arrowprops=dict(arrowstyle='<|-|>', color=COLOR_DIM, lw=0.8))
+        ax.text(mid_x, mid_y, text, rotation=rot, ha=ha, va=va, fontsize=9, color=COLOR_DIM, fontweight='bold',
+                bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, pad=1))
 
-    # Draw L1 Right
-    draw_dim(0, -slab_B, L1_r, -slab_B, f"Span L1(R) = {L1_r:.2f} m", offset=-dim_margin)
-    # Extension line from ghost column
-    ax.plot([L1_r, L1_r], [-slab_B, y_pos_dim], color='gray', linestyle=':', linewidth=0.5)
-    # Extension line from Center column
-    ax.plot([0, 0], [-slab_B, y_pos_dim], color='gray', linestyle=':', linewidth=0.5)
-
-    # 6.2 Vertical Spans (L2) -> วางด้านซ้าย (Left)
-    x_pos_dim = -slab_L - dim_margin
+    # Margin for dims
+    m_x = -slab_L - 0.8
+    m_y = -slab_B - 0.8
     
-    # Draw L2 Top
-    draw_dim(-slab_L, 0, -slab_L, L2_t, f"Span L2(T) = {L2_t:.2f} m", offset=-dim_margin)
-    # Extension lines
-    ax.plot([-slab_L, x_pos_dim], [L2_t, L2_t], color='gray', linestyle=':', linewidth=0.5)
-
-    # Draw L2 Bottom
-    if L2_b > 0 and col_loc == "Interior Column":
-        draw_dim(-slab_L, -L2_b, -slab_L, 0, f"Span L2(B) = {L2_b:.2f} m", offset=-dim_margin)
-        ax.plot([-slab_L, x_pos_dim], [-L2_b, -L2_b], color='gray', linestyle=':', linewidth=0.5)
-        
-    ax.plot([-slab_L, x_pos_dim], [0, 0], color='gray', linestyle=':', linewidth=0.5)
-
-    # ==========================================================================
-    # 7. FINAL DECORATION
-    # ==========================================================================
-    # Center Lines (CL)
-    ax.axvline(0, color='red', linestyle='-.', linewidth=0.6, alpha=0.5)
-    ax.axhline(0, color='red', linestyle='-.', linewidth=0.6, alpha=0.5)
-    ax.text(0.1, 0.1, "CL", color='red', fontsize=8, fontweight='bold')
-
-    # Title & Limits
-    ax.set_title(f"STRUCTURAL PLAN: {col_loc.upper()}", fontsize=12, pad=20, fontweight='bold', color='#566573')
+    # Draw Dims
+    if L1_l > 0 and col_loc != "Corner Column": draw_ext_dim(-L1_l, -slab_B, 0, -slab_B, f"L1(L)={L1_l:.2f}", m_y - (-slab_B))
+    draw_ext_dim(0, -slab_B, L1_r, -slab_B, f"L1(R)={L1_r:.2f}", m_y - (-slab_B))
     
-    # Expand limits to include external dimensions
-    view_margin = 1.5
-    ax.set_xlim(-slab_L - view_margin, slab_R + view_margin)
-    ax.set_ylim(-slab_B - view_margin, slab_T + view_margin)
+    draw_ext_dim(-slab_L, 0, -slab_L, L2_t, f"L2(T)={L2_t:.2f}", m_x - (-slab_L))
+    if L2_b > 0 and col_loc == "Interior Column": draw_ext_dim(-slab_L, -L2_b, -slab_L, 0, f"L2(B)={L2_b:.2f}", m_x - (-slab_L))
+
+    # --- 6. FINAL TOUCHES ---
+    ax.axvline(0, color='red', linestyle='-.', lw=0.5, alpha=0.5)
+    ax.axhline(0, color='red', linestyle='-.', lw=0.5, alpha=0.5)
     
+    ax.set_title(f"STRUCTURAL LAYOUT: {col_loc.upper()}", fontsize=12, pad=20, fontweight='bold', color='#566573')
+    ax.set_xlim(-slab_L - 2.0, slab_R + 1.0)
+    ax.set_ylim(-slab_B - 2.0, slab_T + 1.0)
     ax.set_aspect('equal')
     ax.axis('off')
     
