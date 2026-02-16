@@ -146,33 +146,66 @@ with tab1:
             joint_type, h_up, h_lo, far_end_up, far_end_lo, cant_params
         )
 
-        # Pass ALL required arguments to the validator
+        # Pass c1_cm, c2_cm to Validator now
         validator = app_calc.DesignCriteriaValidator(
             calc_obj['geom']['L1'], calc_obj['geom']['L2'], L1_l, L1_r, L2_t, L2_b,
             ll, (calc_obj['loads']['w_dead'] / Units.G), has_drop, cant_params,
-            fy, col_location, h_slab_cm
+            fy, col_location, h_slab_cm, (c1_cm/100), (c2_cm/100)
         )
 
-        # --- CHECK RESULTS SECTION ---
+        # --- CHECK RESULTS SECTION (UPDATED) ---
         st.markdown("### 🔍 Pre-Analysis Checks")
         
-        # 1. Minimum Thickness Check
-        thk_ok, min_req, thk_msg = validator.check_min_thickness()
-        if thk_ok:
-            st.success(f"✅ Slab Thickness: {h_slab_cm} cm (Passed) | {thk_msg}")
+        # 1. Minimum Thickness Check (Detailed)
+        thk_res = validator.check_min_thickness_detailed()
+        
+        # Display Box
+        if thk_res['status']:
+            st.success(f"✅ **Slab Thickness OK** (Prov: {thk_res['actual_h']} cm >= Req: {thk_res['req_h']:.2f} cm)")
         else:
-            st.error(f"❌ Slab Thickness: {h_slab_cm} cm (Too Thin) | {thk_msg}")
+            st.error(f"❌ **Slab Thickness NOT OK** (Prov: {thk_res['actual_h']} cm < Req: {thk_res['req_h']:.2f} cm)")
+
+        # Display Detailed Calculation (Toggle)
+        with st.expander("📝 แสดงวิธีทำ (Calculation Steps)"):
+            st.markdown(f"**Case:** {thk_res['case_name']}")
+            st.markdown(r"**Formula (ACI 318 Table 8.3.1.1):**")
+            st.latex(r"h_{min} = \frac{L_n (0.8 + \frac{f_y}{1400})}{Denominator}")
             
-        # 2. Drop Panel Check
+            st.markdown("**Substitution (แทนค่า):**")
+            # Create substitution string
+            sub_str = r"h_{min} = \frac{" + f"{thk_res['Ln']:.2f}" + r"(" + f"0.8 + \\frac{{{thk_res['fy_mpa']}}}{{1400}}" + r")}{" + f"{thk_res['denom']}" + r"}"
+            st.latex(sub_str)
+            
+            st.markdown("**Result (ผลลัพธ์):**")
+            st.write(f"- Min Calculation = **{thk_res['calc_h']:.2f} cm**")
+            st.write(f"- Absolute Min Limit = **{thk_res['abs_min']} cm**")
+            st.write(f"- **Final Required ($h_{{req}}$) = {thk_res['req_h']:.2f} cm**")
+
+        # 2. Drop Panel Check (Detailed)
         if has_drop:
-            drop_warnings = validator.check_drop_panel(h_drop_cm, drop_w1, drop_w2)
-            if not drop_warnings:
-                st.info("✅ Drop Panel Dimensions: OK")
+            drop_res = validator.check_drop_panel_detailed(h_drop_cm, drop_w1, drop_w2)
+            if drop_res['status']:
+                st.info("✅ **Drop Panel Geometry OK**")
             else:
-                with st.expander("⚠️ Drop Panel Issues", expanded=True):
-                    for w in drop_warnings:
-                        if "✅" in w: st.write(w)
-                        else: st.error(w)
+                st.error("⚠️ **Drop Panel Geometry Issues**")
+            
+            with st.expander("📝 ตรวจสอบ Drop Panel (Check Details)"):
+                c_d1, c_d2 = st.columns(2)
+                with c_d1:
+                    st.markdown("**1. Depth Check ($h_d \ge h_s/4$)**")
+                    if drop_res['chk_depth']:
+                        st.markdown(f"✅ Prov: **{drop_res['act_drop_h']} cm** $\ge$ Req: {drop_res['req_drop_h']:.2f} cm")
+                    else:
+                        st.markdown(f"❌ Prov: **{drop_res['act_drop_h']} cm** < Req: {drop_res['req_drop_h']:.2f} cm")
+                
+                with c_d2:
+                    st.markdown("**2. Width Check (Total $\ge L/3$)**")
+                    # W1
+                    w1_status = "✅" if drop_res['chk_w1'] else "❌"
+                    st.markdown(f"{w1_status} $W_1$: **{drop_res['act_w1']:.2f}m** (Req: {drop_res['req_w1']:.2f}m)")
+                    # W2
+                    w2_status = "✅" if drop_res['chk_w2'] else "❌"
+                    st.markdown(f"{w2_status} $W_2$: **{drop_res['act_w2']:.2f}m** (Req: {drop_res['req_w2']:.2f}m)")
 
         ddm_ok, ddm_reasons = validator.check_ddm()
         
