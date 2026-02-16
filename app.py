@@ -3,6 +3,7 @@ import streamlit as st
 from app_config import Units
 import app_calc
 import app_viz
+import app_theory  # <--- IMPORT ไฟล์ทฤษฎีใหม่
 
 # ==============================================================================
 # MAIN APPLICATION INTERFACE
@@ -19,8 +20,12 @@ if 'col_loc' not in st.session_state:
 st.sidebar.header("📊 Design Report")
 status_container = st.sidebar.container()
 
+# Define Tabs
 tab1, tab2 = st.tabs(["📝 Input Parameters", "📘 Engineering Theory"])
 
+# ==============================================================================
+# TAB 1: INPUTS & VISUALIZATION
+# ==============================================================================
 with tab1:
     col_input, col_viz = st.columns([1.2, 1.4])
 
@@ -41,7 +46,7 @@ with tab1:
 
         st.divider()
 
-        # 3. Geometry (Updated)
+        # 2. Geometry & Boundary
         st.subheader("2. Geometry & Boundary Conditions")
         
         # Joint Type
@@ -53,7 +58,7 @@ with tab1:
         is_roof = (joint_type == "Roof Joint")
         joint_code = "Roof" if is_roof else "Interm."
         
-        # --- NEW: Far End Conditions ---
+        # Far End Conditions
         st.markdown("##### 📍 Column Far End Conditions (Stiffness)")
         f_col1, f_col2 = st.columns(2)
         
@@ -89,7 +94,7 @@ with tab1:
             l2_b_val = 0.0 if (is_edge or is_corner) else 4.0
             L2_b = st.number_input("L2 - Bottom Half (m)", value=l2_b_val, disabled=(is_edge or is_corner))
 
-        # --- NEW: Cantilever Settings ---
+        # Cantilever Settings
         st.markdown("##### 🏗️ Cantilever / Eave (Overhang)")
         with st.expander("Cantilever Configuration", expanded=True):
             cant_c1, cant_c2 = st.columns(2)
@@ -134,7 +139,7 @@ with tab1:
             with d_col2: drop_w1 = st.number_input("Drop W1 (m)", value=2.5)
             with d_col3: drop_w2 = st.number_input("Drop W2 (m)", value=2.5)
 
-        # --- Calculation ---
+        # --- Calculation Trigger ---
         calc_obj = app_calc.prepare_calculation_data(
             h_slab_cm, h_drop_cm, has_drop, c1_cm, c2_cm, drop_w2,
             L1_l, L1_r, L2_t, L2_b, fc, fy, dl, ll, auto_sw, lf_dl, lf_ll,
@@ -200,26 +205,9 @@ with tab1:
                 for w in drop_warnings: st.write(f"- {w}")
             for r in ddm_reasons: st.markdown(r)
 
+# ==============================================================================
+# TAB 2: ENGINEERING THEORY (MODULARIZED)
+# ==============================================================================
 with tab2:
-    st.header("📘 Advanced Engineering Theory")
-    st.markdown(r"""
-    ### 1. Column Far End Conditions
-    The boundary condition at the far end of the column significantly affects its flexural stiffness ($K_c$).
-    
-    * **Fixed End:** Represents a rigid connection (e.g., to a massive footing or a rigid floor below).
-        $$ K_{col} = \frac{4EI}{L} $$
-    * **Pinned End:** Represents a hinged connection (e.g., a simple footing on soil or a theoretical pin).
-        $$ K_{col} = \frac{3EI}{L} $$
-    
-    *Selecting "Pinned" reduces the column's ability to resist unbalanced moments by 25%.*
-
-    ---
-
-    ### 2. Cantilever Action (Balancing Moment)
-    Cantilevers (Overhangs) provide a static negative moment ($M_{cant}$) at the joint, which counteracts the unbalanced moment from the interior span.
-    
-    $$ M_{cant} = \frac{w_u \cdot L_{cant}^2}{2} $$
-
-    * **Benefit:** This reduces the net unbalanced moment ($M_{unb}$) that the column must resist.
-    * **Design Note:** For Roof Joints, adding a cantilever is the most effective way to eliminate Punching Shear problems caused by high unbalanced moments.
-    """)
+    # Use the new module for theory display
+    app_theory.display_theory()
