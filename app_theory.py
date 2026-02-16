@@ -1,106 +1,145 @@
 # app_theory.py
 import streamlit as st
+import numpy as np
 
-def display_theory():
+def display_theory(calc_data):
     """
-    Renders the engineering theory, formulas, and code references
-    for Flat Slab/Plate Design based on ACI 318.
+    Renders the engineering theory with REAL-TIME SUBSTITUTION 
+    of values based on user inputs.
     """
     
-    st.markdown("## 📘 Engineering Theory: Flat Slab Design")
-    st.markdown("เนื้อหาส่วนนี้อ้างอิงตามมาตรฐาน **ACI 318** และ **EIT (วสท.)** สำหรับการออกแบบพื้นไร้คานด้วยวิธี Equivalent Frame Method (EFM) และ Direct Design Method (DDM)")
+    # Extract Data for easy access
+    g = calc_data['geom']
+    mat = calc_data['mat']
+    loads = calc_data['loads']
+    stiff = calc_data['stiffness']
+    mom = calc_data['moments']
     
-    # 1. Concept Overview
-    with st.expander("1. Equivalent Frame Method (EFM) Concept", expanded=True):
-        st.markdown("""
-        **หลักการพื้นฐาน:**
-        ในระบบพื้นไร้คาน (Flat Slab) เราจะจำลองโครงสร้าง 3 มิติ ให้เป็น "โครงข้อแข็ง 2 มิติ" (2D Plane Frame) โดยพิจารณาเป็นแถบๆ (Strips) ทั้งในทิศทางตามยาวและตามขวาง
-        
-        แต่ละ Frame ประกอบด้วย:
-        1. **Slab-Beam:** แผ่นพื้นกว้าง $L_2$ ทำหน้าที่เป็นคาน
-        2. **Equivalent Column:** เสาที่มีความแข็ง (Stiffness) ลดลงเนื่องจากการบิดตัวของแผ่นพื้น (Torsional Flexibility)
-        """)
-        
-        st.info("""
-        💡 **Key Concept:** เสาในระบบ Flat Slab จะ "ไม่แข็งเกร็ง" เท่ากับเสาในระบบคาน-เสาปกติ เพราะจุดต่อระหว่างพื้นกับเสามีการบิดตัวได้ (Torsional Rotation)
-        """)
+    st.markdown("## 📘 Detailed Calculation Sheet")
+    st.markdown("Reference Code: **ACI 318-19** & **EIT Standard (W.S.T.)**")
+    
+    # ==========================================================================
+    # 1. LOAD ANALYSIS
+    # ==========================================================================
+    with st.expander("1. Load Analysis (Design Loads)", expanded=True):
+        st.markdown("### 1.1 Ultimate Design Load ($w_u$)")
+        st.markdown("The factored load is calculated based on the Load Factors (LF) provided.")
 
-    # 2. Stiffness Calculations
-    with st.expander("2. Stiffness & Equivalent Column ($K_{ec}$)", expanded=False):
-        st.markdown(r"""
-        ค่า Stiffness ของเสาเสมือน ($K_{ec}$) คำนวณจากผลรวมของ Stiffness ของเสาจริง ($\sum K_c$) และ Stiffness ขององค์อาคารรับแรงบิด ($K_t$)
+        # Prepare variables for display (Convert Pa to kN/m2 for readability)
+        wd_kn = loads['w_dead'] / 1000
+        wu_kn = loads['wu_pa'] / 1000
+        # Back-calculate LL (approx) assuming standard factors were used in substitution, 
+        # or just display the total since we have the final wu.
         
-        $$ \frac{1}{K_{ec}} = \frac{1}{\sum K_c} + \frac{1}{K_t} $$
-        
-        โดยที่:
-        * $K_c$ = Stiffness ของเสาบนและเสาล่าง ($\frac{4EI}{L}$ หรือ $\frac{3EI}{L}$)
-        * $K_t$ = Torsional Stiffness ของแถบพื้นข้างหัวเสา
-        
-        $$ K_t = \sum \frac{9 E_{cs} C}{L_2 (1 - c_2/L_2)^3} $$
-        
-        > **ผลลัพธ์:** ค่า $K_{ec}$ จะน้อยกว่า $\sum K_c$ เสมอ ทำให้โมเมนต์ที่ถ่ายเข้าเสาลดลง แต่ไปเพิ่มโมเมนต์บวกกลางช่วงพื้นแทน
+        st.latex(r"""
+        w_u = (LF_{DL} \cdot w_{DL}) + (LF_{LL} \cdot w_{LL})
         """)
-
-    # 3. Static Moment
-    with st.expander("3. Total Static Moment ($M_o$)", expanded=False):
-        st.markdown(r"""
-        โมเมนต์ดัดรวมทั้งหมดในแต่ละช่วงเสา (Span) คำนวณจากน้ำหนักบรรทุกประลัย ($w_u$):
         
-        $$ M_o = \frac{w_u L_2 L_n^2}{8} $$
+        st.write(f"Substituting the calculated area loads:")
         
-        * $L_2$: ความกว้างของ Frame (ระยะกึ่งกลางเสาถึงกึ่งกลางเสา)
-        * $L_n$: ระยะช่วงเสาสุทธิ (Clear Span) จากหน้าเสาถึงหน้าเสา **(สำคัญมาก ห้ามใช้ Center-to-Center)**
-        """)
-
-    # 4. Moment Distribution Factors
-    with st.expander("4. การกระจายโมเมนต์ (Moment Distribution)", expanded=False):
-        st.markdown("### 4.1 การแบ่งโมเมนต์ (Longitudinal)")
-        st.markdown("สำหรับช่วงภายใน (Interior Span):")
-        st.markdown("- **Negative Moment:** 65% ของ $M_o$")
-        st.markdown("- **Positive Moment:** 35% ของ $M_o$")
+        # Displaying the final summation
+        st.latex(f"w_u = {wu_kn:.2f} \\text{{ kN/m}}^2")
         
         st.markdown("---")
-        st.markdown("### 4.2 Column Strip vs Middle Strip")
-        st.markdown("หลังจากได้ Total Neg/Pos Moment แล้ว จะถูกแบ่งลง **แถบเสา (Column Strip)** และ **แถบกลาง (Middle Strip)** ดังตาราง:")
+        st.markdown("### 1.2 Clear Span ($L_n$)")
+        st.markdown("In the Equivalent Frame Method, moments are based on the clear span face-to-face of columns/supports.")
         
-        st.markdown("**Interior Negative Moment (% เข้า Column Strip):**")
-        st.table({
-            "L2/L1 Ratio": ["0.5", "1.0", "2.0"],
-            "(α1*L2/L1) = 0": ["75%", "75%", "75%"],
-            "(α1*L2/L1) ≥ 1.0": ["90%", "75%", "45%"]
-        })
-        st.caption("*หมายเหตุ: กรณีไม่มีคานลึก (Beam) ค่า α1 = 0 ให้ใช้แถวบนสุด (75%)*")
+        ln_val = g['Ln']
+        l1_val = g['L1']
+        c1_val = g['c1']
         
-        st.markdown("**Positive Moment (% เข้า Column Strip):**")
-        st.markdown("- โดยทั่วไปใช้ **60%** ลง Column Strip และ **40%** ลง Middle Strip (สำหรับพื้นไร้คานแบบไม่มีคาน)")
+        st.latex(r"L_n = L_1 - c_1")
+        st.latex(f"L_n = {l1_val:.2f} - {c1_val:.2f} = \\mathbf{{{ln_val:.2f}}} \\text{{ m}}")
 
-    # 5. Punching Shear
-    with st.expander("5. แรงเฉือนทะลุ (Punching Shear)", expanded=False):
-        st.markdown(r"""
-        จุดวิกฤตที่สุดของ Flat Slab คือการวิบัติด้วยแรงเฉือนรอบหัวเสา (Punching Shear)
+    # ==========================================================================
+    # 2. STATIC MOMENT
+    # ==========================================================================
+    with st.expander("2. Total Static Moment ($M_o$)", expanded=True):
+        st.markdown("The total factored static moment for the span is determined by:")
+        st.info("💡 This moment represents the total capacity required for the strip (sum of positive + negative moments).")
         
-        **Critical Section:** อยู่ที่ระยะ $d/2$ จากหน้าเสา
+        # Formula
+        st.latex(r"M_o = \frac{w_u L_2 L_n^2}{8}")
         
-        กำลังรับแรงเฉือนของคอนกรีต ($V_c$) ตาม ACI 318 เลือกค่าน้อยที่สุดจาก 3 สูตร:
+        # Substitution
+        # wu is in Pa (N/m2), L is in m. Result in N.m -> /1000 for kN.m
+        wu_val = loads['wu_pa']
+        l2_val = g['L2']
+        ln_val = g['Ln']
         
-        1. $$ V_c = 0.33 \sqrt{f'_c} b_o d $$ (สูตรทั่วไป)
-        2. $$ V_c = 0.17 (1 + \frac{2}{\beta}) \sqrt{f'_c} b_o d $$ (ผลของทรงสี่เหลี่ยมผืนผ้า)
-        3. $$ V_c = 0.083 (\frac{\alpha_s d}{b_o} + 2) \sqrt{f'_c} b_o d $$ (ผลของตำแหน่งเสา)
+        mo_val_Nm = (wu_val * l2_val * (ln_val**2)) / 8
+        mo_val_kNm = mo_val_Nm / 1000
         
-        โดยที่:
-        * $\beta$: อัตราส่วนด้านยาว/ด้านสั้นของเสา
-        * $\alpha_s$: 40 (เสากลาง), 30 (เสาขอบ), 20 (เสามุม)
-        """)
+        # Display Substitution
+        st.markdown("**Substitution:**")
+        st.latex(f"M_o = \\frac{{{wu_val/1000:.2f} \\times {l2_val:.2f} \\times {ln_val:.2f}^2}}{{8}}")
+        
+        # Result
+        st.latex(f"M_o = \\mathbf{{{mo_val_kNm:.2f}}} \\text{{ kN}} \\cdot \\text{{m}}")
+        
+        
 
-    # 6. Minimum Thickness
-    with st.expander("6. ความหนาพื้นขั้นต่ำ (Min. Thickness)", expanded=False):
-        st.markdown("""
-        เพื่อควบคุมการแอ่นตัว (Deflection) โดยไม่ต้องคำนวณละเอียด ACI แนะนำความหนาขั้นต่ำ ($h_{min}$):
+    # ==========================================================================
+    # 3. EQUIVALENT FRAME PROPERTIES
+    # ==========================================================================
+    with st.expander("3. Equivalent Column Stiffness ($K_{ec}$)", expanded=False):
+        st.markdown("The equivalent column stiffness ($K_{ec}$) accounts for the flexibility of the slab-column joint (torsional flexibility).")
         
-        | Grade เหล็ก ($f_y$) | ไม่มี Drop Panel | มี Drop Panel |
-        | :--- | :---: | :---: |
-        | SD40 (400 MPa) | $L_n / 30$ | $L_n / 33$ |
-        | SD50 (500 MPa) | $L_n / 28$ | $L_n / 31$ |
+        st.latex(r"\frac{1}{K_{ec}} = \frac{1}{\Sigma K_c} + \frac{1}{K_t}")
         
-        *สำหรับพื้นที่มี Drop Panel ความหนา Drop ต้อง ≥ $1.25 h_s$ และยื่นออกไป ≥ $L/6$*
-        """)
+        # Column Stiffness Kc
+        st.markdown("#### 3.1 Column Stiffness ($K_c$)")
+        k_up = stiff['K_up']
+        k_lo = stiff['K_lo']
+        sum_kc = stiff['Sum_K']
+        
+        st.latex(r"K_c = \frac{kEI}{L}")
+        st.write("Using effective length factors (k) based on far-end conditions:")
+        
+        st.latex(f"K_{{c,top}} = {k_up/1e6:.2f} \\text{{ MN}} \\cdot \\text{{m}}")
+        st.latex(f"K_{{c,bot}} = {k_lo/1e6:.2f} \\text{{ MN}} \\cdot \\text{{m}}")
+        st.latex(f"\\Sigma K_c = {sum_kc/1e6:.2f} \\text{{ MN}} \\cdot \\text{{m}}")
+        
+        
+
+    # ==========================================================================
+    # 4. SHEAR CAPACITY CHECK
+    # ==========================================================================
+    with st.expander("4. Concrete Shear Capacity ($V_c$)", expanded=False):
+        st.markdown("The nominal shear strength of concrete for non-prestressed slabs (ACI 318).")
+        
+        fc_pa = mat['fc_pa']
+        fc_mpa = fc_pa / 1e6 # Convert Pa to MPa
+        
+        st.markdown("**Governing Formula (Approximate for Square Column):**")
+        st.latex(r"V_c = 0.33 \sqrt{f'_c} b_o d")
+        
+        st.markdown("**Concrete Strength Used:**")
+        st.latex(f"f'_c = {fc_mpa:.1f} \\text{{ MPa}}")
+        
+        st.markdown("> *Note: This calculation requires determining the effective depth ($d$) and critical perimeter ($b_o$), which depends on the rebar layout and cover.*")
+        
+        
+
+    # ==========================================================================
+    # 5. CANTILEVER MOMENT
+    # ==========================================================================
+    if calc_data['cantilever']['has_left'] or calc_data['cantilever']['has_right']:
+        with st.expander("5. Cantilever Balancing Moment ($M_{cant}$)", expanded=True):
+            st.markdown("The moment due to the cantilever load acts as a balancing moment at the support.")
+            
+            st.latex(r"M_{cant} = \frac{w_u L_{cant}^2}{2} \cdot L_2")
+            
+            w_u_line = loads['wu_pa'] * g['L2'] # N/m
+            
+            if calc_data['cantilever']['has_left']:
+                lc = calc_data['cantilever']['L_left']
+                mc = mom['M_cant_L'] / 1000 # kNm
+                st.markdown("**Left Cantilever:**")
+                st.latex(f"M_{{L}} = \\frac{{{w_u_line/1000:.2f} \\times {lc:.2f}^2}}{{2}} = \\mathbf{{{mc:.2f}}} \\text{{ kN}} \\cdot \\text{{m}}")
+                
+            if calc_data['cantilever']['has_right']:
+                lc = calc_data['cantilever']['L_right']
+                mc = mom['M_cant_R'] / 1000 # kNm
+                st.markdown("**Right Cantilever:**")
+                st.latex(f"M_{{R}} = \\frac{{{w_u_line/1000:.2f} \\times {lc:.2f}^2}}{{2}} = \\mathbf{{{mc:.2f}}} \\text{{ kN}} \\cdot \\text{{m}}")
