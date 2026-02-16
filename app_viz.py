@@ -7,279 +7,242 @@ from app_config import COLORS, setup_matplotlib_style
 # Apply style immediately when imported
 setup_matplotlib_style()
 
-def draw_dim_line(ax, start, end, text, offset=0.5, axis='x'):
-    """Helper function for professional engineering dimension lines"""
-    arrow_style = dict(arrowstyle='<|-|>', color=COLORS['dim_line'], linewidth=1.0, shrinkA=0, shrinkB=0)
-    ext_line_style = dict(color=COLORS['dim_line'], linewidth=0.5, linestyle='-')
+def draw_smart_dim(ax, p1, p2, text, offset=0.5, orientation='h', color=COLORS['dim_line']):
+    """
+    Draws a professional engineering dimension line with extension lines.
+    p1, p2: tuples (x, y) start and end points
+    offset: distance from the object to the dimension line
+    orientation: 'h' (horizontal) or 'v' (vertical)
+    """
+    x1, y1 = p1
+    x2, y2 = p2
     
-    if axis == 'x':
-        ax.annotate('', xy=(start[0], start[1]-offset), xytext=(end[0], end[1]-offset), arrowprops=arrow_style)
-        ax.plot([start[0], start[0]], [start[1]-0.1, start[1]-offset-0.2], **ext_line_style)
-        ax.plot([end[0], end[0]], [end[1]-0.1, end[1]-offset-0.2], **ext_line_style)
-        ax.text((start[0]+end[0])/2, start[1]-offset-0.3, text, ha='center', va='top', color=COLORS['dim_line'])
-    elif axis == 'y':
-        ax.annotate('', xy=(start[0]-offset, start[1]), xytext=(end[0]-offset, end[1]), arrowprops=arrow_style)
-        ax.plot([start[0]-0.1, start[0]-offset-0.2], [start[1], start[1]], **ext_line_style)
-        ax.plot([end[0]-0.1, end[0]-offset-0.2], [end[1], end[1]], **ext_line_style)
-        ax.text(start[0]-offset-0.3, (start[1]+end[1])/2, text, ha='right', va='center', rotation=90, color=COLORS['dim_line'])
+    arrow_props = dict(arrowstyle='<|-|>', color=color, linewidth=0.8, shrinkA=0, shrinkB=0)
+    ext_props = dict(color=color, linewidth=0.5, linestyle='-')
+    
+    if orientation == 'h':
+        dim_y = y1 + offset
+        mid_x = (x1 + x2) / 2
+        
+        # 1. Main Arrow Line
+        ax.annotate('', xy=(x1, dim_y), xytext=(x2, dim_y), arrowprops=arrow_props)
+        
+        # 2. Extension Lines (Vertical)
+        # Gap from object = 0.1, Overshoot = 0.1 (standard drafting practice) 
+
+[Image of Engineering drawing dimension lines]
+
+        gap = 0.1 if offset > 0 else -0.1
+        overshoot = 0.1 if offset > 0 else -0.1
+        
+        ax.plot([x1, x1], [y1 + gap, dim_y + overshoot], **ext_props)
+        ax.plot([x2, x2], [y2 + gap, dim_y + overshoot], **ext_props)
+        
+        # 3. Text with white background
+        ax.text(mid_x, dim_y + (0.1 if offset > 0 else -0.3), text, 
+                ha='center', va='bottom' if offset > 0 else 'top', 
+                color=color, fontsize=9, fontweight='bold',
+                bbox=dict(facecolor='white', edgecolor='none', alpha=0.9, pad=0.5))
+                
+    elif orientation == 'v':
+        dim_x = x1 + offset
+        mid_y = (y1 + y2) / 2
+        
+        # 1. Main Arrow Line
+        ax.annotate('', xy=(dim_x, y1), xytext=(dim_x, y2), arrowprops=arrow_props)
+        
+        # 2. Extension Lines (Horizontal)
+        gap = 0.1 if offset > 0 else -0.1
+        overshoot = 0.1 if offset > 0 else -0.1
+        
+        ax.plot([x1 + gap, dim_x + overshoot], [y1, y1], **ext_props)
+        ax.plot([x2 + gap, dim_x + overshoot], [y2, y2], **ext_props)
+        
+        # 3. Text with white background
+        ax.text(dim_x + (0.1 if offset > 0 else -0.1), mid_y, text, 
+                ha='left' if offset > 0 else 'right', va='center', rotation=90,
+                color=color, fontsize=9, fontweight='bold',
+                bbox=dict(facecolor='white', edgecolor='none', alpha=0.9, pad=0.5))
 
 def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1, d_w2, cant_params):
-    """High-fidelity Plan View with Cantilevers"""
-    fig, ax = plt.subplots(figsize=(12, 10))
+    fig, ax = plt.subplots(figsize=(10, 8))
     
-    c1_m = c1_cm / 100
-    c2_m = c2_cm / 100
+    c1 = c1_cm/100
+    c2 = c2_cm/100
     
-    # Basic Boundary
-    slab_L = c1_m/2 if col_loc == "Corner Column" else L1_l
-    slab_R = L1_r
-    slab_T = L2_t
-    slab_B = c2_m/2 if col_loc in ["Edge Column", "Corner Column"] else L2_b
+    # Boundaries
+    bound_L = L1_l if L1_l > 0 else c1/2
+    bound_R = L1_r
+    bound_T = L2_t
+    bound_B = L2_b if L2_b > 0 else c2/2
     
-    # 1. Cantilever Logic (Expand Boundary)
-    cant_L_ext = cant_params['L_left'] if cant_params['has_left'] else 0
-    cant_R_ext = cant_params['L_right'] if cant_params['has_right'] else 0
+    cant_L = cant_params['L_left'] if cant_params['has_left'] else 0
+    cant_R = cant_params['L_right'] if cant_params['has_right'] else 0
     
-    # Adjust total drawing limits
-    draw_L = slab_L + cant_L_ext
-    draw_R = slab_R + cant_R_ext
+    # 1. Main Slab (Concrete Area)
+    total_H = bound_T + bound_B
     
-    # 2. Draw Main Zones (Middle Strip)
-    ax.add_patch(patches.Rectangle((-slab_L, -slab_B), slab_L + slab_R, slab_B + slab_T,
-                                    facecolor=COLORS['ms_bg'], edgecolor='gray', linewidth=1, zorder=0))
-    
-    # 3. Draw Cantilever Zones (Distinct Color)
+    # Cantilever Left
     if cant_params['has_left']:
-        ax.add_patch(patches.Rectangle((-slab_L - cant_L_ext, -slab_B), cant_L_ext, slab_B + slab_T,
-                                        facecolor=COLORS['cantilever_bg'], edgecolor='gray', linestyle='--', linewidth=1, zorder=0))
-        # Label
-        ax.text(-slab_L - cant_L_ext/2, 0, "CANTILEVER", rotation=90, ha='center', va='center', 
-                color='#8E44AD', fontsize=8, fontweight='bold')
-
-    if cant_params['has_right']:
-        ax.add_patch(patches.Rectangle((slab_R, -slab_B), cant_R_ext, slab_B + slab_T,
-                                        facecolor=COLORS['cantilever_bg'], edgecolor='gray', linestyle='--', linewidth=1, zorder=0))
-        # Label
-        ax.text(slab_R + cant_R_ext/2, 0, "CANTILEVER", rotation=90, ha='center', va='center', 
-                color='#8E44AD', fontsize=8, fontweight='bold')
-
-    # 4. Column Strip
-    min_span = min(L1_l + L1_r, L2_t + L2_b)
-    cs_width = 0.25 * min_span
-    cs_top = min(cs_width, slab_T)
-    cs_bot = min(cs_width, slab_B)
+        rect = patches.Rectangle((-bound_L-cant_L, -bound_B), cant_L, total_H, 
+                               facecolor=COLORS['cantilever'], alpha=0.3, edgecolor='none')
+        ax.add_patch(rect)
     
-    # Draw CS Rect (Main Span)
-    ax.add_patch(patches.Rectangle((-slab_L, -cs_bot), slab_L + slab_R, cs_top + cs_bot,
-                                    facecolor=COLORS['cs_bg'], edgecolor='none', alpha=0.6, zorder=1))
-    
-    # Extend CS into Cantilever? Usually CS extends into cantilever.
-    if cant_params['has_left']:
-         ax.add_patch(patches.Rectangle((-slab_L - cant_L_ext, -cs_bot), cant_L_ext, cs_top + cs_bot,
-                                    facecolor=COLORS['cs_bg'], edgecolor='none', alpha=0.4, zorder=1))
+    # Cantilever Right
     if cant_params['has_right']:
-         ax.add_patch(patches.Rectangle((slab_R, -cs_bot), cant_R_ext, cs_top + cs_bot,
-                                    facecolor=COLORS['cs_bg'], edgecolor='none', alpha=0.4, zorder=1))
+        rect = patches.Rectangle((bound_R, -bound_B), cant_R, total_H, 
+                               facecolor=COLORS['cantilever'], alpha=0.3, edgecolor='none')
+        ax.add_patch(rect)
+        
+    # Main Span
+    rect_main = patches.Rectangle((-bound_L, -bound_B), bound_L+bound_R, total_H,
+                                  facecolor=COLORS['concrete'], edgecolor=COLORS['concrete_outline'], linewidth=1.5, zorder=0)
+    ax.add_patch(rect_main)
 
-    # Dashed Separators
-    line_props = dict(color=COLORS['strip_line'], linestyle='--', linewidth=0.8, alpha=0.7)
-    if cs_top < slab_T: ax.axhline(y=cs_top, **line_props)
-    if cs_bot < slab_B: ax.axhline(y=-cs_bot, **line_props)
-
-    # Labeling
-    ax.text((slab_R - slab_L)/2, 0, "COLUMN STRIP", color=COLORS['cs_text'], 
-            fontsize=10, fontweight='bold', ha='center', va='center',
-            bbox=dict(facecolor='white', edgecolor='none', alpha=0.3, pad=1))
-
-    # 5. Drop Panel
+    # 2. Center Lines
+    ax.axhline(0, color=COLORS['center_line'], linestyle='-.', linewidth=0.8)
+    ax.axvline(0, color=COLORS['center_line'], linestyle='-.', linewidth=0.8)
+    
+    # 3. Drop Panel
     if has_drop:
-        ax.add_patch(patches.Rectangle((-d_w1/2, -d_w2/2), d_w1, d_w2, 
-                                        facecolor='none', edgecolor=COLORS['drop_panel_plan'], 
-                                        linestyle='-', linewidth=2, zorder=5))
+        dp = patches.Rectangle((-d_w1/2, -d_w2/2), d_w1, d_w2, 
+                               fill=False, edgecolor=COLORS['rebar'], linestyle='--', linewidth=1.5)
+        ax.add_patch(dp)
+        ax.text(-d_w1/2, -d_w2/2 - 0.2, f"Drop Panel {d_w1}x{d_w2}m", color=COLORS['rebar'], fontsize=8)
 
-    # 6. Columns
-    ax.add_patch(patches.Rectangle((-c1_m/2, -c2_m/2), c1_m, c2_m, 
-                                   facecolor=COLORS['column'], edgecolor='black', hatch='//', zorder=10))
+    # 4. Column (Hatch)
+    col = patches.Rectangle((-c1/2, -c2/2), c1, c2, facecolor='gray', hatch='///', edgecolor='black', zorder=10)
+    ax.add_patch(col)
     
-    # Ghost Columns (Only in spans, not cantilevers)
-    ghost_props = dict(facecolor='white', edgecolor=COLORS['concrete_cut'], linestyle='--', linewidth=1.5, zorder=4)
-    if L1_r > 0: ax.add_patch(patches.Rectangle((L1_r - c1_m/2, -c2_m/2), c1_m, c2_m, **ghost_props))
-    if L1_l > 0 and col_loc != "Corner Column": ax.add_patch(patches.Rectangle((-L1_l - c1_m/2, -c2_m/2), c1_m, c2_m, **ghost_props))
+    # 5. Dimensions (USING SMART DIM)
+    # Chain Dimensioning for Width (L1)
+    current_x = -bound_L - cant_L
     
-    # 7. Dimensions (Updated for Cantilever)
-    def draw_ext_dim(x1, y1, x2, y2, text, offset):
-        mid_x, mid_y = (x1 + x2)/2, (y1 + y2)/2
-        if x1 == x2: # Vertical
-            x1 += offset; x2 += offset; mid_x += offset
-            rot = 90; ha, va = ('right', 'center') if offset < 0 else ('left', 'center')
-            ax.plot([x1-0.1, x1+0.1], [y1, y1], color=COLORS['dim_line'], lw=0.5)
-            ax.plot([x2-0.1, x2+0.1], [y2, y2], color=COLORS['dim_line'], lw=0.5)
-        else: # Horizontal
-            y1 += offset; y2 += offset; mid_y += offset
-            rot = 0; ha, va = ('center', 'top') if offset < 0 else ('center', 'bottom')
-            ax.plot([x1, x1], [y1-0.1, y1+0.1], color=COLORS['dim_line'], lw=0.5)
-            ax.plot([x2, x2], [y2-0.1, y2+0.1], color=COLORS['dim_line'], lw=0.5)
-            
-        ax.annotate('', xy=(x1, y1), xytext=(x2, y2), arrowprops=dict(arrowstyle='<|-|>', color=COLORS['dim_line'], lw=0.8))
-        ax.text(mid_x, mid_y, text, rotation=rot, ha=ha, va=va, fontsize=9, color=COLORS['dim_line'], fontweight='bold',
-                bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, pad=1))
-
-    m_x, m_y = -draw_L - 0.8, -slab_B - 0.8
-    
-    # L1 Dimensions
     if cant_params['has_left']:
-        draw_ext_dim(-slab_L - cant_L_ext, -slab_B, -slab_L, -slab_B, f"Cant L={cant_L_ext:.2f}", m_y - (-slab_B))
-    
-    if L1_l > 0 and col_loc != "Corner Column": 
-        draw_ext_dim(-L1_l, -slab_B, 0, -slab_B, f"L1(L)={L1_l:.2f}", m_y - (-slab_B))
-    
-    draw_ext_dim(0, -slab_B, L1_r, -slab_B, f"L1(R)={L1_r:.2f}", m_y - (-slab_B))
-    
+        draw_smart_dim(ax, (current_x, -bound_B), (-bound_L, -bound_B), 
+                       f"Cant={cant_L:.2f}m", offset=-0.8, orientation='h')
+        current_x = -bound_L
+        
+    if L1_l > 0:
+        draw_smart_dim(ax, (-bound_L, -bound_B), (0, -bound_B), 
+                       f"L1(Left)={L1_l:.2f}m", offset=-0.8, orientation='h')
+        
+    draw_smart_dim(ax, (0, -bound_B), (bound_R, -bound_B), 
+                   f"L1(Right)={bound_R:.2f}m", offset=-0.8, orientation='h')
+                   
     if cant_params['has_right']:
-        draw_ext_dim(L1_r, -slab_B, L1_r + cant_R_ext, -slab_B, f"Cant R={cant_R_ext:.2f}", m_y - (-slab_B))
+        draw_smart_dim(ax, (bound_R, -bound_B), (bound_R+cant_R, -bound_B), 
+                       f"Cant={cant_R:.2f}m", offset=-0.8, orientation='h')
 
-    # L2 Dimensions
-    draw_ext_dim(-draw_L, 0, -draw_L, L2_t, f"L2(T)={L2_t:.2f}", m_x - (-draw_L))
+    # Dimension for Height (L2)
+    # Right side vertical dims logic to avoid clash
+    draw_smart_dim(ax, (0, 0), (0, bound_T), f"L2(Top)={bound_T:.2f}m", offset=-(bound_L+cant_L+0.5), orientation='v')
+    if bound_B > c2:
+        draw_smart_dim(ax, (0, -bound_B), (0, 0), f"L2(Bot)={bound_B:.2f}m", offset=-(bound_L+cant_L+0.5), orientation='v')
 
-    ax.set_title(f"STRUCTURAL LAYOUT: {col_loc.upper()}", fontsize=12, pad=20, fontweight='bold', color='#566573')
-    ax.set_xlim(-draw_L - 1.5, draw_R + 1.5)
-    ax.set_ylim(-slab_B - 2.0, slab_T + 1.0)
+    # Set View
+    draw_L_limit = bound_L + cant_L + 1.5
+    draw_R_limit = bound_R + cant_R + 1.5
+    
+    ax.set_xlim(-draw_L_limit, draw_R_limit)
+    ax.set_ylim(-bound_B - 2.0, bound_T + 1.0)
     ax.set_aspect('equal')
     ax.axis('off')
+    ax.set_title(f"PLAN VIEW: {col_loc}", pad=20)
     return fig
 
 def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm, 
                               is_roof, far_end_up, far_end_lo, cant_params):
-    """High-fidelity Section View with Boundary Conditions and Cantilevers"""
-    fig, ax = plt.subplots(figsize=(10, 7))
+    fig, ax = plt.subplots(figsize=(8, 8))
     
-    s_m = h_slab_cm / 100
-    d_m = h_drop_cm / 100 if has_drop else 0
-    c_m = c1_cm / 100
-    d_w = drop_w1 if has_drop else 0
+    # Units to meters
+    c1 = c1_cm/100
+    hs = h_slab_cm/100
+    hd = h_drop_cm/100 if has_drop else 0
+    dw = drop_w1 if has_drop else 0
     
-    # Setup Views
-    # Cantilever View Extension
-    cant_L_draw = cant_params['L_left'] if cant_params['has_left'] else 1.5
-    cant_R_draw = cant_params['L_right'] if cant_params['has_right'] else 1.5
+    # Coordinates
+    slab_top = 0
+    slab_bot = -hs
+    drop_bot = -(hs + hd)
     
-    # Boundary logic for drawing
-    x_min = -cant_L_draw if cant_params['has_left'] else -1.5
-    x_max = cant_R_draw if cant_params['has_right'] else 1.5
+    # Span logic for drawing limits
+    draw_L = cant_params['L_left'] if cant_params['has_left'] else 1.5
+    draw_R = cant_params['L_right'] if cant_params['has_right'] else 1.5
+    x_min = -draw_L
+    x_max = draw_R
     
-    view_top = 0.8 if not is_roof else 0.1
-    view_bot = -(s_m + d_m + 0.8)
-    
-    col_concrete = '#ECF0F1'
-    col_cant = '#F4ECF7' # Lighter purple for section
-    col_hatch = '#BDC3C7'
-    col_dim = '#2C3E50'
-    
-    # --- Helper: Draw Support Symbols ---
-    def draw_support_symbol(x, y, kind, orientation='bottom'):
-        """Draws Fixed or Pinned symbols"""
-        sz = 0.15
-        if kind == 'Fixed':
-            # Horizontal line
-            ax.plot([x-sz, x+sz], [y, y], color='black', linewidth=2)
-            # Hatch lines
-            hatch_step = sz/2
-            if orientation == 'bottom':
-                for i in np.arange(x-sz, x+sz, 0.05):
-                    ax.plot([i, i-0.05], [y, y-0.05], color='black', linewidth=0.5)
-            else: # top
-                for i in np.arange(x-sz, x+sz, 0.05):
-                    ax.plot([i, i-0.05], [y, y+0.05], color='black', linewidth=0.5)
-        elif kind == 'Pinned':
-            # Triangle
-            if orientation == 'bottom':
-                triangle = patches.Polygon([[x, y], [x-sz/1.5, y-sz], [x+sz/1.5, y-sz]], 
-                                           closed=True, facecolor='white', edgecolor='black', linewidth=1)
-                base = patches.Rectangle((x-sz, y-sz-0.02), sz*2, 0.02, color='black')
-            else: # top
-                triangle = patches.Polygon([[x, y], [x-sz/1.5, y+sz], [x+sz/1.5, y+sz]], 
-                                           closed=True, facecolor='white', edgecolor='black', linewidth=1)
-                base = patches.Rectangle((x-sz, y+sz), sz*2, 0.02, color='black')
-            
-            ax.add_patch(triangle)
-            ax.add_patch(base)
-            # Hinge circle
-            circle = patches.Circle((x, y), 0.02, facecolor='white', edgecolor='black')
-            ax.add_patch(circle)
-
-    # 1. Structure
-    # Column Upper
+    # 1. Columns
+    # Upper
     if not is_roof:
-        ax.add_patch(patches.Rectangle((-c_m/2, 0), c_m, view_top, facecolor='white', edgecolor='black', linewidth=1))
-        draw_support_symbol(0, view_top, far_end_up, 'top')
+        ax.add_patch(patches.Rectangle((-c1/2, 0), c1, h_up, facecolor='white', edgecolor='black'))
+        # Symbol Top
+        if far_end_up == 'Fixed':
+            ax.plot([-0.3, 0.3], [h_up, h_up], 'k-', lw=2)
+            for i in np.arange(-0.3, 0.3, 0.05): ax.plot([i, i-0.05], [h_up, h_up+0.05], 'k-', lw=0.5)
+        else: # Pinned
+            ax.plot(0, h_up, 'wo', markeredgecolor='k')
+            ax.plot([-0.1, 0, 0.1], [h_up+0.15, h_up, h_up+0.15], 'k-')
+            
+    # Lower
+    col_bot_top = drop_bot if has_drop else slab_bot
+    col_height = h_lo - (abs(col_bot_top)) # Net height
+    ax.add_patch(patches.Rectangle((-c1/2, -h_lo), c1, h_lo+col_bot_top, facecolor='white', edgecolor='black'))
     
-    # Column Lower
-    bot_struct = -(s_m + d_m)
-    ax.add_patch(patches.Rectangle((-c_m/2, view_bot), c_m, abs(view_bot - bot_struct), facecolor='white', edgecolor='black', linewidth=1))
-    draw_support_symbol(0, view_bot, far_end_lo, 'bottom')
+    # Symbol Bottom
+    if far_end_lo == 'Fixed':
+        ax.plot([-0.3, 0.3], [-h_lo, -h_lo], 'k-', lw=2)
+        for i in np.arange(-0.3, 0.3, 0.05): ax.plot([i, i-0.05], [-h_lo, -h_lo-0.05], 'k-', lw=0.5)
+    else: # Pinned
+        ax.plot(0, -h_lo, 'wo', markeredgecolor='k', zorder=10)
+        ax.plot([-0.15, 0, 0.15], [-h_lo-0.2, -h_lo, -h_lo-0.2], 'k-')
+        ax.plot([-0.2, 0.2], [-h_lo-0.2, -h_lo-0.2], 'k-')
 
-    # Slab (Continuous)
-    # Define left/right extent
-    left_x = -cant_params['L_left'] if cant_params['has_left'] else -1.5
-    right_x = cant_params['L_right'] if cant_params['has_right'] else 1.5
-    
+    # 2. Slab & Drop (Using Polygon for better fill)
     # Main Slab
-    ax.add_patch(patches.Rectangle((left_x, -s_m), (abs(left_x)+right_x), s_m, facecolor=col_concrete, edgecolor='black', linewidth=1, zorder=5))
-    ax.add_patch(patches.Rectangle((left_x, -s_m), (abs(left_x)+right_x), s_m, fill=False, edgecolor=col_hatch, hatch='///', linewidth=0, zorder=6))
+    slab_poly = patches.Polygon([
+        (x_min, slab_top), (x_max, slab_top), (x_max, slab_bot), (x_min, slab_bot)
+    ], closed=True, facecolor=COLORS['concrete'], edgecolor='black')
+    ax.add_patch(slab_poly)
     
-    # Cantilever Highlighting (Optional overlay)
-    if cant_params['has_left']:
-        ax.add_patch(patches.Rectangle((-cant_params['L_left'], -s_m), cant_params['L_left'], s_m, facecolor=col_cant, alpha=0.3, zorder=7))
-    if cant_params['has_right']:
-        ax.add_patch(patches.Rectangle((0, -s_m), cant_params['L_right'], s_m, facecolor=col_cant, alpha=0.3, zorder=7))
-
     # Drop Panel
     if has_drop:
-        ax.add_patch(patches.Rectangle((-d_w/2, bot_struct), d_w, d_m, facecolor=col_concrete, edgecolor='black', linewidth=1, zorder=5))
-        ax.add_patch(patches.Rectangle((-d_w/2, bot_struct), d_w, d_m, fill=False, edgecolor=col_hatch, hatch='///', linewidth=0, zorder=6))
+        drop_poly = patches.Polygon([
+            (-dw/2, slab_bot), (dw/2, slab_bot), (dw/2, drop_bot), (-dw/2, drop_bot)
+        ], closed=True, facecolor=COLORS['concrete'], edgecolor='black')
+        ax.add_patch(drop_poly)
 
-    # 2. Dimensions
-    def draw_side_dim(y_start, y_end, x_loc, label):
-        ax.annotate('', xy=(x_loc, y_start), xytext=(x_loc, y_end),
-                    arrowprops=dict(arrowstyle='<|-|>', color=col_dim, linewidth=0.8, shrinkA=0, shrinkB=0))
-        mid_y = (y_start + y_end) / 2
-        ax.text(x_loc + 0.15, mid_y, label, ha='center', va='center', rotation=90, 
-                fontsize=9, color=col_dim, fontweight='bold',
-                bbox=dict(facecolor='white', edgecolor='none', alpha=0.7, pad=1))
-
-    # Slab Thickness
-    ax.text(left_x, -s_m/2, f" {h_slab_cm}cm", va='center', ha='right', fontsize=9, color=col_dim)
-
-    # Height Dims
-    dim_x_right = c_m/2 + 0.5
+    # 3. Dimensions (USING SMART DIM)
+    # Vertical Dims (Right side)
+    dim_x = x_max + 0.5
+    
     if not is_roof:
-        draw_side_dim(0, view_top, dim_x_right, f"Up: {h_up:.2f}m")
-    draw_side_dim(-(s_m+d_m), view_bot, dim_x_right, f"Lo: {h_lo:.2f}m")
+        draw_smart_dim(ax, (0, 0), (0, h_up), f"H_up={h_up:.2f}m", offset=dim_x, orientation='v')
+    
+    draw_smart_dim(ax, (0, -h_lo), (0, 0), f"H_lo={h_lo:.2f}m", offset=dim_x, orientation='v')
+    
+    # Slab Thickness (Detailed with leaders)
+    ax.annotate(f"t={h_slab_cm}cm", xy=(x_min, slab_bot/2), xytext=(x_min-0.8, slab_bot/2),
+                arrowprops=dict(arrowstyle='->', color='blue'), color='blue', va='center')
+    
+    if has_drop:
+        ax.annotate(f"Drop={h_drop_cm}cm", xy=(-dw/2, (slab_bot+drop_bot)/2), xytext=(-dw/2-0.8, drop_bot),
+                    arrowprops=dict(arrowstyle='->', color='red'), color='red', va='center')
 
-    # Cantilever Dims
-    dim_y_top = 0.3
+    # Horizontal Dims (Cantilever)
     if cant_params['has_left']:
-        L = cant_params['L_left']
-        ax.annotate('', xy=(-L, dim_y_top), xytext=(0, dim_y_top), arrowprops=dict(arrowstyle='<|-|>', color='purple'))
-        ax.text(-L/2, dim_y_top + 0.05, f"Cantilever {L:.2f}m", color='purple', ha='center', fontsize=9, fontweight='bold')
-        ax.plot([-L, -L], [0, dim_y_top], linestyle=':', color='purple', lw=0.5)
-
+        draw_smart_dim(ax, (-cant_params['L_left'], 0), (0, 0), 
+                       f"Cant L={cant_params['L_left']:.2f}m", offset=0.5, orientation='h')
+                       
     if cant_params['has_right']:
-        L = cant_params['L_right']
-        ax.annotate('', xy=(0, dim_y_top), xytext=(L, dim_y_top), arrowprops=dict(arrowstyle='<|-|>', color='purple'))
-        ax.text(L/2, dim_y_top + 0.05, f"Cantilever {L:.2f}m", color='purple', ha='center', fontsize=9, fontweight='bold')
-        ax.plot([L, L], [0, dim_y_top], linestyle=':', color='purple', lw=0.5)
+        draw_smart_dim(ax, (0, 0), (cant_params['L_right'], 0), 
+                       f"Cant R={cant_params['L_right']:.2f}m", offset=0.5, orientation='h')
 
-    # T.O.S Marker
-    ax.text(left_x + 0.2, 0.05, "▼ T.O. Slab (+0.00)", color='blue', fontsize=8, fontweight='bold')
-    ax.axhline(0, color='blue', linestyle='-.', linewidth=0.5, alpha=0.5)
+    # Level Marker
+    ax.axhline(0, color='blue', linestyle=':', linewidth=0.5)
+    ax.text(x_max+0.2, 0, "Level +0.00", color='blue', fontsize=8, va='center')
 
     ax.set_aspect('equal')
-    ax.set_xlim(left_x - 0.5, right_x + 0.5)
-    ax.set_ylim(view_bot - 0.5, view_top + 0.5)
     ax.axis('off')
-    
-    title_suffix = " (Pinned Ends)" if (far_end_lo == 'Pinned' or far_end_up == 'Pinned') else ""
-    ax.set_title(f"SECTION DETAIL: {is_roof and 'ROOF' or 'INTERMEDIATE'} JOINT{title_suffix}", 
-                 fontsize=10, color='gray', pad=10, fontweight='bold')
+    ax.set_title("SECTION A-A (True Scale)", pad=20)
     return fig
