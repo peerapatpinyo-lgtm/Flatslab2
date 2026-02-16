@@ -215,119 +215,149 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
 
 def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm):
     """
-    วาดรูปตัด Elevation แบบ CAD Style (Engineering Grade)
-    - แก้ปัญหาตัวอักษรทับกัน (Text Overlap) ด้วยการแยกฝั่ง Dimension และใช้ Bbox
-    - แสดงระยะความสูงเสา (Story Height) พร้อม Break Line
+    วาดรูปตัด Elevation แบบ Shop Drawing (Clean Layout)
+    - แก้ปัญหาตัวอักษรทับ: ย้าย Dimension ออกไปด้านนอกพื้นที่วาดรูป (External Dimensioning)
+    - ใช้ Extension Lines ลากเส้นเชื่อมบอกระยะ
     """
-    fig, ax = plt.subplots(figsize=(10, 7)) # เพิ่มขนาดรูปให้กว้างขึ้นเพื่อใส่ Dim ด้านข้าง
+    # 1. Setup & Scale
+    fig, ax = plt.subplots(figsize=(10, 6)) # ปรับสัดส่วนให้กว้างขึ้นเพื่อรองรับ Dim ด้านข้าง
     
-    # 1. Prepare Data (Unit: Meters)
     s_m = h_slab_cm / 100
     d_m = h_drop_cm / 100 if has_drop else 0
     c_m = c1_cm / 100
     d_w = drop_w1 if has_drop else 0
     
-    # Viewport Limits (ซูมดูเฉพาะช่วงรอยต่อ)
-    view_top = 0.8
-    view_bot = -(s_m + d_m + 0.8)
-    view_width = 2.0
+    # กำหนดขอบเขตการวาด
+    view_width = 1.5      # ความกว้างของพื้นที่จะแสดง (จาก Center)
+    view_top = 0.8        # ความสูงที่จะแสดงด้านบน
+    view_bot = -(s_m + d_m + 0.8) # ความลึกที่จะแสดงด้านล่าง
     
-    # Styles
-    concrete_color = '#E5E7E9'  # Light Gray
-    hatch_pattern = '///'       # Concrete Hatch
-    dim_color = '#2E4053'       # Dark Slate
-    center_line_color = '#E74C3C' # Red for CL
+    # Colors & Styles
+    col_concrete = '#ECF0F1'
+    col_hatch = '#BDC3C7'
+    col_dim = '#2C3E50'
     
-    # --- Helper: Draw Dimension Line (CAD Style) ---
-    def draw_vertical_dim(x_pos, y_start, y_end, label, color=dim_color, arrow_size=10):
-        # Line
-        ax.annotate('', xy=(x_pos, y_start), xytext=(x_pos, y_end),
-                    arrowprops=dict(arrowstyle='<|-|>', color=color, linewidth=0.8, shrinkA=0, shrinkB=0))
-        # Extension Lines (Tick marks)
-        tick_len = 0.05
-        ax.plot([x_pos-tick_len, x_pos+tick_len], [y_start, y_start], color=color, linewidth=0.8)
-        ax.plot([x_pos-tick_len, x_pos+tick_len], [y_end, y_end], color=color, linewidth=0.8)
-        # Text with Background (Prevent Overlap)
+    # ==========================================================================
+    # Helper: Dimension Line with Extension (เส้นบอกระยะแบบมีขา)
+    # ==========================================================================
+    def draw_side_dim(y_start, y_end, x_loc, label, side='left'):
+        """
+        y_start, y_end: ช่วงความสูงที่ต้องการวัด
+        x_loc: ตำแหน่งแกน X ที่จะวาดเส้นบอกระยะ (ต้องอยู่นอกเนื้อรูป)
+        side: 'left' หรือ 'right' เพื่อกำหนดทิศทางตัวอักษร
+        """
+        # 1. วาดเส้นตั้ง (Dimension Line)
+        ax.annotate('', xy=(x_loc, y_start), xytext=(x_loc, y_end),
+                    arrowprops=dict(arrowstyle='<|-|>', color=col_dim, linewidth=0.8, shrinkA=0, shrinkB=0))
+        
+        # 2. วาดเส้นนอน (Extension Lines) วิ่งจากวัตถุมาหาเส้นบอกระยะ
+        # คำนวณจุดเริ่มของเส้น Extension (จากขอบวัตถุ หรือ Center)
+        ext_len = 0.1
+        ax.plot([x_loc - ext_len/2, x_loc + ext_len/2], [y_start, y_start], color=col_dim, linewidth=0.6)
+        ax.plot([x_loc - ext_len/2, x_loc + ext_len/2], [y_end, y_end], color=col_dim, linewidth=0.6)
+        
+        # 3. วาดเส้นประเชื่อมจากวัตถุจริงมาหา Dimension (Optional เพื่อความชัดเจน)
+        connect_x = -view_width if side == 'left' else c_m/2
+        ax.plot([connect_x, x_loc], [y_start, y_start], color=col_dim, linestyle=':', linewidth=0.5, alpha=0.5)
+        ax.plot([connect_x, x_loc], [y_end, y_end], color=col_dim, linestyle=':', linewidth=0.5, alpha=0.5)
+
+        # 4. ใส่ตัวเลข
         mid_y = (y_start + y_end) / 2
-        ax.text(x_pos, mid_y, label, ha='center', va='center', color=color, fontsize=9, fontweight='bold', rotation=90,
-                bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, pad=2))
-
-    # --- Helper: Draw Break Line (ZigZag) ---
-    def draw_break_line(x_center, y_pos, width, height=0.05):
-        x = [x_center - width/2, x_center - width/4, x_center + width/4, x_center + width/2]
-        y = [y_pos, y_pos - height, y_pos + height, y_pos]
-        ax.plot(x, y, color='black', linewidth=1)
+        rot = 90
+        # ขยับตัวหนังสือออกไปอีกนิดไม่ให้ทับเส้น
+        text_offset = -0.15 if side == 'left' else 0.15
+        
+        ax.text(x_loc + text_offset, mid_y, label, 
+                ha='center' if side=='left' else 'center', 
+                va='center', 
+                rotation=rot, 
+                fontsize=9, color=col_dim, fontweight='bold',
+                bbox=dict(facecolor='white', edgecolor='none', alpha=0.7, pad=1))
 
     # ==========================================================================
-    # 1. DRAW STRUCTURE
+    # 1. DRAW STRUCTURE (Zone กลาง)
     # ==========================================================================
     
-    # 1.1 Columns (With Break Lines)
-    # Upper Column
-    ax.add_patch(patches.Rectangle((-c_m/2, 0), c_m, view_top, facecolor='white', edgecolor='black', linewidth=1))
-    draw_break_line(0, view_top, c_m) # Top Break
+    # Hatching Setting
+    hatch_style = {'hatch': '///', 'edgecolor': col_hatch, 'linewidth': 0.5}
+
+    # Column (Upper)
+    ax.add_patch(patches.Rectangle((-c_m/2, 0), c_m, view_top, 
+                                   facecolor='white', edgecolor='black', linewidth=1))
     
-    # Lower Column
-    bot_start = -(s_m + d_m)
-    ax.add_patch(patches.Rectangle((-c_m/2, view_bot), c_m, abs(view_bot - bot_start), facecolor='white', edgecolor='black', linewidth=1))
-    draw_break_line(0, view_bot, c_m) # Bottom Break
-    
-    # 1.2 Slab (Continuous)
-    slab = patches.Rectangle((-view_width, -s_m), view_width*2, s_m, 
-                             facecolor=concrete_color, edgecolor='black', hatch=hatch_pattern, zorder=2)
-    ax.add_patch(slab)
-    
-    # 1.3 Drop Panel
+    # Column (Lower)
+    bot_struct = -(s_m + d_m)
+    ax.add_patch(patches.Rectangle((-c_m/2, view_bot), c_m, abs(view_bot - bot_struct), 
+                                   facecolor='white', edgecolor='black', linewidth=1))
+
+    # Slab (Cut Section)
+    ax.add_patch(patches.Rectangle((-view_width, -s_m), view_width*2, s_m, 
+                                   facecolor=col_concrete, edgecolor='black', linewidth=1, zorder=5))
+    # Add Hatch Manually to avoid kwargs conflict
+    ax.add_patch(patches.Rectangle((-view_width, -s_m), view_width*2, s_m, 
+                                   fill=False, edgecolor=col_hatch, hatch='///', linewidth=0, zorder=6))
+
+    # Drop Panel
     if has_drop:
-        drop = patches.Rectangle((-d_w/2, -(s_m + d_m)), d_w, d_m, 
-                                 facecolor=concrete_color, edgecolor='black', hatch=hatch_pattern, zorder=2)
-        ax.add_patch(drop)
-        # Drop Dimension (Left Side - Inner Track)
-        draw_vertical_dim(-d_w/2 - 0.3, -s_m, -(s_m+d_m), f"Drop {h_drop_cm} cm")
+        ax.add_patch(patches.Rectangle((-d_w/2, bot_struct), d_w, d_m, 
+                                       facecolor=col_concrete, edgecolor='black', linewidth=1, zorder=5))
+        ax.add_patch(patches.Rectangle((-d_w/2, bot_struct), d_w, d_m, 
+                                       fill=False, edgecolor=col_hatch, hatch='///', linewidth=0, zorder=6))
 
-    # ==========================================================================
-    # 2. DRAW DIMENSIONS (Separated Tracks to avoid overlap)
-    # ==========================================================================
-
-    # --- LEFT SIDE: Geometry Thickness ---
-    # Slab Thickness (Outer Track)
-    draw_vertical_dim(-view_width + 0.3, 0, -s_m, f"Slab {h_slab_cm} cm")
-
-    # --- RIGHT SIDE: Story Heights (The missing part) ---
-    dist_r = 0.5 # Distance from center
+    # Break Lines (เส้นหยักแสดงรอยตัดเสา)
+    def draw_break(x, y, w):
+        ax.plot([x-w/2, x-w/4, x+w/4, x+w/2], [y, y-0.05, y+0.05, y], color='black', linewidth=1)
     
-    # Upper Story Height (h_up)
-    # Note: We draw the dim line mostly, but label it with the FULL value
-    draw_vertical_dim(c_m/2 + dist_r, 0, view_top, f"Upper Storey H = {h_up:.2f} m")
-    
-    # Lower Story Height (h_lo)
-    draw_vertical_dim(c_m/2 + dist_r, -(s_m + d_m), view_bot, f"Lower Storey H = {h_lo:.2f} m")
+    draw_break(0, view_top, c_m)
+    draw_break(0, view_bot, c_m)
 
     # ==========================================================================
-    # 3. ANNOTATIONS & DETAILS
+    # 2. DRAW DIMENSIONS (Zone นอก)
     # ==========================================================================
     
-    # Center Line (CL)
-    ax.axvline(0, color=center_line_color, linestyle='-.', linewidth=0.8, alpha=0.6)
-    ax.text(0, view_top + 0.05, "CL", color=center_line_color, ha='center', fontweight='bold')
-
-    # Level Marker
-    ax.annotate('▼ T.O. Slab (+0.00)', xy=(0, 0), xytext=(0.6, 0.15),
-                arrowprops=dict(arrowstyle='->', color='blue'),
-                fontsize=9, color='blue', fontweight='bold', ha='left')
-
-    # Drop Panel Width Dimension (Horizontal)
+    # --- ZONE ซ้าย: บอกความหนา (Slab/Drop) ---
+    # ขยับออกไปทางซ้ายของ Slab (view_width) อีก 0.5 เมตร
+    dim_x_left = -view_width - 0.5
+    
+    # Slab Thickness
+    draw_side_dim(0, -s_m, dim_x_left, f"Slab {h_slab_cm} cm", side='left')
+    
+    # Drop Thickness (ถ้ามี)
     if has_drop:
-        ax.annotate('', xy=(-d_w/2, -(s_m+d_m)-0.1), xytext=(d_w/2, -(s_m+d_m)-0.1),
-                    arrowprops=dict(arrowstyle='<|-|>', color=dim_color, linewidth=0.8))
-        ax.text(0, -(s_m+d_m)-0.25, f"Drop Width = {drop_w1:.2f} m", ha='center', color=dim_color, fontsize=8)
+        # ขยับออกไปอีกนิดเพื่อไม่ให้ทับเส้น Slab
+        draw_side_dim(-s_m, -(s_m+d_m), dim_x_left - 0.4, f"Drop {h_drop_cm} cm", side='left')
 
-    # --- Final Plot Settings ---
+    # --- ZONE ขวา: บอกความสูง (Story Height) ---
+    # ขยับออกไปทางขวาของเสา (c_m/2) อีก 0.5 เมตร
+    dim_x_right = c_m/2 + 0.8
+    
+    # Upper Height
+    draw_side_dim(0, view_top, dim_x_right, f"Upper H. {h_up:.2f} m", side='right')
+    # Lower Height
+    draw_side_dim(-(s_m+d_m), view_bot, dim_x_right, f"Lower H. {h_lo:.2f} m", side='right')
+
+    # --- ZONE ล่าง: บอกความกว้าง Drop ---
+    if has_drop:
+        # วาดเส้นบอกระยะแนวนอนด้านล่างสุด
+        dim_y_bot = view_bot - 0.2
+        ax.annotate('', xy=(-d_w/2, dim_y_bot), xytext=(d_w/2, dim_y_bot),
+                    arrowprops=dict(arrowstyle='<|-|>', color=col_dim, linewidth=0.8))
+        ax.text(0, dim_y_bot - 0.15, f"Drop Width {drop_w1:.2f} m", ha='center', color=col_dim, fontsize=9)
+        # เส้น Extension ลงมาหา
+        ax.plot([-d_w/2, -d_w/2], [-(s_m+d_m), dim_y_bot], linestyle=':', color='gray', linewidth=0.5)
+        ax.plot([d_w/2, d_w/2], [-(s_m+d_m), dim_y_bot], linestyle=':', color='gray', linewidth=0.5)
+
+    # Level Marker (T.O.S)
+    ax.text(-view_width + 0.2, 0.05, "▼ T.O. Slab (+0.00)", color='blue', fontsize=8, fontweight='bold')
+    ax.axhline(0, color='blue', linestyle='-.', linewidth=0.5, alpha=0.5)
+
+    # Final Config
     ax.set_aspect('equal')
-    ax.set_xlim(-view_width, view_width + 0.5) # เพิ่มที่ว่างด้านขวาให้ Dimension
-    ax.set_ylim(view_bot - 0.2, view_top + 0.2)
+    # ขยาย xlim ให้กว้างพอที่จะเห็น Dimension ด้านข้าง
+    ax.set_xlim(-view_width - 1.2, view_width + 1.2)
+    ax.set_ylim(view_bot - 0.5, view_top + 0.2)
     ax.axis('off')
-    ax.set_title("SECTION A-A: COLUMN & SLAB CONNECTION", fontsize=11, pad=20, loc='left', color='gray')
+    ax.set_title("SECTION DETAIL (TRUE SCALE)", fontsize=10, color='gray', pad=10)
     
     return fig
 # ==============================================================================
