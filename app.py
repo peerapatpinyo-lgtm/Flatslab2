@@ -7,14 +7,35 @@ import numpy as np
 st.set_page_config(page_title="Flat Slab EFM Design Pro", layout="wide")
 
 # ==============================================================================
+# ⚙️ UNIT CONVERSION & CONSTANTS (Global Settings)
+# ==============================================================================
+class Units:
+    """
+    คลาสสำหรับจัดการตัวคูณแปลงหน่วย (Conversion Factors)
+    เป้าหมาย: แปลงทุก Input ให้เป็น SI Units (N, m, Pa) สำหรับการคำนวณภายใน
+    """
+    # Gravity
+    G = 9.80665  # m/s^2
+
+    # Length
+    CM_TO_M = 0.01
+    
+    # Force
+    KG_TO_N = G  # 1 kgf = 9.80665 N
+    TON_TO_N = 1000 * G
+
+    # Stress / Strength
+    # 1 ksc (kg/cm^2) = 9.80665 N / 0.0001 m^2 = 98,066.5 Pa
+    KSC_TO_PA = 98066.5 
+    KSC_TO_MPA = 0.0980665  # ใช้สำหรับเข้าสูตร ACI ที่ต้องการหน่วย MPa
+
+# ==============================================================================
 # 🧱 ENGINEERING CALCULATIONS & VALIDATION
 # ==============================================================================
 
 def validate_aci_standard(h_slab, h_drop, L1_left, L1_right, L2_top, L2_bot, drop_w1, drop_w2, has_drop):
     """ตรวจสอบมาตรฐาน ACI 318 สำหรับความหนาและความกว้างของ Drop Panel"""
     warnings = []
-    L1_total = L1_left + L1_right
-    L2_total = L2_top + L2_bot
     
     if has_drop:
         # 1. Thickness Check (min h/4)
@@ -37,6 +58,107 @@ def validate_aci_standard(h_slab, h_drop, L1_left, L1_right, L2_top, L2_bot, dro
     return warnings
 
 # ==============================================================================
+# 🧮 DATA NORMALIZATION ENGINE (SI UNITS)
+# ==============================================================================
+
+def prepare_calculation_data(
+    h_slab_cm, h_drop_cm, has_drop, 
+    c1_cm, c2_cm, drop_w2,
+    L1_l, L1_r, L2_t, L2_b,
+    fc_ksc, fy_grade, dl_kgm2, ll_kgm2
+):
+    """
+    แปลง User Input ทั้งหมดให้เป็น SI Units (N, m, Pa) เพื่อความถูกต้องแม่นยำ 
+    ตามมาตรฐาน ACI 318M
+    """
+    
+    # --- 1. Geometry Normalization (cm -> m) ---
+    h_s = h_slab_cm * Units.CM_TO_M
+    h_d = (h_slab_cm + h_drop_cm) * Units.CM_TO_M if has_drop else h_s
+    
+    c1 = c1_cm * Units.CM_TO_M
+    c2 = c2_cm * Units.CM_TO_M
+    
+    # Drop Panel Width (Transverse direction)
+    b_drop = drop_w2 if has_drop else 0.0  # Already in m from input
+
+    # Span Geometry
+    L1 = L1_l + L1_r         # Analysis Direction (m)
+    L2 = L2_t + L2_b         # Transverse Direction (m)
+    Ln = L1 - c1             # Clear Span (m)
+    
+    # --- 2. Material Properties (ACI 318M Standard) ---
+    # Concrete
+    fc_mpa = fc_ksc * Units.KSC_TO_MPA      # แปลง ksc -> MPa เพื่อเข้าสูตร
+    fc_pa = fc_ksc * Units.KSC_TO_PA        # แปลง ksc -> Pa (N/m^2) เพื่อใช้คำนวณ Strength
+    
+    # Modulus of Elasticity (Ec)
+    # ACI 318M-19 Section 19.2.2.1: Ec = 4700 * sqrt(fc') ในหน่วย MPa
+    Ec_mpa = 4700 * np.sqrt(fc_mpa)
+    Ec_pa = Ec_mpa * 1e6                    # แปลงกลับเป็น Pa (N/m^2) เพื่อใช้ใน Stiffness Matrix
+    
+    # Steel (Rebar)
+    # fy_grade input เช่น "SD40" -> 4000 ksc
+    fy_ksc = 3000 if fy_grade == "SD30" else (4000 if fy_grade == "SD40" else 5000)
+    fy_pa = fy_ksc * Units.KSC_TO_PA
+
+    # --- 3. Load Normalization (kg/m² -> N/m² or Pa) ---
+    # Self-weight (Density of Concrete = 2400 kg/m^3)
+    # เราคำนวณ SW เป็น Pressure (Pa) แยกตามความหนา
+    
+    density_conc_kg = 2400
+    density_conc_N = density_conc_kg * Units.G  # ~23,536 N/m^3
+    
+    sw_slab_pa = h_s * density_conc_N
+    
+    # Superimposed Dead Load
+    sdl_pa = dl_kgm2 * Units.KG_TO_N
+    
+    # Live Load
+    ll_pa = ll_kgm2 * Units.KG_TO_N
+    
+    # Total Factored Load (wu) - ACI 318
+    # Note: ในขั้นตอนนี้เราจะคิดเฉพาะ Slab Weight ปกติ 
+    # ส่วนน้ำหนัก Drop Panel ที่เพิ่มมามักจะคิดเป็น Point Load หรือ Added Area Load ทีหลัง
+    # แต่เพื่อความง่ายในเบื้องต้น เราจะเฉลี่ยหรือคิดที่ Slab หลักก่อน
+    
+    wu_pa = (1.2 * (sw_slab_pa + sdl_pa)) + (1.6 * ll_pa) # Unit: N/m^2
+
+    # --- 4. Stiffness Parameters (Moment of Inertia - m^4) ---
+    # Gross Inertia ของหน้าตัด Slab (เต็มความกว้าง L2)
+    Ig_slab = (L2 * (h_s**3)) / 12
+    
+    # Gross Inertia ของหน้าตัด Drop (เฉพาะช่วงหัวเสา)
+    # หมายเหตุ: การคำนวณ Ig ของ Drop ต้องระวังเรื่อง Effective Width 
+    # แต่ในขั้นต้นใช้ความกว้าง Drop จริงไปก่อน
+    Ig_drop = (b_drop * (h_d**3)) / 12 + ((L2 - b_drop) * (h_s**3)) / 12 if has_drop else Ig_slab
+
+    # 📦 Return Normalized Data Object (Dictionary)
+    return {
+        "geom": {
+            "L1": L1, "L2": L2, "Ln": Ln,
+            "c1": c1, "c2": c2,
+            "h_s": h_s, "h_d": h_d,
+            "b_drop": b_drop
+        },
+        "mat": {
+            "Ec_pa": Ec_pa,       # Young's Modulus (Pa)
+            "fc_pa": fc_pa,       # Compressive Strength (Pa)
+            "fy_pa": fy_pa
+        },
+        "loads": {
+            "wu_pa": wu_pa,       # Factored Load (N/m^2)
+            "sw_pa": sw_slab_pa,  # Self-weight (N/m^2)
+            "sdl_pa": sdl_pa,
+            "ll_pa": ll_pa
+        },
+        "stiffness": {
+            "Ig_slab": Ig_slab,   # m^4
+            "Ig_drop": Ig_drop    # m^4
+        }
+    }
+
+# ==============================================================================
 # 🎨 VISUALIZATION SYSTEM
 # ==============================================================================
 
@@ -48,7 +170,6 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
     c2_m = c2_cm / 100
     
     # คำนวณขอบเขตพื้นตามตำแหน่งเสา
-    # ถ้าเป็น Corner หรือ Edge ด้านที่ไม่มีสแปนจะสิ้นสุดแค่ขอบเสา (c/2)
     slab_L = c1_m/2 if col_loc == "Corner Column" else L1_l
     slab_R = L1_r
     slab_T = L2_t
@@ -71,7 +192,6 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
     ax.axhline(y=-cs_bot, color='#27ae60', linestyle='--', linewidth=1.5, alpha=0.8, zorder=2)
     
     # 3. วาดเสา (Columns)
-    # เสาหลักที่ตำแหน่ง (0,0)
     ax.add_patch(patches.Rectangle((-c1_m/2, -c2_m/2), c1_m, c2_m, facecolor='#34495e', hatch='///', zorder=10))
     
     # เสาบริวาร (Neighboring Columns)
@@ -83,7 +203,7 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
     # 4. วาด Drop Panel
     if has_drop:
         ax.add_patch(patches.Rectangle((-d_w1/2, -d_w2/2), d_w1, d_w2, 
-                                     facecolor='#f1c40f', edgecolor='#f39c12', alpha=0.5, zorder=8))
+                                       facecolor='#f1c40f', edgecolor='#f39c12', alpha=0.5, zorder=8))
 
     # 5. ใส่ข้อความระบุโซน
     txt_style = dict(ha='center', va='center', fontsize=9, fontweight='bold', alpha=0.5)
@@ -170,7 +290,7 @@ with tab1:
             dl = st.number_input("Superimposed DL (kg/m²)", value=100, step=10)
         with c2_mat:
             fy_label = st.selectbox("Steel Grade (fy)", options=["SD30", "SD40", "SD50"], index=1)
-            fy = {"SD30": 3000, "SD40": 4000, "SD50": 5000}[fy_label]
+            # fy mapping is now handled in prepare_calculation_data
             ll = st.number_input("Live Load (kg/m²)", value=200, step=50)
 
         # --- 2. BOUNDARY CONDITIONS ---
@@ -178,7 +298,6 @@ with tab1:
         floor_scenario = st.selectbox("Floor Level", ["Typical Floor", "Top Floor (Roof)", "Foundation Level"])
         col_location = st.selectbox("Column Location", ["Interior Column", "Edge Column", "Corner Column"])
         
-        # คุมสิทธิการกรอกสแปนตามตำแหน่งเสา
         is_corner = (col_location == "Corner Column")
         is_edge = (col_location == "Edge Column")
 
@@ -233,13 +352,14 @@ with tab1:
             h_up = st.number_input("Upper Column Height (m)", value=3.0)
         h_lo = st.number_input("Lower Column Height (m)", value=3.0)
 
-        # --- DATA PROCESSING ---
-        calc_data = {
-            'L1_total': L1_l + L1_r,
-            'L2_total': L2_t + L2_b,
-            'w_u_approx': 1.2 * (dl + (h_slab_cm/100 * 2400)) + 1.6 * ll,
-            'fc': fc, 'fy': fy
-        }
+        # --- CALL CALCULATION ENGINE ---
+        # ⚠️ แก้ไข: ส่ง Parameters เข้าไปให้ครบถ้วน 
+        calc_obj = prepare_calculation_data(
+            h_slab_cm, h_drop_cm, has_drop,
+            c1_cm, c2_cm, drop_w2,
+            L1_l, L1_r, L2_t, L2_b,
+            fc, fy_label, dl, ll
+        )
 
     with col_viz:
         st.subheader("👁️ Structural Analysis View")
@@ -253,13 +373,18 @@ with tab1:
             fig_elev = draw_elevation(floor_scenario, h_up, h_lo, has_drop, h_drop_cm, c1_cm, h_slab_cm)
             st.pyplot(fig_elev)
             
-        # Summary Box
+        # Summary Box - Updated to use calc_obj keys
+        # Convert SI (Pa/N) back to Engineering Units (kg/m2, Ton) for Display
+        wu_display = calc_obj['loads']['wu_pa'] / Units.G # N/m2 -> kg/m2
+        total_load_N = calc_obj['loads']['wu_pa'] * calc_obj['geom']['L1'] * calc_obj['geom']['L2']
+        total_load_ton = total_load_N / (1000 * Units.G)
+
         st.success(f"""
         **📋 Design Summary (Factored):**
-        - **Analysis Strip Width:** {calc_data['L2_total']:.2f} m
-        - **Average Span ($L_n$):** {(calc_data['L1_total'] - c1_cm/100):.2f} m
-        - **Approx. Design Load ($w_u$):** {calc_data['w_u_approx']:.0f} kg/m²
-        - **Total Factored Force on Strip:** {calc_data['w_u_approx'] * calc_data['L1_total'] * calc_data['L2_total'] / 1000:.2f} Tons
+        - **Analysis Strip Width:** {calc_obj['geom']['L2']:.2f} m
+        - **Clear Span ($L_n$):** {calc_obj['geom']['Ln']:.2f} m
+        - **Design Load ($w_u$):** {wu_display:.0f} kg/m²
+        - **Total Factored Force on Strip:** {total_load_ton:.2f} Tons
         """)
         
         st.info("""
@@ -288,133 +413,3 @@ with tab2:
     ซึ่งคำนวณจากสูตร:
     $$ \\frac{1}{K_{ec}} = \\frac{1}{\\sum K_c} + \\frac{1}{K_t} $$
     """)
-
-# ==============================================================================
-# ⚙️ UNIT CONVERSION & CONSTANTS (Global Settings)
-# ==============================================================================
-class Units:
-    """
-    คลาสสำหรับจัดการตัวคูณแปลงหน่วย (Conversion Factors)
-    เป้าหมาย: แปลงทุก Input ให้เป็น SI Units (N, m, Pa) สำหรับการคำนวณภายใน
-    """
-    # Gravity
-    G = 9.80665  # m/s^2
-
-    # Length
-    CM_TO_M = 0.01
-    
-    # Force
-    KG_TO_N = G  # 1 kgf = 9.80665 N
-    TON_TO_N = 1000 * G
-
-    # Stress / Strength
-    # 1 ksc (kg/cm^2) = 9.80665 N / 0.0001 m^2 = 98,066.5 Pa
-    KSC_TO_PA = 98066.5 
-    KSC_TO_MPA = 0.0980665  # ใช้สำหรับเข้าสูตร ACI ที่ต้องการหน่วย MPa
-
-# ==============================================================================
-# 🧮 DATA NORMALIZATION ENGINE
-# ==============================================================================
-
-def prepare_calculation_data_v2(
-    h_slab_cm, h_drop_cm, has_drop, 
-    c1_cm, c2_cm, drop_w2,
-    L1_l, L1_r, L2_t, L2_b,
-    fc_ksc, fy_grade, dl_kgm2, ll_kgm2
-):
-    """
-    แปลง User Input ทั้งหมดให้เป็น SI Units (N, m, Pa) เพื่อความถูกต้องแม่นยำ 
-    ตามมาตรฐาน ACI 318M
-    """
-    
-    # --- 1. Geometry Normalization (cm -> m) ---
-    h_s = h_slab_cm * Units.CM_TO_M
-    h_d = (h_slab_cm + h_drop_cm) * Units.CM_TO_M if has_drop else h_s
-    
-    c1 = c1_cm * Units.CM_TO_M
-    c2 = c2_cm * Units.CM_TO_M
-    
-    # Drop Panel Width (Transverse direction)
-    b_drop = drop_w2 if has_drop else 0.0  # Already in m from input
-
-    # Span Geometry
-    L1 = L1_l + L1_r         # Analysis Direction (m)
-    L2 = L2_t + L2_b         # Transverse Direction (m)
-    Ln = L1 - c1             # Clear Span (m)
-    
-    # --- 2. Material Properties (ACI 318M Standard) ---
-    # Concrete
-    fc_mpa = fc_ksc * Units.KSC_TO_MPA      # แปลง ksc -> MPa เพื่อเข้าสูตร
-    fc_pa = fc_ksc * Units.KSC_TO_PA        # แปลง ksc -> Pa (N/m^2) เพื่อใช้คำนวณ Strength
-    
-    # Modulus of Elasticity (Ec)
-    # ACI 318M-19 Section 19.2.2.1: Ec = 4700 * sqrt(fc') ในหน่วย MPa
-    Ec_mpa = 4700 * np.sqrt(fc_mpa)
-    Ec_pa = Ec_mpa * 1e6                    # แปลงกลับเป็น Pa (N/m^2) เพื่อใช้ใน Stiffness Matrix
-    
-    # Steel (Rebar)
-    # fy_grade input เช่น "SD40" -> 4000 ksc
-    fy_ksc = 3000 if fy_grade == "SD30" else (4000 if fy_grade == "SD40" else 5000)
-    fy_pa = fy_ksc * Units.KSC_TO_PA
-
-    # --- 3. Load Normalization (kg/m² -> N/m² or Pa) ---
-    # Self-weight (Density of Concrete = 2400 kg/m^3)
-    # เราคำนวณ SW เป็น Pressure (Pa) แยกตามความหนา
-    
-    density_conc_kg = 2400
-    density_conc_N = density_conc_kg * Units.G  # ~23,536 N/m^3
-    
-    sw_slab_pa = h_s * density_conc_N
-    
-    # Superimposed Dead Load
-    sdl_pa = dl_kgm2 * Units.KG_TO_N
-    
-    # Live Load
-    ll_pa = ll_kgm2 * Units.KG_TO_N
-    
-    # Total Factored Load (wu) - ACI 318
-    # Note: ในขั้นตอนนี้เราจะคิดเฉพาะ Slab Weight ปกติ 
-    # ส่วนน้ำหนัก Drop Panel ที่เพิ่มมามักจะคิดเป็น Point Load หรือ Added Area Load ทีหลัง
-    # แต่เพื่อความง่ายในเบื้องต้น เราจะเฉลี่ยหรือคิดที่ Slab หลักก่อน
-    
-    wu_pa = (1.2 * (sw_slab_pa + sdl_pa)) + (1.6 * ll_pa) # Unit: N/m^2
-
-    # --- 4. Stiffness Parameters (Moment of Inertia - m^4) ---
-    # Gross Inertia ของหน้าตัด Slab (เต็มความกว้าง L2)
-    Ig_slab = (L2 * (h_s**3)) / 12
-    
-    # Gross Inertia ของหน้าตัด Drop (เฉพาะช่วงหัวเสา)
-    # หมายเหตุ: การคำนวณ Ig ของ Drop ต้องระวังเรื่อง Effective Width 
-    # แต่ในขั้นต้นใช้ความกว้าง Drop จริงไปก่อน
-    Ig_drop = (b_drop * (h_d**3)) / 12 + ((L2 - b_drop) * (h_s**3)) / 12 if has_drop else Ig_slab
-
-    # 📦 Return Normalized Data Object (Dictionary)
-    return {
-        "inputs_raw": { # เก็บค่าเดิมไว้ display
-            "fc_ksc": fc_ksc,
-            "h_slab_cm": h_slab_cm
-        },
-        "geom": {
-            "L1": L1, "L2": L2, "Ln": Ln,
-            "c1": c1, "c2": c2,
-            "h_s": h_s, "h_d": h_d,
-            "b_drop": b_drop
-        },
-        "mat": {
-            "Ec_pa": Ec_pa,       # Young's Modulus (Pa) - สำคัญมากสำหรับ Stiffness
-            "fc_pa": fc_pa,       # Compressive Strength (Pa)
-            "fy_pa": fy_pa
-        },
-        "loads": {
-            "wu_pa": wu_pa,       # Factored Load (N/m^2)
-            "sw_pa": sw_slab_pa,  # Self-weight (N/m^2)
-            "sdl_pa": sdl_pa,
-            "ll_pa": ll_pa
-        },
-        "stiffness": {
-            "Ig_slab": Ig_slab,   # m^4
-            "Ig_drop": Ig_drop    # m^4
-        }
-    }
-# เรียกใช้งาน
-calc_obj = prepare_calculation_data()
