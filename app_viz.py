@@ -141,7 +141,7 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
     # --- Main Span Dimensions (Left) ---
     # L2 Top
     draw_ext_dim(-draw_L, 0, -draw_L, L2_t, f"L2(T)={L2_t:.2f}", m_x - (-draw_L))
-    # L2 Bottom (Newly Added)
+    # L2 Bottom
     if L2_b > 0 and col_loc not in ["Edge Column", "Corner Column"]:
          draw_ext_dim(-draw_L, -L2_b, -draw_L, 0, f"L2(B)={L2_b:.2f}", m_x - (-draw_L))
 
@@ -184,10 +184,11 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
     
     view_top = 0.8 if not is_roof else 0.1
     bot_struct = -(s_m + d_m)
-    view_bot = bot_struct - 0.8
+    # INCREASED BOTTOM MARGIN for dimensions
+    view_bot = bot_struct - 1.2 
     
     col_concrete = '#ECF0F1'
-    col_cant = '#F4ECF7' # Lighter purple for section
+    col_cant = '#F4ECF7'
     col_hatch = '#BDC3C7'
     col_dim = '#2C3E50'
     
@@ -196,10 +197,7 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
         """Draws Fixed or Pinned symbols"""
         sz = 0.15
         if kind == 'Fixed':
-            # Horizontal line
             ax.plot([x-sz, x+sz], [y, y], color='black', linewidth=2)
-            # Hatch lines
-            hatch_step = sz/2
             if orientation == 'bottom':
                 for i in np.arange(x-sz, x+sz, 0.05):
                     ax.plot([i, i-0.05], [y, y-0.05], color='black', linewidth=0.5)
@@ -207,7 +205,6 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
                 for i in np.arange(x-sz, x+sz, 0.05):
                     ax.plot([i, i-0.05], [y, y+0.05], color='black', linewidth=0.5)
         elif kind == 'Pinned':
-            # Triangle
             if orientation == 'bottom':
                 triangle = patches.Polygon([[x, y], [x-sz/1.5, y-sz], [x+sz/1.5, y-sz]], 
                                            closed=True, facecolor='white', edgecolor='black', linewidth=1)
@@ -219,36 +216,30 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
             
             ax.add_patch(triangle)
             ax.add_patch(base)
-            # Hinge circle
             circle = patches.Circle((x, y), 0.02, facecolor='white', edgecolor='black')
             ax.add_patch(circle)
 
     # 1. Structure
-    # Column Upper
     if not is_roof:
         ax.add_patch(patches.Rectangle((-c_m/2, 0), c_m, view_top, facecolor='white', edgecolor='black', linewidth=1))
         draw_support_symbol(0, view_top, far_end_up, 'top')
     
     # Column Lower
-    ax.add_patch(patches.Rectangle((-c_m/2, view_bot), c_m, abs(view_bot - bot_struct), facecolor='white', edgecolor='black', linewidth=1))
-    draw_support_symbol(0, view_bot, far_end_lo, 'bottom')
+    ax.add_patch(patches.Rectangle((-c_m/2, view_bot+0.4), c_m, abs((view_bot+0.4) - bot_struct), facecolor='white', edgecolor='black', linewidth=1))
+    draw_support_symbol(0, view_bot+0.4, far_end_lo, 'bottom')
 
-    # Slab (Continuous)
-    # Define left/right extent
+    # Slab
     left_x = -cant_params['L_left'] if cant_params['has_left'] else -1.5
     right_x = cant_params['L_right'] if cant_params['has_right'] else 1.5
     
-    # Main Slab
     ax.add_patch(patches.Rectangle((left_x, -s_m), (abs(left_x)+right_x), s_m, facecolor=col_concrete, edgecolor='black', linewidth=1, zorder=5))
     ax.add_patch(patches.Rectangle((left_x, -s_m), (abs(left_x)+right_x), s_m, fill=False, edgecolor=col_hatch, hatch='///', linewidth=0, zorder=6))
     
-    # Cantilever Highlighting (Optional overlay)
     if cant_params['has_left']:
         ax.add_patch(patches.Rectangle((-cant_params['L_left'], -s_m), cant_params['L_left'], s_m, facecolor=col_cant, alpha=0.3, zorder=7))
     if cant_params['has_right']:
         ax.add_patch(patches.Rectangle((0, -s_m), cant_params['L_right'], s_m, facecolor=col_cant, alpha=0.3, zorder=7))
 
-    # Drop Panel
     if has_drop:
         ax.add_patch(patches.Rectangle((-d_w/2, bot_struct), d_w, d_m, facecolor=col_concrete, edgecolor='black', linewidth=1, zorder=5))
         ax.add_patch(patches.Rectangle((-d_w/2, bot_struct), d_w, d_m, fill=False, edgecolor=col_hatch, hatch='///', linewidth=0, zorder=6))
@@ -261,7 +252,6 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
         ax.text(x_loc + 0.15, mid_y, label, ha='center', va='center', rotation=90, 
                 fontsize=fontsize, color=col_dim, fontweight='bold',
                 bbox=dict(facecolor='white', edgecolor='none', alpha=0.7, pad=1))
-        # Extension lines
         ax.plot([x_loc-0.1, x_loc+0.1], [y_start, y_start], color=col_dim, lw=0.5)
         ax.plot([x_loc-0.1, x_loc+0.1], [y_end, y_end], color=col_dim, lw=0.5)
 
@@ -269,38 +259,29 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
          ax.annotate('', xy=(x_start, y_loc), xytext=(x_end, y_loc),
                     arrowprops=dict(arrowstyle='<|-|>', color=col_dim, linewidth=0.8, shrinkA=0, shrinkB=0))
          mid_x = (x_start + x_end) / 2
-         ax.text(mid_x, y_loc - 0.15, label, ha='center', va='top',
+         ax.text(mid_x, y_loc - 0.1, label, ha='center', va='top',
                 fontsize=fontsize, color=col_dim, fontweight='bold',
                  bbox=dict(facecolor='white', edgecolor='none', alpha=0.7, pad=1))
-         # Extension lines
          ax.plot([x_start, x_start], [y_loc-0.1, y_loc+0.1], color=col_dim, lw=0.5)
          ax.plot([x_end, x_end], [y_loc-0.1, y_loc+0.1], color=col_dim, lw=0.5)
 
-
-    # Slab Thickness (General)
+    # Dimensions placement
     ax.text(left_x, -s_m/2, f" h_s={h_slab_cm}cm", va='center', ha='right', fontsize=9, color=col_dim)
 
-    # Height Dims (Storey)
     dim_x_right = right_x + 0.5
     if not is_roof:
         draw_side_dim(0, view_top, dim_x_right, f"Up: {h_up:.2f}m")
-    draw_side_dim(bot_struct, view_bot, dim_x_right, f"Lo: {h_lo:.2f}m")
+    draw_side_dim(bot_struct, view_bot+0.4, dim_x_right, f"Lo: {h_lo:.2f}m")
 
-    # Drop Panel & Total Depth Dims (at support)
     if has_drop:
-        dim_x_left_support = -c_m/2 - 0.3
-        # Drop depth
+        dim_x_left_support = -c_m/2 - 0.5
         draw_side_dim(-s_m, bot_struct, dim_x_left_support, f"h_d={h_drop_cm}cm", fontsize=8)
-        # Total depth
         draw_side_dim(0, bot_struct, dim_x_left_support - 0.4, f"Total={h_slab_cm+h_drop_cm}cm", fontsize=8)
-        # Drop Width
-        draw_bot_dim(-d_w/2, d_w/2, bot_struct - 0.4, f"w1={d_w:.2f}m", fontsize=8)
+        draw_bot_dim(-d_w/2, d_w/2, bot_struct - 0.2, f"w1={d_w:.2f}m", fontsize=8)
 
-    # Column Width Dim (Bottom)
-    draw_bot_dim(-c_m/2, c_m/2, view_bot - 0.4, f"c1={c1_cm}cm", fontsize=9)
+    # Column Width (Moved up slightly to fit)
+    draw_bot_dim(-c_m/2, c_m/2, view_bot - 0.05, f"c1={c1_cm}cm", fontsize=9)
 
-
-    # Cantilever Dims (Top)
     dim_y_top = 0.3
     if cant_params['has_left']:
         L = cant_params['L_left']
@@ -314,16 +295,22 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
         ax.text(L/2, dim_y_top + 0.05, f"Cantilever {L:.2f}m", color='purple', ha='center', fontsize=9, fontweight='bold')
         ax.plot([L, L], [0, dim_y_top], linestyle=':', color='purple', lw=0.5)
 
-    # T.O.S Marker
     ax.text(left_x + 0.2, 0.05, "▼ T.O. Slab (+0.00)", color='blue', fontsize=8, fontweight='bold')
     ax.axhline(0, color='blue', linestyle='-.', linewidth=0.5, alpha=0.5)
 
     ax.set_aspect('equal')
-    ax.set_xlim(left_x - 1.0, right_x + 1.0)
-    ax.set_ylim(view_bot - 1.0, view_top + 0.5)
+    
+    # EXPANDED LIMITS TO PREVENT CLIPPING
+    ax.set_xlim(left_x - 1.5, right_x + 1.5)
+    ax.set_ylim(view_bot - 0.8, view_top + 0.5) 
+    
     ax.axis('off')
     
     title_suffix = " (Pinned Ends)" if (far_end_lo == 'Pinned' or far_end_up == 'Pinned') else ""
     ax.set_title(f"SECTION DETAIL: {is_roof and 'ROOF' or 'INTERMEDIATE'} JOINT{title_suffix}", 
                  fontsize=10, color='gray', pad=10, fontweight='bold')
+    
+    # AUTO ADJUST LAYOUT
+    fig.tight_layout()
+    
     return fig
