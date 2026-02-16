@@ -274,9 +274,10 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
     draw_side_dim(bot_struct, view_bot+0.4, dim_x_right, f"Lo: {h_lo:.2f}m")
 
     if has_drop:
-        dim_x_left_support = -c_m/2 - 0.5
-        draw_side_dim(-s_m, bot_struct, dim_x_left_support, f"h_d={h_drop_cm}cm", fontsize=8)
-        draw_side_dim(0, bot_struct, dim_x_left_support - 0.4, f"Total={h_slab_cm+h_drop_cm}cm", fontsize=8)
+        # Ensure dimensions are outside the drop panel width
+        dim_x_outside_drop = -d_w/2 - 0.4 
+        draw_side_dim(-s_m, bot_struct, dim_x_outside_drop, f"h_d={h_drop_cm}cm", fontsize=8)
+        draw_side_dim(0, bot_struct, dim_x_outside_drop - 0.4, f"Total={h_slab_cm+h_drop_cm}cm", fontsize=8)
         draw_bot_dim(-d_w/2, d_w/2, bot_struct - 0.2, f"w1={d_w:.2f}m", fontsize=8)
 
     # Column Width (Moved up slightly to fit)
