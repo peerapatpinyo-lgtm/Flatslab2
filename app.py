@@ -22,7 +22,7 @@ if 'col_loc' not in st.session_state:
 st.sidebar.header("📊 Design Report")
 status_container = st.sidebar.container()
 
-# Define Tabs (UPDATED: Added DDM and EFM tabs)
+# Define Tabs
 tab1, tab2, tab3, tab4 = st.tabs([
     "📝 Input Parameters", 
     "📘 Engineering Theory", 
@@ -90,6 +90,24 @@ with tab1:
         is_corner = (col_location == "Corner Column")
         is_edge = (col_location == "Edge Column")
         
+        # --- EDGE BEAM LOGIC (NEW) ---
+        edge_beam_params = {"has_beam": False, "width": 0.0, "depth": 0.0}
+        
+        if col_location in ["Edge Column", "Corner Column"]:
+            st.markdown("##### 🧱 Edge Condition")
+            has_edge_beam = st.checkbox("Has Edge Beam (Spandrel Beam)?", value=False)
+            
+            if has_edge_beam:
+                eb_c1, eb_c2 = st.columns(2)
+                with eb_c1: 
+                    eb_w = st.number_input("Edge Beam Width (cm)", value=30.0, step=5.0)
+                with eb_c2: 
+                    eb_d = st.number_input("Edge Beam Depth (cm)", value=50.0, step=5.0)
+                edge_beam_params = {"has_beam": True, "width": eb_w, "depth": eb_d}
+            else:
+                st.info("ℹ️ Analyzing as Flat Plate without edge beams (Unrestrained Edge).")
+        # -----------------------------
+
         col_l1a, col_l1b = st.columns(2)
         with col_l1a:
             l1_l_val = 0.0 if is_corner else 4.0
@@ -149,11 +167,13 @@ with tab1:
             with d_col2: drop_w1 = st.number_input("Drop W1 (m)", value=2.5)
             with d_col3: drop_w2 = st.number_input("Drop W2 (m)", value=2.5)
 
-        # --- PROCESS DATA (BUT DON'T SHOW YET) ---
+        # --- PROCESS DATA ---
+        # NOTE: Passed 'edge_beam_params' to prepare_calculation_data
         calc_obj = app_calc.prepare_calculation_data(
             h_slab_cm, h_drop_cm, has_drop, c1_cm, c2_cm, drop_w2,
             L1_l, L1_r, L2_t, L2_b, fc, fy, dl, ll, auto_sw, lf_dl, lf_ll,
-            joint_type, h_up, h_lo, far_end_up, far_end_lo, cant_params
+            joint_type, h_up, h_lo, far_end_up, far_end_lo, cant_params,
+            edge_beam_params # <--- Added argument
         )
 
         validator = app_calc.DesignCriteriaValidator(
@@ -175,15 +195,22 @@ with tab1:
         v_tab1, v_tab2 = st.tabs(["📐 Plan View", "🔍 True-Scale Section"])
         
         with v_tab1:
-            fig_plan = app_viz.draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_location, has_drop, drop_w1, drop_w2, cant_params)
+            # Note: Passed edge_beam_params to viz
+            fig_plan = app_viz.draw_plan_view(
+                L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, 
+                col_location, has_drop, drop_w1, drop_w2, cant_params, edge_beam_params
+            )
             st.pyplot(fig_plan)
         
         with v_tab2:
-            fig_elev = app_viz.draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm, 
-                                                         is_roof, far_end_up, far_end_lo, cant_params)
+             # Note: Passed edge_beam_params to viz
+            fig_elev = app_viz.draw_elevation_real_scale(
+                h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm, 
+                is_roof, far_end_up, far_end_lo, cant_params, edge_beam_params
+            )
             st.pyplot(fig_elev)
             
-        # Analysis Report (REMOVED K and MOMENT Sections)
+        # Analysis Report
         st.markdown("### 📋 Preliminary Checks")
         
         # ======================================================================
@@ -312,6 +339,8 @@ with tab1:
         with status_container:
             st.markdown(f"**Condition:** `{joint_code}`")
             st.markdown(f"**Far Ends:** Top `{far_end_up}` | Bot `{far_end_lo}`")
+            if edge_beam_params['has_beam']:
+                st.markdown(f"**Edge Beam:** `{edge_beam_params['width']}x{edge_beam_params['depth']} cm`")
             if ddm_ok: st.success("✅ **DDM:** Valid")
             else: st.error("❌ **DDM:** Invalid")
             st.info("✅ **EFM:** Valid")
