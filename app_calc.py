@@ -4,7 +4,7 @@ from app_config import Units
 
 class DesignCriteriaValidator:
     def __init__(self, L1, L2, L1_l, L1_r, L2_t, L2_b, ll, dl, has_drop, cant_data, 
-                 fy_ksc, col_location, h_slab_cm, c1, c2):
+                 fy_ksc, col_location, h_slab_cm, c1, c2, edge_beam_params=None):
         self.L1 = L1
         self.L2 = L2
         # ACI 318: Ln is clear span in long direction
@@ -20,20 +20,42 @@ class DesignCriteriaValidator:
         self.fy_mpa = (300 if fy_ksc == "SD30" else (400 if fy_ksc == "SD40" else 500))
         self.col_location = col_location 
         self.h_slab_cm = h_slab_cm
+        
+        # Edge Beam
+        self.edge_beam = edge_beam_params if edge_beam_params else {"has_beam": False}
 
     def check_min_thickness_detailed(self):
         """Returns detailed calculation steps for Minimum Slab Thickness"""
         is_ext = (self.col_location in ["Edge Column", "Corner Column"])
+        has_edge_beam = self.edge_beam.get('has_beam', False)
         
+        # ACI 318 Table 8.3.1.1 Logic
         if self.has_drop:
-            denom = 36.0 if not is_ext else 33.0
-            case_name = "With Drop Panel"
+            # Case: With Drop Panel
+            if not is_ext:
+                denom = 36.0 # Interior
+                case_desc = "Interior Panel (With Drop)"
+            else:
+                # Exterior
+                if has_edge_beam:
+                    denom = 36.0 # Exterior with Edge Beam
+                    case_desc = "Exterior Panel (With Drop & Edge Beam)"
+                else:
+                    denom = 33.0 # Exterior without Edge Beam
+                    case_desc = "Exterior Panel (With Drop, No Beam)"
         else:
-            denom = 33.0 if not is_ext else 30.0
-            case_name = "Flat Plate (No Drop)"
-
-        if is_ext: case_name += " (Exterior)"
-        else: case_name += " (Interior)"
+            # Case: Flat Plate (No Drop)
+            if not is_ext:
+                denom = 33.0 # Interior
+                case_desc = "Interior Flat Plate"
+            else:
+                # Exterior
+                if has_edge_beam:
+                    denom = 33.0 # Exterior with Edge Beam
+                    case_desc = "Exterior Flat Plate (With Edge Beam)"
+                else:
+                    denom = 30.0 # Exterior without Edge Beam
+                    case_desc = "Exterior Flat Plate (No Beam)"
 
         # Fy Correction Factor (ACI 318-19)
         fy_factor = 0.8 + (self.fy_mpa / 1400)
@@ -50,7 +72,7 @@ class DesignCriteriaValidator:
         
         return {
             "status": status, "Ln": self.Ln_long, "fy_mpa": self.fy_mpa,
-            "denom": denom, "case_name": case_name, "calc_h": min_h_cm_calc,
+            "denom": denom, "case_name": case_desc, "calc_h": min_h_cm_calc,
             "abs_min": abs_min, "req_h": req_h_cm, "actual_h": self.h_slab_cm
         }
 
@@ -117,7 +139,6 @@ class DesignCriteriaValidator:
 
         return status, reasons
 
-# ... (prepare_calculation_data function remains exactly the same) ...
 def prepare_calculation_data(
     h_slab_cm, h_drop_cm, has_drop, 
     c1_cm, c2_cm, drop_w2,
@@ -127,7 +148,8 @@ def prepare_calculation_data(
     auto_sw, lf_dl, lf_ll,
     joint_type, h_up, h_lo,
     far_end_up, far_end_lo,
-    cant_params
+    cant_params,
+    edge_beam_params # <--- Added Argument here
 ):
     # Geometry
     h_s = h_slab_cm * Units.CM_TO_M
@@ -197,7 +219,11 @@ def prepare_calculation_data(
     }
 
     return {
-        "geom": {"L1": L1, "L2": L2, "Ln": Ln, "c1": c1, "c2": c2, "h_s": h_s, "h_d": h_d, "b_drop": b_drop},
+        "geom": {
+            "L1": L1, "L2": L2, "Ln": Ln, "c1": c1, "c2": c2, 
+            "h_s": h_s, "h_d": h_d, "b_drop": b_drop,
+            "edge_beam_params": edge_beam_params # <--- Included in return dict
+        },
         "vertical_geom": {
             "h_up": calc_h_up, "h_lo": h_lo, "is_roof": is_roof,
             "far_end_up": far_end_up, "far_end_lo": far_end_lo
