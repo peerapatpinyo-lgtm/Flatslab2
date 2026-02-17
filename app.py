@@ -1,6 +1,12 @@
 # app.py
 import streamlit as st
-from app_config import Units
+# ตรวจสอบว่ามี app_config หรือไม่ ถ้าไม่มีให้ใช้ค่า Default หรือลบออกตามโครงสร้างไฟล์ของคุณ
+try:
+    from app_config import Units
+except ImportError:
+    class Units:
+        G = 2400  # Default concrete density if file missing
+
 import app_calc
 import app_viz
 import app_theory 
@@ -47,12 +53,12 @@ with tab1:
         with c2_mat: fy = st.selectbox("Steel Grade (fy)", ["SD30", "SD40", "SD50"], index=1)
 
         lf_col1, lf_col2 = st.columns(2)
-        with lf_col1: lf_dl = st.number_input("DL Factor", value=1.2, step=0.1, format="%.2f")
-        with lf_col2: lf_ll = st.number_input("LL Factor", value=1.6, step=0.1, format="%.2f")
+        with lf_col1: lf_dl = st.number_input("DL Factor", value=1.4, step=0.1, format="%.2f")
+        with lf_col2: lf_ll = st.number_input("LL Factor", value=1.7, step=0.1, format="%.2f")
         
         auto_sw = st.checkbox("✅ Auto-calculate Self-weight", value=True)
-        dl = st.number_input("Superimposed Dead Load (SDL) [kg/m²]", value=100, step=10)
-        ll = st.number_input("Live Load (LL) [kg/m²]", value=200, step=50)
+        dl = st.number_input("Superimposed Dead Load (SDL) [kg/m²]", value=150, step=10)
+        ll = st.number_input("Live Load (LL) [kg/m²]", value=300, step=50)
 
         st.divider()
 
@@ -72,17 +78,17 @@ with tab1:
         st.markdown("##### 📍 Column Far End Conditions (Stiffness)")
         f_col1, f_col2 = st.columns(2)
         
-        far_end_up = "N/A"
+        far_end_up = "Pinned" # Default
         if not is_roof:
             with f_col1:
-                far_end_up = st.selectbox("Upper Col Far End", ["Fixed (4EI/L)", "Pinned (3EI/L)"], index=0)
-                far_end_up = far_end_up.split()[0] # Get 'Fixed' or 'Pinned'
+                far_end_up_sel = st.selectbox("Upper Col Far End", ["Fixed (4EI/L)", "Pinned (3EI/L)"], index=1)
+                far_end_up = far_end_up_sel.split()[0] # Get 'Fixed' or 'Pinned'
         else:
              with f_col1: st.info("Upper Col: None")
 
         with f_col2:
-            far_end_lo = st.selectbox("Lower Col Far End", ["Fixed (4EI/L)", "Pinned (3EI/L)"], index=0)
-            far_end_lo = far_end_lo.split()[0]
+            far_end_lo_sel = st.selectbox("Lower Col Far End", ["Fixed (4EI/L)", "Pinned (3EI/L)"], index=1)
+            far_end_lo = far_end_lo_sel.split()[0]
 
         # Plan Layout
         st.markdown("##### 📏 Span Dimensions")
@@ -90,8 +96,9 @@ with tab1:
         is_corner = (col_location == "Corner Column")
         is_edge = (col_location == "Edge Column")
         
-        # --- EDGE BEAM LOGIC (NEW) ---
-        edge_beam_params = {"has_beam": False, "width": 0.0, "depth": 0.0}
+        # --- EDGE BEAM LOGIC (FIXED FOR KEYERROR) ---
+        # Default empty params
+        edge_beam_params = {"has_beam": False, "width_cm": 0.0, "depth_cm": 0.0}
         
         if col_location in ["Edge Column", "Corner Column"]:
             st.markdown("##### 🧱 Edge Condition")
@@ -103,28 +110,30 @@ with tab1:
                     eb_w = st.number_input("Edge Beam Width (cm)", value=30.0, step=5.0)
                 with eb_c2: 
                     eb_d = st.number_input("Edge Beam Depth (cm)", value=50.0, step=5.0)
-                edge_beam_params = {"has_beam": True, "width": eb_w, "depth": eb_d}
+                
+                # FIX: Keys must be 'width_cm' and 'depth_cm' to match app_viz.py
+                edge_beam_params = {"has_beam": True, "width_cm": eb_w, "depth_cm": eb_d}
             else:
                 st.info("ℹ️ Analyzing as Flat Plate without edge beams (Unrestrained Edge).")
         # -----------------------------
 
         col_l1a, col_l1b = st.columns(2)
         with col_l1a:
-            l1_l_val = 0.0 if is_corner else 4.0
-            L1_l = st.number_input("L1 - Left Span (m)", value=l1_l_val, disabled=is_corner)
+            l1_l_val = 0.0 if (col_location != "Interior Column") else 6.0
+            L1_l = st.number_input("L1 - Left Span (m)", value=l1_l_val, disabled=(col_location != "Interior Column"))
         with col_l1b:
-            L1_r = st.number_input("L1 - Right Span (m)", value=4.0)
+            L1_r = st.number_input("L1 - Right Span (m)", value=6.0)
             
         col_l2a, col_l2b = st.columns(2)
         with col_l2a:
-            L2_t = st.number_input("L2 - Top Half (m)", value=4.0)
+            L2_t = st.number_input("L2 - Top Half (m)", value=6.0)
         with col_l2b:
-            l2_b_val = 0.0 if (is_edge or is_corner) else 4.0
-            L2_b = st.number_input("L2 - Bottom Half (m)", value=l2_b_val, disabled=(is_edge or is_corner))
+            l2_b_val = 0.0 if (col_location == "Corner Column") else 6.0
+            L2_b = st.number_input("L2 - Bottom Half (m)", value=l2_b_val, disabled=(col_location == "Corner Column"))
 
         # Cantilever Settings
         st.markdown("##### 🏗️ Cantilever / Eave (Overhang)")
-        with st.expander("Cantilever Configuration", expanded=True):
+        with st.expander("Cantilever Configuration", expanded=False):
             cant_c1, cant_c2 = st.columns(2)
             has_cant_left = False
             L_cant_left = 0.0
@@ -164,8 +173,11 @@ with tab1:
         if has_drop:
             d_col1, d_col2, d_col3 = st.columns(3)
             with d_col1: h_drop_cm = st.number_input("Drop Depth (cm)", value=10.0)
-            with d_col2: drop_w1 = st.number_input("Drop W1 (m)", value=2.5)
-            with d_col3: drop_w2 = st.number_input("Drop W2 (m)", value=2.5)
+            # Suggest defaults
+            def_w1 = (L1_l + L1_r)/3
+            def_w2 = (L2_t + L2_b)/3
+            with d_col2: drop_w1 = st.number_input("Drop W1 (m)", value=def_w1)
+            with d_col3: drop_w2 = st.number_input("Drop W2 (m)", value=def_w2)
 
         # --- PROCESS DATA ---
         # NOTE: Passed 'edge_beam_params' to prepare_calculation_data
@@ -179,7 +191,8 @@ with tab1:
         validator = app_calc.DesignCriteriaValidator(
             calc_obj['geom']['L1'], calc_obj['geom']['L2'], L1_l, L1_r, L2_t, L2_b,
             ll, (calc_obj['loads']['w_dead'] / Units.G), has_drop, cant_params,
-            fy, col_location, h_slab_cm, (c1_cm/100), (c2_cm/100)
+            fy, col_location, h_slab_cm, (c1_cm/100), (c2_cm/100),
+            edge_beam_params # <--- Pass edge beam params to validator too
         )
         
         # Run Checks (Data only)
@@ -340,7 +353,7 @@ with tab1:
             st.markdown(f"**Condition:** `{joint_code}`")
             st.markdown(f"**Far Ends:** Top `{far_end_up}` | Bot `{far_end_lo}`")
             if edge_beam_params['has_beam']:
-                st.markdown(f"**Edge Beam:** `{edge_beam_params['width']}x{edge_beam_params['depth']} cm`")
+                st.markdown(f"**Edge Beam:** `{edge_beam_params['width_cm']}x{edge_beam_params['depth_cm']} cm`")
             if ddm_ok: st.success("✅ **DDM:** Valid")
             else: st.error("❌ **DDM:** Invalid")
             st.info("✅ **EFM:** Valid")
