@@ -244,7 +244,7 @@ def calculate_ddm(calc_obj):
     # ----------------------------------------------------
     shear_results = {}
     phi_shear = 0.75
-    lambda_conc = 1.0 (normal weight)
+    lambda_conc = 1.0 # (normal weight) - FIXED THIS LINE
     
     # A. One-way Shear (Beam Action)
     # Vu at distance d from face of support
@@ -254,7 +254,7 @@ def calculate_ddm(calc_obj):
     
     # Vc = 0.17 * lambda * sqrt(fc) * bw * d (ACI 22.5.5.1) -> fc in MPa, result in MN -> *1000 -> kN
     # bw = L2
-    Vc_oneway = 0.17 * 1.0 * math.sqrt(fc_MPa) * L2 * d * 1000
+    Vc_oneway = 0.17 * lambda_conc * math.sqrt(fc_MPa) * L2 * d * 1000
     phi_Vc_oneway = phi_shear * Vc_oneway
     
     shear_results['oneway'] = {
