@@ -4,6 +4,8 @@ from app_config import Units
 import app_calc
 import app_viz
 import app_theory 
+# import app_ddm  # รอไฟล์ DDM
+# import app_efm  # รอไฟล์ EFM
 
 # ==============================================================================
 # MAIN APPLICATION INTERFACE
@@ -20,8 +22,13 @@ if 'col_loc' not in st.session_state:
 st.sidebar.header("📊 Design Report")
 status_container = st.sidebar.container()
 
-# Define Tabs
-tab1, tab2 = st.tabs(["📝 Input Parameters", "📘 Engineering Theory"])
+# Define Tabs (UPDATED: Added DDM and EFM tabs)
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📝 Input Parameters", 
+    "📘 Engineering Theory", 
+    "🏗️ Direct Design Method (DDM)", 
+    "📐 Equivalent Frame Method (EFM)"
+])
 
 # ==============================================================================
 # TAB 1: INPUTS & VISUALIZATION
@@ -314,3 +321,28 @@ with tab1:
 # ==============================================================================
 with tab2:
     app_theory.display_theory(calc_obj)
+
+# ==============================================================================
+# TAB 3: DIRECT DESIGN METHOD (DDM)
+# ==============================================================================
+with tab3:
+    st.header("🏗️ Direct Design Method (DDM)")
+    if ddm_ok:
+        st.success("✅ This structure meets the criteria for Direct Design Method.")
+        st.info("🚧 Module `app_ddm.py` is required to display calculations here.")
+        # if 'app_ddm' in globals():
+        #     app_ddm.render_ddm(calc_obj)
+    else:
+        st.error("❌ This structure DOES NOT meet DDM criteria. Please use EFM.")
+        st.warning("Issues Found:")
+        for r in ddm_reasons: st.write(r)
+
+# ==============================================================================
+# TAB 4: EQUIVALENT FRAME METHOD (EFM)
+# ==============================================================================
+with tab4:
+    st.header("📐 Equivalent Frame Method (EFM)")
+    st.info("✅ EFM is a general method valid for this structure.")
+    st.info("🚧 Module `app_efm.py` is required to display calculations here.")
+    # if 'app_efm' in globals():
+    #     app_efm.render_efm(calc_obj)
