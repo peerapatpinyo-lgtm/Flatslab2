@@ -2,25 +2,30 @@
 import streamlit as st
 
 # ------------------------------------------------------------------------------
-# SETUP & CONFIG
+# SETUP & CONFIGURATION
 # ------------------------------------------------------------------------------
+# ตรวจสอบว่ามี app_config หรือไม่ ถ้าไม่มีให้ใช้ค่า Default
 try:
     from app_config import Units
 except ImportError:
     class Units:
-        G = 2400
+        G = 2400  # Default concrete density if file missing
 
 import app_calc
 import app_viz
 import app_theory 
-# import app_ddm  
-# import app_efm 
+# import app_ddm  # Placeholder for DDM module
+# import app_efm  # Placeholder for EFM module
+
+# ==============================================================================
+# MAIN APPLICATION INTERFACE
+# ==============================================================================
 
 st.set_page_config(page_title="Flat Slab Design Pro: Advanced", layout="wide")
 st.title("🏗️ Flat Slab Design: Advanced Frame Analysis")
 st.markdown("---")
 
-# Initialize Session State
+# Initialize Session State for Column Location if not exists
 if 'col_loc' not in st.session_state:
     st.session_state['col_loc'] = "Interior Column"
 
@@ -49,12 +54,16 @@ with tab1:
         # --- 1. Materials ---
         st.subheader("1. Materials & Loads")
         c1_mat, c2_mat = st.columns(2)
-        with c1_mat: fc = st.selectbox("Concrete f'c (ksc)", [240, 280, 320, 350, 400], index=1)
-        with c2_mat: fy = st.selectbox("Steel Grade (fy)", ["SD30", "SD40", "SD50"], index=1)
+        with c1_mat: 
+            fc = st.selectbox("Concrete f'c (ksc)", [240, 280, 320, 350, 400], index=1)
+        with c2_mat: 
+            fy = st.selectbox("Steel Grade (fy)", ["SD30", "SD40", "SD50"], index=1)
 
         lf_col1, lf_col2 = st.columns(2)
-        with lf_col1: lf_dl = st.number_input("DL Factor", value=1.4, step=0.1, format="%.2f")
-        with lf_col2: lf_ll = st.number_input("LL Factor", value=1.7, step=0.1, format="%.2f")
+        with lf_col1: 
+            lf_dl = st.number_input("DL Factor", value=1.4, step=0.1, format="%.2f")
+        with lf_col2: 
+            lf_ll = st.number_input("LL Factor", value=1.7, step=0.1, format="%.2f")
         
         auto_sw = st.checkbox("✅ Auto-calculate Self-weight", value=True)
         dl = st.number_input("Superimposed Dead Load (SDL) [kg/m²]", value=150, step=10)
@@ -66,14 +75,19 @@ with tab1:
         st.subheader("2. Geometry & Boundary Conditions")
         
         # Joint Type
-        joint_type = st.radio("Column Joint Condition:", ("Intermediate Floor", "Roof Joint"), horizontal=True)
+        joint_type = st.radio(
+            "Column Joint Condition:", 
+            ("Intermediate Floor", "Roof Joint"), 
+            horizontal=True
+        )
         is_roof = (joint_type == "Roof Joint")
         joint_code = "Roof" if is_roof else "Interm."
         
         # Far End Conditions
         st.markdown("##### 📍 Column Far End Conditions (Stiffness)")
         f_col1, f_col2 = st.columns(2)
-        far_end_up = "Pinned" 
+        
+        far_end_up = "Pinned" # Default
         if not is_roof:
             with f_col1:
                 far_end_up_sel = st.selectbox("Upper Col Far End", ["Fixed (4EI/L)", "Pinned (3EI/L)"], index=1)
@@ -85,67 +99,75 @@ with tab1:
             far_end_lo_sel = st.selectbox("Lower Col Far End", ["Fixed (4EI/L)", "Pinned (3EI/L)"], index=1)
             far_end_lo = far_end_lo_sel.split()[0]
 
-        # --- PLAN LAYOUT & SPANS (CRITICAL FIX HERE) ---
+        # --- PLAN LAYOUT & SPANS (CRITICAL FIX FOR VISUALIZATION) ---
         st.markdown("##### 📏 Span Dimensions")
         
-        # Select Location with key to force refresh
+        # Location Selector
         col_location = st.selectbox(
             "Plan Location", 
             ["Interior Column", "Edge Column", "Corner Column"],
             help="Interior (4 slabs), Edge (3 slabs), Corner (2 slabs)"
         )
         
+        # Determine logical flags
         is_interior = (col_location == "Interior Column")
         is_edge     = (col_location == "Edge Column")
         is_corner   = (col_location == "Corner Column")
         
-        # --- LOGIC TO FORCE VALUES TO 0.0 ---
+        # --- SPAN INPUTS WITH FORCE RESET LOGIC ---
+        # Note: Using `key` ensures Streamlit resets the widget when location changes
+        
         # Row 1: L1 (Left - Right)
         col_l1a, col_l1b = st.columns(2)
         
         # L1 LEFT Logic
         with col_l1a:
             if is_interior:
-                L1_l = st.number_input("L1 - Left Span (m)", value=6.0, step=0.5, key="L1_L_int")
+                L1_l = st.number_input("L1 - Left Span (m)", value=6.0, step=0.5, key=f"L1_L_{col_location}")
             else:
-                # Edge/Corner: ไม่มีด้านซ้าย -> บังคับเป็น 0
+                # Edge/Corner: FORCE 0.0 explicitly
                 st.markdown("**L1 - Left Span**")
                 st.info("🚫 0.00 m (Edge/Corner)")
                 L1_l = 0.0 
 
         # L1 RIGHT Logic
         with col_l1b:
-            L1_r = st.number_input("L1 - Right Span (m)", value=6.0, step=0.5, key="L1_R_all")
+            L1_r = st.number_input("L1 - Right Span (m)", value=6.0, step=0.5, key="L1_R_Common")
 
         # Row 2: L2 (Top - Bottom)
         col_l2a, col_l2b = st.columns(2)
         
         # L2 TOP Logic
         with col_l2a:
-            L2_t = st.number_input("L2 - Top Half (m)", value=6.0, step=0.5, key="L2_T_all")
+            L2_t = st.number_input("L2 - Top Half (m)", value=6.0, step=0.5, key="L2_T_Common")
 
         # L2 BOTTOM Logic
         with col_l2b:
             if is_corner:
-                # Corner: ไม่มีด้านล่าง -> บังคับเป็น 0
+                # Corner: FORCE 0.0 explicitly
                 st.markdown("**L2 - Bottom Half**")
                 st.info("🚫 0.00 m (Corner)")
                 L2_b = 0.0
             else:
-                # Interior/Edge: มีด้านล่าง
-                L2_b = st.number_input("L2 - Bottom Half (m)", value=6.0, step=0.5, key="L2_B_active")
+                # Interior/Edge: Allow input
+                L2_b = st.number_input("L2 - Bottom Half (m)", value=6.0, step=0.5, key=f"L2_B_{col_location}")
 
         # --- EDGE BEAM LOGIC ---
         st.markdown("##### 🧱 Edge Condition")
+        # Initialize default empty params to prevent KeyError in Interior mode
         edge_beam_params = {"has_beam": False, "width_cm": 0.0, "depth_cm": 0.0}
         
         if not is_interior:
             has_edge_beam = st.checkbox("Has Edge Beam (Spandrel Beam)?", value=True)
             if has_edge_beam:
                 eb_c1, eb_c2 = st.columns(2)
-                eb_w = eb_c1.number_input("Edge Beam Width (cm)", value=30.0, step=5.0)
-                eb_d = eb_c2.number_input("Edge Beam Depth (cm)", value=50.0, step=5.0)
+                with eb_c1:
+                    eb_w = st.number_input("Edge Beam Width (cm)", value=30.0, step=5.0)
+                with eb_c2:
+                    eb_d = st.number_input("Edge Beam Depth (cm)", value=50.0, step=5.0)
                 edge_beam_params = {"has_beam": True, "width_cm": eb_w, "depth_cm": eb_d}
+            else:
+                st.info("ℹ️ Unrestrained Edge (Flat Plate)")
         else:
             st.caption("Interior columns typically assume continuous slab (no edge beam).")
 
@@ -158,8 +180,8 @@ with tab1:
             L_cant_right = 0.0
             
             with cant_c1:
-                # Disable Left Cantilever if L1_Left exists (Interior) - Cantilever usually at edge
-                cant_l_disabled = (L1_l > 0) 
+                # Disable Left Cantilever if L1_Left exists (Interior)
+                cant_l_disabled = (L1_l > 0.01) 
                 has_cant_left = st.checkbox("Left Cantilever", value=False, disabled=cant_l_disabled) 
                 if has_cant_left:
                     L_cant_left = st.number_input("Left Length (m)", value=1.5, step=0.1)
@@ -198,7 +220,7 @@ with tab1:
             with d_col1: h_drop_cm = st.number_input("Drop Depth (cm)", value=10.0)
             
             # Intelligent Defaults based on geometry
-            def_w1 = (L1_l + L1_r)/3.0 if is_interior else (L1_r/3.0) + (c1_cm/200.0) # Approx for edge
+            def_w1 = (L1_l + L1_r)/3.0 if is_interior else (L1_r/3.0) + (c1_cm/200.0)
             def_w2 = (L2_t + L2_b)/3.0 if not is_corner else (L2_t/3.0) + (c2_cm/200.0)
             
             with d_col2: drop_w1 = st.number_input("Drop Width W1 (m)", value=float(f"{def_w1:.2f}"))
@@ -231,9 +253,7 @@ with tab1:
         v_tab1, v_tab2 = st.tabs(["📐 Plan View", "🔍 True-Scale Section"])
         
         with v_tab1:
-            # DEBUG: Uncomment line below to see exact values being passed
-            # st.write(f"Debug Span: L1_Left={L1_l}, L1_Right={L1_r}, L2_Top={L2_t}, L2_Bot={L2_b}")
-            
+            # Note: We pass the explicit L1_l and L2_b which are now guaranteed to be 0.0 for Edge/Corner
             fig_plan = app_viz.draw_plan_view(
                 L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, 
                 col_location, has_drop, drop_w1, drop_w2, cant_params, edge_beam_params
@@ -297,21 +317,32 @@ with tab1:
             st.info("✅ **EFM:** Valid")
 
 # ==============================================================================
-# OTHER TABS
+# TAB 2: ENGINEERING THEORY
 # ==============================================================================
 with tab2:
     app_theory.display_theory(calc_obj)
 
+# ==============================================================================
+# TAB 3: DIRECT DESIGN METHOD (DDM)
+# ==============================================================================
 with tab3:
     st.header("🏗️ Direct Design Method (DDM)")
     if ddm_ok:
-        st.success("✅ Criteria Met for DDM")
-        # if 'app_ddm' in globals(): app_ddm.render_ddm(calc_obj)
+        st.success("✅ This structure meets the criteria for Direct Design Method.")
+        st.info("🚧 Module `app_ddm.py` is required to display calculations here.")
+        # if 'app_ddm' in globals():
+        #     app_ddm.render_ddm(calc_obj)
     else:
-        st.error("❌ Criteria NOT Met for DDM")
+        st.error("❌ This structure DOES NOT meet DDM criteria. Please use EFM.")
+        st.warning("Issues Found:")
         for r in ddm_reasons: st.write(f"- {r}")
 
+# ==============================================================================
+# TAB 4: EQUIVALENT FRAME METHOD (EFM)
+# ==============================================================================
 with tab4:
     st.header("📐 Equivalent Frame Method (EFM)")
-    st.info("✅ EFM is valid for this geometry.")
-    # if 'app_efm' in globals(): app_efm.render_efm(calc_obj)
+    st.info("✅ EFM is a general method valid for this structure.")
+    st.info("🚧 Module `app_efm.py` is required to display calculations here.")
+    # if 'app_efm' in globals():
+    #     app_efm.render_efm(calc_obj)
