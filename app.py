@@ -13,7 +13,8 @@ except ImportError:
 import app_calc
 import app_viz
 import app_theory 
-
+import app_ddm  
+import app_efm
 # ==============================================================================
 # MAIN APPLICATION INTERFACE
 # ==============================================================================
