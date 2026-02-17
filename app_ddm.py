@@ -3,116 +3,105 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import calc_ddm  # <--- เรียกใช้ไฟล์ Logic
+import calc_ddm
 
 def render_ddm_tab(calc_obj):
-    st.header("1️⃣ Direct Design Method (DDM)")
+    st.header("1️⃣ Direct Design Method (ACI 318)")
     st.markdown("---")
 
-    # เรียกฟังก์ชันคำนวณ
     try:
         res = calc_ddm.calculate_ddm(calc_obj)
     except Exception as e:
         st.error(f"Calculation Error: {e}")
         return
 
-    # 1. SHOW M0
+    # 1. INPUT PARAMETERS CHECK
+    with st.expander("ℹ️ Design Parameters Check", expanded=False):
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Span Ratio ($l_2/l_1$)", f"{res['l2_l1']:.2f}")
+        c2.metric("Clear Span ($l_n$)", f"{res['Ln']:.2f} m")
+        c3.metric("Load ($w_u$)", f"{res['w_u']:.0f} kg/m²")
+
+    # 2. STATIC MOMENT
     st.subheader("Step 1: Total Static Moment ($M_0$)")
     st.latex(r"M_0 = \frac{w_u \ell_2 (\ell_n)^2}{8}")
-    
-    c1, c2 = st.columns([1.5, 1])
-    with c1:
-        st.write(f"- $w_u$ = {res['w_u']:.2f} kg/m²")
-        st.write(f"- $\ell_n$ = {res['Ln']:.2f} m")
-        st.write(f"- $\ell_2$ = {res['L2']:.2f} m")
-    with c2:
-        st.info(f"**$M_0$ = {res['M0_kNm']:.2f} kN.m**")
+    st.info(f"**$M_0$ = {res['M0_kNm']:.2f} kN.m**")
 
     st.markdown("---")
 
-    # 2. LONGITUDINAL DISTRIBUTION
-    st.subheader("Step 2: Longitudinal Distribution")
-    coeffs = res['coeffs']
+    # 3. MOMENT DISTRIBUTION TABLE (Professional View)
+    st.subheader("Step 2 & 3: Moment Distribution")
+    st.caption(f"Condition: {res['coeffs']['desc']}")
+
+    # Prepare Data
     moments = res['moments']
-    
-    st.write(f"**Condition:** {coeffs['desc']}")
-    
-    col_ext, col_pos, col_int = st.columns(3)
-    
-    def stat_card(col, title, coef, val):
-        col.markdown(f"**{title}**")
-        col.caption(f"Coef: {coef}")
-        col.metric("Moment", f"{val:.2f}", "kN.m")
-
-    stat_card(col_ext, "Ext. Neg (-)", coeffs['neg_ext'], moments['neg_ext'])
-    stat_card(col_pos, "Positive (+)", coeffs['pos'], moments['pos'])
-    stat_card(col_int, "Int. Neg (-)", coeffs['neg_int'], moments['neg_int'])
-
-    st.markdown("---")
-
-    # 3. STRIP DISTRIBUTION
-    st.subheader("Step 3: Strip Distribution")
     dfs = res['dist_factors']
     
-    # สร้าง Data List แบบ Manual เพื่อความชัวร์ (ป้องกัน KeyError ใน Loop)
+    # Define Rows
+    rows = [
+        ("Exterior Negative (-)", moments['neg_ext'], dfs['neg_ext_cs']),
+        ("Positive (+)",          moments['pos'],     dfs['pos_cs']),
+        ("Interior Negative (-)", moments['neg_int'], dfs['neg_int_cs'])
+    ]
+    
     data = []
-    
-    # Row 1: Ext Neg
-    m_total = moments['neg_ext']
-    pct_cs = dfs.get('neg_ext_cs', 0.75) # ใช้ .get ป้องกัน Error
-    data.append({
-        "Location": "Exterior Neg",
-        "Total M": f"{m_total:.2f}",
-        "% CS": f"{pct_cs*100:.0f}%",
-        "M_CS (kN.m)": m_total * pct_cs,
-        "% MS": f"{(1-pct_cs)*100:.0f}%",
-        "M_MS (kN.m)": m_total * (1-pct_cs)
-    })
-    
-    # Row 2: Positive
-    m_total = moments['pos']
-    pct_cs = dfs.get('pos_cs', 0.60)
-    data.append({
-        "Location": "Positive (+)",
-        "Total M": f"{m_total:.2f}",
-        "% CS": f"{pct_cs*100:.0f}%",
-        "M_CS (kN.m)": m_total * pct_cs,
-        "% MS": f"{(1-pct_cs)*100:.0f}%",
-        "M_MS (kN.m)": m_total * (1-pct_cs)
-    })
-    
-    # Row 3: Int Neg
-    m_total = moments['neg_ext'] # ใช้ค่านี้สำหรับการแสดงผล row สุดท้าย (จริงๆควรเป็น int)
-    # แก้ไข: ใช้ moments['neg_int'] ให้ถูกต้อง
-    m_total = moments['neg_int']
-    pct_cs = dfs.get('neg_int_cs', 0.75)
-    data.append({
-        "Location": "Interior Neg",
-        "Total M": f"{m_total:.2f}",
-        "% CS": f"{pct_cs*100:.0f}%",
-        "M_CS (kN.m)": m_total * pct_cs,
-        "% MS": f"{(1-pct_cs)*100:.0f}%",
-        "M_MS (kN.m)": m_total * (1-pct_cs)
-    })
-    
-    df = pd.DataFrame(data)
-    st.dataframe(df.style.format({"M_CS (kN.m)": "{:.2f}", "M_MS (kN.m)": "{:.2f}"}), use_container_width=True)
+    for loc, m_total, pct_cs in rows:
+        m_cs = m_total * pct_cs
+        m_ms = m_total * (1 - pct_cs)
+        data.append({
+            "Location": loc,
+            "Total Moment (kN.m)": f"{m_total:.2f}",
+            "CS Dist. Factor": f"{pct_cs*100:.1f}%",
+            "CS Moment": m_cs,
+            "MS Dist. Factor": f"{(1-pct_cs)*100:.1f}%",
+            "MS Moment": m_ms
+        })
 
-    # 4. PLOT GRAPH
-    st.markdown("### 📊 Moment Envelope")
-    fig, ax = plt.subplots(figsize=(8, 3))
-    x = np.linspace(0, 1, 100)
+    df = pd.DataFrame(data)
     
-    y_ext = -moments['neg_ext']
-    y_pos = moments['pos']
-    y_int = -moments['neg_int']
+    # Highlight specific columns
+    st.dataframe(
+        df.style.format({
+            "CS Moment": "{:.2f}", 
+            "MS Moment": "{:.2f}"
+        }).background_gradient(subset=["CS Moment"], cmap="Reds", vmin=0, vmax=res['M0_kNm']*0.5),
+        use_container_width=True
+    )
     
-    poly = np.polyfit([0, 0.5, 1], [y_ext, y_pos, y_int], 2)
-    y_plot = np.polyval(poly, x)
+    st.caption("*CS = Column Strip (แถบเสา), MS = Middle Strip (แถบกลาง)*")
+
+    # 4. PLOT ENVELOPE
+    st.markdown("### 📈 Moment Envelope")
     
-    ax.plot(x, y_plot, color='#C0392B', lw=2)
-    ax.fill_between(x, y_plot, 0, alpha=0.1, color='red')
-    ax.axhline(0, color='black', lw=0.5)
-    ax.set_title("Moment Diagram (Approximate)")
-    ax.set_ylabel("kN.m")
+    fig, ax = plt.subplots(figsize=(10, 4))
+    x = np.linspace(0, res['Ln'], 100)
+    
+    # Simple Parabolic approximation for visualization
+    m_left = -moments['neg_ext']
+    m_mid = moments['pos']
+    m_right = -moments['neg_int']
+    
+    # Fit parabola y = ax^2 + bx + c
+    # x=0 -> m_left
+    # x=L/2 -> m_mid
+    # x=L -> m_right
+    L = res['Ln']
+    # Solving 3 equations... simpler method:
+    # M(x) approx via shape functions (Structural Analysis basics)
+    # Just for UI curve:
+    poly = np.polyfit([0, L/2, L], [m_left, m_mid, m_right], 2)
+    y_vals = np.polyval(poly, x)
+    
+    ax.plot(x, y_vals, color='black', linewidth=2, label='Total Moment')
+    
+    # Fill areas
+    ax.fill_between(x, y_vals, 0, where=(y_vals>0), color='green', alpha=0.1, label='Positive')
+    ax.fill_between(x, y_vals, 0, where=(y_vals<0), color='red', alpha=0.1, label='Negative')
+    
+    ax.axhline(0, color='black', linewidth=0.5)
+    ax.set_xlabel("Distance along span (m)")
+    ax.set_ylabel("Moment (kN.m)")
+    ax.grid(True, linestyle='--', alpha=0.6)
+    ax.legend()
+    
     st.pyplot(fig)
