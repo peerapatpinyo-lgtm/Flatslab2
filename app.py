@@ -1,26 +1,26 @@
 # app.py
 import streamlit as st
-# ตรวจสอบว่ามี app_config หรือไม่ ถ้าไม่มีให้ใช้ค่า Default หรือลบออกตามโครงสร้างไฟล์ของคุณ
+
+# ------------------------------------------------------------------------------
+# SETUP & CONFIG
+# ------------------------------------------------------------------------------
 try:
     from app_config import Units
 except ImportError:
     class Units:
-        G = 2400  # Default concrete density if file missing
+        G = 2400
 
 import app_calc
 import app_viz
 import app_theory 
-# import app_ddm  # รอไฟล์ DDM
-# import app_efm  # รอไฟล์ EFM
-
-# ==============================================================================
-# MAIN APPLICATION INTERFACE
-# ==============================================================================
+# import app_ddm  
+# import app_efm 
 
 st.set_page_config(page_title="Flat Slab Design Pro: Advanced", layout="wide")
 st.title("🏗️ Flat Slab Design: Advanced Frame Analysis")
 st.markdown("---")
 
+# Initialize Session State
 if 'col_loc' not in st.session_state:
     st.session_state['col_loc'] = "Interior Column"
 
@@ -46,7 +46,7 @@ with tab1:
     # LEFT COLUMN: INPUTS ONLY
     # --------------------------------------------------------------------------
     with col_input:
-        # 1. Materials
+        # --- 1. Materials ---
         st.subheader("1. Materials & Loads")
         c1_mat, c2_mat = st.columns(2)
         with c1_mat: fc = st.selectbox("Concrete f'c (ksc)", [240, 280, 320, 350, 400], index=1)
@@ -62,78 +62,95 @@ with tab1:
 
         st.divider()
 
-        # 2. Geometry & Boundary
+        # --- 2. Geometry & Boundary ---
         st.subheader("2. Geometry & Boundary Conditions")
         
         # Joint Type
-        joint_type = st.radio(
-            "Column Joint Condition:",
-            ("Intermediate Floor", "Roof Joint"),
-            horizontal=True
-        )
+        joint_type = st.radio("Column Joint Condition:", ("Intermediate Floor", "Roof Joint"), horizontal=True)
         is_roof = (joint_type == "Roof Joint")
         joint_code = "Roof" if is_roof else "Interm."
         
         # Far End Conditions
         st.markdown("##### 📍 Column Far End Conditions (Stiffness)")
         f_col1, f_col2 = st.columns(2)
-        
-        far_end_up = "Pinned" # Default
+        far_end_up = "Pinned" 
         if not is_roof:
             with f_col1:
                 far_end_up_sel = st.selectbox("Upper Col Far End", ["Fixed (4EI/L)", "Pinned (3EI/L)"], index=1)
-                far_end_up = far_end_up_sel.split()[0] # Get 'Fixed' or 'Pinned'
+                far_end_up = far_end_up_sel.split()[0]
         else:
-             with f_col1: st.info("Upper Col: None")
+             with f_col1: st.info("Upper Col: None (Roof)")
 
         with f_col2:
             far_end_lo_sel = st.selectbox("Lower Col Far End", ["Fixed (4EI/L)", "Pinned (3EI/L)"], index=1)
             far_end_lo = far_end_lo_sel.split()[0]
 
-        # Plan Layout
+        # --- PLAN LAYOUT & SPANS (CRITICAL FIX HERE) ---
         st.markdown("##### 📏 Span Dimensions")
-        col_location = st.selectbox("Plan Location", ["Interior Column", "Edge Column", "Corner Column"])
-        is_corner = (col_location == "Corner Column")
-        is_edge = (col_location == "Edge Column")
         
-        # --- EDGE BEAM LOGIC (FIXED FOR KEYERROR) ---
-        # Default empty params
+        # Select Location with key to force refresh
+        col_location = st.selectbox(
+            "Plan Location", 
+            ["Interior Column", "Edge Column", "Corner Column"],
+            help="Interior (4 slabs), Edge (3 slabs), Corner (2 slabs)"
+        )
+        
+        is_interior = (col_location == "Interior Column")
+        is_edge     = (col_location == "Edge Column")
+        is_corner   = (col_location == "Corner Column")
+        
+        # --- LOGIC TO FORCE VALUES TO 0.0 ---
+        # Row 1: L1 (Left - Right)
+        col_l1a, col_l1b = st.columns(2)
+        
+        # L1 LEFT Logic
+        with col_l1a:
+            if is_interior:
+                L1_l = st.number_input("L1 - Left Span (m)", value=6.0, step=0.5, key="L1_L_int")
+            else:
+                # Edge/Corner: ไม่มีด้านซ้าย -> บังคับเป็น 0
+                st.markdown("**L1 - Left Span**")
+                st.info("🚫 0.00 m (Edge/Corner)")
+                L1_l = 0.0 
+
+        # L1 RIGHT Logic
+        with col_l1b:
+            L1_r = st.number_input("L1 - Right Span (m)", value=6.0, step=0.5, key="L1_R_all")
+
+        # Row 2: L2 (Top - Bottom)
+        col_l2a, col_l2b = st.columns(2)
+        
+        # L2 TOP Logic
+        with col_l2a:
+            L2_t = st.number_input("L2 - Top Half (m)", value=6.0, step=0.5, key="L2_T_all")
+
+        # L2 BOTTOM Logic
+        with col_l2b:
+            if is_corner:
+                # Corner: ไม่มีด้านล่าง -> บังคับเป็น 0
+                st.markdown("**L2 - Bottom Half**")
+                st.info("🚫 0.00 m (Corner)")
+                L2_b = 0.0
+            else:
+                # Interior/Edge: มีด้านล่าง
+                L2_b = st.number_input("L2 - Bottom Half (m)", value=6.0, step=0.5, key="L2_B_active")
+
+        # --- EDGE BEAM LOGIC ---
+        st.markdown("##### 🧱 Edge Condition")
         edge_beam_params = {"has_beam": False, "width_cm": 0.0, "depth_cm": 0.0}
         
-        if col_location in ["Edge Column", "Corner Column"]:
-            st.markdown("##### 🧱 Edge Condition")
-            has_edge_beam = st.checkbox("Has Edge Beam (Spandrel Beam)?", value=False)
-            
+        if not is_interior:
+            has_edge_beam = st.checkbox("Has Edge Beam (Spandrel Beam)?", value=True)
             if has_edge_beam:
                 eb_c1, eb_c2 = st.columns(2)
-                with eb_c1: 
-                    eb_w = st.number_input("Edge Beam Width (cm)", value=30.0, step=5.0)
-                with eb_c2: 
-                    eb_d = st.number_input("Edge Beam Depth (cm)", value=50.0, step=5.0)
-                
-                # FIX: Keys must be 'width_cm' and 'depth_cm' to match app_viz.py
+                eb_w = eb_c1.number_input("Edge Beam Width (cm)", value=30.0, step=5.0)
+                eb_d = eb_c2.number_input("Edge Beam Depth (cm)", value=50.0, step=5.0)
                 edge_beam_params = {"has_beam": True, "width_cm": eb_w, "depth_cm": eb_d}
-            else:
-                st.info("ℹ️ Analyzing as Flat Plate without edge beams (Unrestrained Edge).")
-        # -----------------------------
+        else:
+            st.caption("Interior columns typically assume continuous slab (no edge beam).")
 
-        col_l1a, col_l1b = st.columns(2)
-        with col_l1a:
-            l1_l_val = 0.0 if (col_location != "Interior Column") else 6.0
-            L1_l = st.number_input("L1 - Left Span (m)", value=l1_l_val, disabled=(col_location != "Interior Column"))
-        with col_l1b:
-            L1_r = st.number_input("L1 - Right Span (m)", value=6.0)
-            
-        col_l2a, col_l2b = st.columns(2)
-        with col_l2a:
-            L2_t = st.number_input("L2 - Top Half (m)", value=6.0)
-        with col_l2b:
-            l2_b_val = 0.0 if (col_location == "Corner Column") else 6.0
-            L2_b = st.number_input("L2 - Bottom Half (m)", value=l2_b_val, disabled=(col_location == "Corner Column"))
-
-        # Cantilever Settings
-        st.markdown("##### 🏗️ Cantilever / Eave (Overhang)")
-        with st.expander("Cantilever Configuration", expanded=False):
+        # --- CANTILEVER ---
+        with st.expander("🏗️ Cantilever / Eave (Overhang)", expanded=False):
             cant_c1, cant_c2 = st.columns(2)
             has_cant_left = False
             L_cant_left = 0.0
@@ -141,7 +158,9 @@ with tab1:
             L_cant_right = 0.0
             
             with cant_c1:
-                has_cant_left = st.checkbox("Left Cantilever", value=False, disabled=(L1_l > 0)) 
+                # Disable Left Cantilever if L1_Left exists (Interior) - Cantilever usually at edge
+                cant_l_disabled = (L1_l > 0) 
+                has_cant_left = st.checkbox("Left Cantilever", value=False, disabled=cant_l_disabled) 
                 if has_cant_left:
                     L_cant_left = st.number_input("Left Length (m)", value=1.5, step=0.1)
             
@@ -155,11 +174,14 @@ with tab1:
                 "has_right": has_cant_right, "L_right": L_cant_right
             }
 
-        # Structural Dims
-        st.markdown("##### 🧱 Member Sizes")
+        st.divider()
+
+        # --- 3. Member Sizes ---
+        st.subheader("3. Member Sizes")
         h_slab_cm = st.number_input("Slab Thickness (cm)", value=20.0, step=1.0)
+        
         col_sz1, col_sz2 = st.columns(2)
-        with col_sz1: c1_cm = st.number_input("Column c1 (Analysis) [cm]", value=50.0)
+        with col_sz1: c1_cm = st.number_input("Column c1 (Analysis Dir) [cm]", value=50.0)
         with col_sz2: c2_cm = st.number_input("Column c2 (Transverse) [cm]", value=50.0)
 
         h_up = 0.0
@@ -170,45 +192,48 @@ with tab1:
         # Drop Panel
         has_drop = st.checkbox("Include Drop Panel", value=False)
         h_drop_cm, drop_w1, drop_w2 = 0.0, 0.0, 0.0
+        
         if has_drop:
             d_col1, d_col2, d_col3 = st.columns(3)
             with d_col1: h_drop_cm = st.number_input("Drop Depth (cm)", value=10.0)
-            # Suggest defaults
-            def_w1 = (L1_l + L1_r)/3
-            def_w2 = (L2_t + L2_b)/3
-            with d_col2: drop_w1 = st.number_input("Drop W1 (m)", value=def_w1)
-            with d_col3: drop_w2 = st.number_input("Drop W2 (m)", value=def_w2)
+            
+            # Intelligent Defaults based on geometry
+            def_w1 = (L1_l + L1_r)/3.0 if is_interior else (L1_r/3.0) + (c1_cm/200.0) # Approx for edge
+            def_w2 = (L2_t + L2_b)/3.0 if not is_corner else (L2_t/3.0) + (c2_cm/200.0)
+            
+            with d_col2: drop_w1 = st.number_input("Drop Width W1 (m)", value=float(f"{def_w1:.2f}"))
+            with d_col3: drop_w2 = st.number_input("Drop Width W2 (m)", value=float(f"{def_w2:.2f}"))
 
         # --- PROCESS DATA ---
-        # NOTE: Passed 'edge_beam_params' to prepare_calculation_data
         calc_obj = app_calc.prepare_calculation_data(
             h_slab_cm, h_drop_cm, has_drop, c1_cm, c2_cm, drop_w2,
             L1_l, L1_r, L2_t, L2_b, fc, fy, dl, ll, auto_sw, lf_dl, lf_ll,
             joint_type, h_up, h_lo, far_end_up, far_end_lo, cant_params,
-            edge_beam_params # <--- Added argument
+            edge_beam_params
         )
 
         validator = app_calc.DesignCriteriaValidator(
             calc_obj['geom']['L1'], calc_obj['geom']['L2'], L1_l, L1_r, L2_t, L2_b,
             ll, (calc_obj['loads']['w_dead'] / Units.G), has_drop, cant_params,
             fy, col_location, h_slab_cm, (c1_cm/100), (c2_cm/100),
-            edge_beam_params # <--- Pass edge beam params to validator too
+            edge_beam_params
         )
         
-        # Run Checks (Data only)
+        # Run Checks
         thk_res = validator.check_min_thickness_detailed()
         ddm_ok, ddm_reasons = validator.check_ddm()
-
 
     # --------------------------------------------------------------------------
     # RIGHT COLUMN: VISUALIZATION & RESULTS
     # --------------------------------------------------------------------------
     with col_viz:
-        st.subheader("👁️ Visualization & Analysis")
+        st.subheader(f"👁️ Visualization: {col_location}")
         v_tab1, v_tab2 = st.tabs(["📐 Plan View", "🔍 True-Scale Section"])
         
         with v_tab1:
-            # Note: Passed edge_beam_params to viz
+            # DEBUG: Uncomment line below to see exact values being passed
+            # st.write(f"Debug Span: L1_Left={L1_l}, L1_Right={L1_r}, L2_Top={L2_t}, L2_Bot={L2_b}")
+            
             fig_plan = app_viz.draw_plan_view(
                 L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, 
                 col_location, has_drop, drop_w1, drop_w2, cant_params, edge_beam_params
@@ -216,175 +241,77 @@ with tab1:
             st.pyplot(fig_plan)
         
         with v_tab2:
-             # Note: Passed edge_beam_params to viz
             fig_elev = app_viz.draw_elevation_real_scale(
                 h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm, 
                 is_roof, far_end_up, far_end_lo, cant_params, edge_beam_params
             )
             st.pyplot(fig_elev)
             
-        # Analysis Report
-        st.markdown("### 📋 Preliminary Checks")
+        # Analysis Report (Short)
+        st.divider()
+        st.markdown("### 📋 Code Compliance Check")
         
-        # ======================================================================
-        #  DESIGN CODE CHECKS (ACI 318)
-        # ======================================================================
-        st.markdown("### 🔍 Design Code Checks (ACI 318)")
-        
-        # --- 1. Minimum Thickness Check ---
-        # Display Box
+        # 1. Thickness
         if thk_res['status']:
             st.success(f"✅ **Slab Thickness OK** (Prov: {thk_res['actual_h']} cm >= Req: {thk_res['req_h']:.2f} cm)")
         else:
             st.error(f"❌ **Slab Thickness NOT OK** (Prov: {thk_res['actual_h']} cm < Req: {thk_res['req_h']:.2f} cm)")
-
-        # Detailed Calculation (Toggle)
-        with st.expander("📝 Show Calculation Steps: Slab Thickness"):
-            st.markdown(f"**Case:** {thk_res['case_name']}")
-            st.markdown(r"**Formula (ACI 318 Table 8.3.1.1):**")
-            st.latex(r"h_{min} = \frac{L_n (0.8 + \frac{f_y}{1400})}{Denominator}")
             
-            st.markdown("**Substitution:**")
-            sub_str = r"h_{min} = \frac{" + f"{thk_res['Ln']:.2f}" + r"(" + f"0.8 + \\frac{{{thk_res['fy_mpa']}}}{{1400}}" + r")}{" + f"{thk_res['denom']}" + r"}"
-            st.latex(sub_str)
-            
-            st.markdown("**Results:**")
-            st.write(f"- Calculated Min = **{thk_res['calc_h']:.2f} cm**")
-            st.write(f"- Absolute Code Min = **{thk_res['abs_min']} cm**")
-            st.write(f"- **Final Required ($h_{{req}}$) = {thk_res['req_h']:.2f} cm**")
+        with st.expander("📝 Show Thickness Calculation"):
+            st.markdown(f"**Method:** ACI 318 Table 8.3.1.1 ({thk_res['case_name']})")
+            st.latex(r"h_{min} = \frac{L_n (0.8 + f_y/1400)}{30 \sim 36}")
+            st.write(f"- $L_n$ (Clear Span) = {thk_res['Ln']:.2f} m")
+            st.write(f"- Req $h$ = {thk_res['req_h']:.2f} cm")
 
-        # --- 2. Drop Panel Dashboard (With Detailed Math) ---
+        # 2. Drop Panel
         if has_drop:
             drop_res = validator.check_drop_panel_detailed(h_drop_cm, drop_w1, drop_w2)
+            st.markdown("#### 📉 Drop Panel Checks")
+            dp_c1, dp_c2, dp_c3 = st.columns(3)
             
-            st.markdown("#### 📉 Drop Panel Compliance Dashboard")
+            # Helper for displaying status
+            def status_mark(passed): return "✅" if passed else "❌"
             
-            # --- CARD DASHBOARD ---
-            d_c1, d_c2, d_c3 = st.columns(3)
+            with dp_c1:
+                st.metric("Depth Check", f"{drop_res['act_proj']} cm", 
+                          f"Req: {drop_res['req_proj']:.2f} cm {status_mark(drop_res['chk_depth'])}")
+            with dp_c2:
+                st.metric("Width (Dir 1)", f"{drop_res['act_w1']:.2f} m", 
+                          f"Req: {drop_res['req_total_w1']:.2f} m {status_mark(drop_res['chk_w1'])}")
+            with dp_c3:
+                st.metric("Width (Dir 2)", f"{drop_res['act_w2']:.2f} m", 
+                          f"Req: {drop_res['req_total_w2']:.2f} m {status_mark(drop_res['chk_w2'])}")
             
-            def display_check_card(col, title, req_val, prov_val, unit):
-                ratio = prov_val / req_val if req_val > 0 else 0
-                is_pass = prov_val >= req_val
-                with col:
-                    st.markdown(f"**{title}**")
-                    if is_pass:
-                        st.success(f"✅ **PASS**")
-                    else:
-                        st.error(f"❌ **FAIL**")
-                    st.metric(label="Provided (Actual)", value=f"{prov_val:.2f} {unit}")
-                    st.metric(label="Required (Min)", value=f"{req_val:.2f} {unit}", 
-                             delta=f"{req_val - prov_val:.2f} diff" if not is_pass else "OK", delta_color="inverse")
-                    st.progress(min(ratio / 2.0, 1.0))
+            with st.expander("📝 Drop Panel Calculation Details"):
+                st.latex(r"\text{Req Depth } \ge h_s/4")
+                st.latex(r"\text{Req Width } \ge L/3")
 
-            display_check_card(d_c1, "1. Depth Check", drop_res['req_proj'], drop_res['act_proj'], "cm")
-            display_check_card(d_c2, "2. Width (Dir 1)", drop_res['req_total_w1'], drop_res['act_w1'], "m")
-            display_check_card(d_c3, "3. Width (Dir 2)", drop_res['req_total_w2'], drop_res['act_w2'], "m")
-
-            # --- DETAILED SUBSTITUTION VIEW ---
-            with st.expander("📝 ดูที่มาของตัวเลขและการคำนวณ (Detailed Calculation)", expanded=True):
-                st.info("💡 ACI 318-19 Section 8.2.4: Drop panel dimensions are based on **Slab Thickness ($h_s$)** and **Span Length ($L$)**.")
-                
-                # --- CHECK 1: DEPTH ---
-                st.markdown("##### 1️⃣ Depth Check ($h_{drop}$)")
-                c1_math, c2_math = st.columns([1, 2])
-                with c1_math:
-                    st.markdown("**Variable Source:**")
-                    st.caption(f"From Input 'Slab Thickness':")
-                    st.code(f"h_s = {h_slab_cm} cm")
-                with c2_math:
-                    st.markdown("**Calculation:**")
-                    st.latex(r"\text{Req } h_{drop} = \frac{h_s}{4}")
-                    # Substitution
-                    st.latex(f"= \\frac{{{h_slab_cm}}}{{4}} = \\mathbf{{{drop_res['req_proj']:.2f} \\text{{ cm}}}}")
-                    
-                    if drop_res['chk_depth']:
-                        st.markdown(f"✅ Provided **{drop_res['act_proj']} cm** $\ge$ Required **{drop_res['req_proj']:.2f} cm**")
-                    else:
-                        st.markdown(f"❌ Provided **{drop_res['act_proj']} cm** < Required **{drop_res['req_proj']:.2f} cm**")
-
-                st.divider()
-
-                # --- CHECK 2: WIDTH L1 ---
-                st.markdown("##### 2️⃣ Width Check (Direction 1)")
-                c1_math, c2_math = st.columns([1, 2])
-                with c1_math:
-                    st.markdown("**Variable Source:**")
-                    st.caption(f"From Span 1 ($L_1$):")
-                    # ใช้ค่า L1 จาก geom object ที่ validator ใช้จริง
-                    val_L1 = calc_obj['geom']['L1']
-                    st.code(f"L1 = {val_L1:.2f} m")
-                with c2_math:
-                    st.markdown("**Calculation (Total Width):**")
-                    st.markdown("Extend $L/6$ each side $\\rightarrow$ Total $\ge L/3$")
-                    # Substitution
-                    st.latex(f"\\text{{Req }} W_1 = \\frac{{L_1}}{{3}} = \\frac{{{val_L1:.2f}}}{{3}} = \\mathbf{{{drop_res['req_total_w1']:.2f} \\text{{ m}}}}")
-                    
-                    if drop_res['chk_w1']:
-                         st.markdown(f"✅ Provided **{drop_res['act_w1']} m** $\ge$ Required **{drop_res['req_total_w1']:.2f} m**")
-                    else:
-                         st.markdown(f"❌ Provided **{drop_res['act_w1']} m** < Required **{drop_res['req_total_w1']:.2f} m**")
-
-                st.divider()
-
-                # --- CHECK 3: WIDTH L2 ---
-                st.markdown("##### 3️⃣ Width Check (Direction 2)")
-                c1_math, c2_math = st.columns([1, 2])
-                with c1_math:
-                    st.markdown("**Variable Source:**")
-                    st.caption(f"From Span 2 ($L_2$):")
-                    val_L2 = calc_obj['geom']['L2']
-                    st.code(f"L2 = {val_L2:.2f} m")
-                with c2_math:
-                    st.markdown("**Calculation (Total Width):**")
-                    st.latex(f"\\text{{Req }} W_2 = \\frac{{L_2}}{{3}} = \\frac{{{val_L2:.2f}}}{{3}} = \\mathbf{{{drop_res['req_total_w2']:.2f} \\text{{ m}}}}")
-                    
-                    if drop_res['chk_w2']:
-                         st.markdown(f"✅ Provided **{drop_res['act_w2']} m** $\ge$ Required **{drop_res['req_total_w2']:.2f} m**")
-                    else:
-                         st.markdown(f"❌ Provided **{drop_res['act_w2']} m** < Required **{drop_res['req_total_w2']:.2f} m**")
-
-        # --- 3. DDM/EFM Validity Check ---
-        st.markdown("#### ✅ Method Validity (DDM vs EFM)")
-        with st.expander(f"Code Check Details", expanded=True):
-            for r in ddm_reasons: st.markdown(r)
-        
         # Sidebar Update
         with status_container:
             st.markdown(f"**Condition:** `{joint_code}`")
-            st.markdown(f"**Far Ends:** Top `{far_end_up}` | Bot `{far_end_lo}`")
+            st.markdown(f"**Loc:** `{col_location}`")
             if edge_beam_params['has_beam']:
-                st.markdown(f"**Edge Beam:** `{edge_beam_params['width_cm']}x{edge_beam_params['depth_cm']} cm`")
+                st.markdown(f"**Beam:** `{edge_beam_params['width_cm']}x{edge_beam_params['depth_cm']} cm`")
             if ddm_ok: st.success("✅ **DDM:** Valid")
             else: st.error("❌ **DDM:** Invalid")
             st.info("✅ **EFM:** Valid")
 
 # ==============================================================================
-# TAB 2: ENGINEERING THEORY
+# OTHER TABS
 # ==============================================================================
 with tab2:
     app_theory.display_theory(calc_obj)
 
-# ==============================================================================
-# TAB 3: DIRECT DESIGN METHOD (DDM)
-# ==============================================================================
 with tab3:
     st.header("🏗️ Direct Design Method (DDM)")
     if ddm_ok:
-        st.success("✅ This structure meets the criteria for Direct Design Method.")
-        st.info("🚧 Module `app_ddm.py` is required to display calculations here.")
-        # if 'app_ddm' in globals():
-        #     app_ddm.render_ddm(calc_obj)
+        st.success("✅ Criteria Met for DDM")
+        # if 'app_ddm' in globals(): app_ddm.render_ddm(calc_obj)
     else:
-        st.error("❌ This structure DOES NOT meet DDM criteria. Please use EFM.")
-        st.warning("Issues Found:")
-        for r in ddm_reasons: st.write(r)
+        st.error("❌ Criteria NOT Met for DDM")
+        for r in ddm_reasons: st.write(f"- {r}")
 
-# ==============================================================================
-# TAB 4: EQUIVALENT FRAME METHOD (EFM)
-# ==============================================================================
 with tab4:
     st.header("📐 Equivalent Frame Method (EFM)")
-    st.info("✅ EFM is a general method valid for this structure.")
-    st.info("🚧 Module `app_efm.py` is required to display calculations here.")
-    # if 'app_efm' in globals():
-    #     app_efm.render_efm(calc_obj)
+    st.info("✅ EFM is valid for this geometry.")
+    # if 'app_efm' in globals(): app_efm.render_efm(calc_obj)
