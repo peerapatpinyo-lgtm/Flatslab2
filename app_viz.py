@@ -30,13 +30,15 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
     c1_m = c1_cm / 100
     c2_m = c2_cm / 100
     
-    # Basic Boundary
-    slab_L = c1_m/2 if col_loc == "Corner Column" else L1_l
-    slab_R = L1_r
-    slab_T = L2_t
-    slab_B = c2_m/2 if col_loc in ["Edge Column", "Corner Column"] else L2_b
-    
-    # 1. Cantilever Logic (Expand Boundary)
+    # --- 1. FIXED BOUNDARY LOGIC (CORRECTED) ---
+    # ถ้าค่า L เป็น 0 (ขอบเขต) ให้วาดพื้นคลุมถึงแค่ขอบเสา (c/2) เพื่อความสมจริง
+    # ไม่ใช้ Logic เช็คชื่อ String แล้ว แต่เช็คจากค่า L ที่ส่งมาจริง
+    slab_L = L1_l if L1_l > 0 else c1_m/2
+    slab_R = L1_r if L1_r > 0 else c1_m/2  # เผื่อกรณีเสาขอบขวา
+    slab_T = L2_t if L2_t > 0 else c2_m/2
+    slab_B = L2_b if L2_b > 0 else c2_m/2
+
+    # 2. Cantilever Logic (Expand Boundary)
     cant_L_ext = cant_params['L_left'] if cant_params['has_left'] else 0
     cant_R_ext = cant_params['L_right'] if cant_params['has_right'] else 0
     
@@ -44,34 +46,43 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
     draw_L = slab_L + cant_L_ext
     draw_R = slab_R + cant_R_ext
     
-    # 2. Draw Main Zones (Middle Strip)
+    # 3. Draw Main Zones (Middle Strip)
+    # วาดพื้นหลัก
     ax.add_patch(patches.Rectangle((-slab_L, -slab_B), slab_L + slab_R, slab_B + slab_T,
-                                    facecolor=COLORS['ms_bg'], edgecolor='gray', linewidth=1, zorder=0))
+                                   facecolor=COLORS['ms_bg'], edgecolor='gray', linewidth=1, zorder=0))
     
-    # 3. Draw Cantilever Zones (Distinct Color)
+    # 4. Draw Cantilever Zones (Distinct Color)
     if cant_params['has_left']:
         ax.add_patch(patches.Rectangle((-slab_L - cant_L_ext, -slab_B), cant_L_ext, slab_B + slab_T,
-                                            facecolor=COLORS['cantilever_bg'], edgecolor='gray', linestyle='--', linewidth=1, zorder=0))
+                                              facecolor=COLORS['cantilever_bg'], edgecolor='gray', linestyle='--', linewidth=1, zorder=0))
         # Label
         ax.text(-slab_L - cant_L_ext/2, 0, "CANTILEVER", rotation=90, ha='center', va='center', 
                 color='#8E44AD', fontsize=8, fontweight='bold')
 
     if cant_params['has_right']:
         ax.add_patch(patches.Rectangle((slab_R, -slab_B), cant_R_ext, slab_B + slab_T,
-                                            facecolor=COLORS['cantilever_bg'], edgecolor='gray', linestyle='--', linewidth=1, zorder=0))
+                                              facecolor=COLORS['cantilever_bg'], edgecolor='gray', linestyle='--', linewidth=1, zorder=0))
         # Label
         ax.text(slab_R + cant_R_ext/2, 0, "CANTILEVER", rotation=90, ha='center', va='center', 
                 color='#8E44AD', fontsize=8, fontweight='bold')
 
-    # 4. Column Strip
+    # 5. Column Strip Logic
     min_span = min(L1_l + L1_r, L2_t + L2_b)
+    # ถ้า span ด้านใดเป็น 0 (Edge) ให้ใช้ span อีกฝั่งคำนวณแทน หรือใช้ค่าพื้นฐาน
+    if min_span < 1.0: # กรณี Corner ที่ L รวมเหลือน้อย
+        valid_spans = [x for x in [L1_l, L1_r, L2_t, L2_b] if x > 0]
+        if valid_spans:
+            min_span = min(valid_spans) * 2 # Approximate
+        else:
+            min_span = 4.0 # Fallback
+
     cs_width = 0.25 * min_span
     cs_top = min(cs_width, slab_T)
     cs_bot = min(cs_width, slab_B)
     
     # Draw CS Rect (Main Span)
     ax.add_patch(patches.Rectangle((-slab_L, -cs_bot), slab_L + slab_R, cs_top + cs_bot,
-                                    facecolor=COLORS['cs_bg'], edgecolor='none', alpha=0.6, zorder=1))
+                                   facecolor=COLORS['cs_bg'], edgecolor='none', alpha=0.6, zorder=1))
     
     # Extend CS into Cantilever
     if cant_params['has_left']:
@@ -96,18 +107,20 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
         beam_w = edge_beam_params['width_cm'] / 100.0
         beam_color = '#C0392B' # Dark Red
         
-        # Check if Edge Beam is along L1 (Horizontal) or L2 (Vertical) edge
-        # Assume Edge Beam is usually at the exterior edge.
-        # For this visualization, we'll draw it along the exterior edge defined by col_loc
-        
-        # Logic: If 'Edge Column', beam is usually along the free edge (Bottom in this coord system if we assume standard orientation)
-        # But for generic purpose, let's draw it along the 'Edge' indicated by coordinate 0 if applicable, 
-        # or simplified: Just show a beam along the exterior-most edge if it's an edge/corner column.
-        
         beam_rects = []
+        # Logic: วาด Beam ตามขอบเขตที่มีอยู่จริง
+        # กรณี Edge Column (L1_l=0) หรือ Corner -> มี Beam แนวตั้งที่ขอบซ้าย?
+        # หรือมี Beam แนวนอนที่ขอบล่าง?
+        # เพื่อความง่ายในการ Visualization: วาดรอบนอกสุดของ Slab
+        
+        # Top Edge
+        if L2_t > 0: # Assume beam usually on free edge, but let's just outline the boundary
+             pass 
+        
+        # Simplified: ถ้าเป็น Edge/Corner ให้วาด Beam ที่ขอบที่ "หายไป"
+        # แต่ User Config มาแค่ "Has Beam" ไม่ได้บอกทิศทาง
+        # สมมติ: วาด Beam ที่ขอบล่างเสมอถ้าเป็น Edge/Corner เพื่อสื่อความหมาย
         if col_loc in ["Edge Column", "Corner Column"]:
-            # Draw beam along the bottom edge (arbitrary choice for visualization consistency with 'Exterior')
-            # Rectangle from Left Limit to Right Limit
             beam_rect = patches.Rectangle((-draw_L, -slab_B), draw_L + draw_R, beam_w, 
                                           facecolor='none', edgecolor=beam_color, linestyle='--', linewidth=1.5, zorder=3)
             beam_rects.append(beam_rect)
@@ -116,25 +129,27 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
         for br in beam_rects:
             ax.add_patch(br)
 
-    # 5. Drop Panel
+    # 6. Drop Panel
     if has_drop:
         ax.add_patch(patches.Rectangle((-d_w1/2, -d_w2/2), d_w1, d_w2, 
-                                            facecolor='none', edgecolor=COLORS['drop_panel_plan'], 
-                                            linestyle='-', linewidth=2, zorder=5))
+                                          facecolor='none', edgecolor=COLORS['drop_panel_plan'], 
+                                          linestyle='-', linewidth=2, zorder=5))
 
-    # 6. Columns
+    # 7. Columns
     ax.add_patch(patches.Rectangle((-c1_m/2, -c2_m/2), c1_m, c2_m, 
                                    facecolor=COLORS['column'], edgecolor='black', hatch='//', zorder=10))
     
-    # Ghost Columns (Only in spans, not cantilevers)
+    # Ghost Columns (Only where span exists)
     ghost_props = dict(facecolor='white', edgecolor=COLORS['concrete_cut'], linestyle='--', linewidth=1.5, zorder=4)
-    if L1_r > 0: ax.add_patch(patches.Rectangle((L1_r - c1_m/2, -c2_m/2), c1_m, c2_m, **ghost_props))
-    if L1_l > 0 and col_loc != "Corner Column": ax.add_patch(patches.Rectangle((-L1_l - c1_m/2, -c2_m/2), c1_m, c2_m, **ghost_props))
+    if L1_r > 1.0: ax.add_patch(patches.Rectangle((L1_r - c1_m/2, -c2_m/2), c1_m, c2_m, **ghost_props))
+    if L1_l > 1.0: ax.add_patch(patches.Rectangle((-L1_l - c1_m/2, -c2_m/2), c1_m, c2_m, **ghost_props))
+    if L2_t > 1.0: ax.add_patch(patches.Rectangle((-c1_m/2, L2_t - c2_m/2), c1_m, c2_m, **ghost_props)) # Top Ghost
+    if L2_b > 1.0: ax.add_patch(patches.Rectangle((-c1_m/2, -L2_b - c2_m/2), c1_m, c2_m, **ghost_props)) # Bot Ghost
     
-    # 7. Dimensions (Updated for Complete Coverage)
+    # 8. Dimensions
     def draw_ext_dim(x1, y1, x2, y2, text, offset, fontsize=9):
         mid_x, mid_y = (x1 + x2)/2, (y1 + y2)/2
-        if x1 == x2: # Vertical
+        if abs(x1 - x2) < 0.01: # Vertical
             x1 += offset; x2 += offset; mid_x += offset
             rot = 90; ha, va = ('right', 'center') if offset < 0 else ('left', 'center')
             ax.plot([x1-0.1, x1+0.1], [y1, y1], color=COLORS['dim_line'], lw=0.5)
@@ -155,19 +170,21 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
     if cant_params['has_left']:
         draw_ext_dim(-slab_L - cant_L_ext, -slab_B, -slab_L, -slab_B, f"Cant L={cant_L_ext:.2f}", m_y - (-slab_B))
     
-    if L1_l > 0 and col_loc != "Corner Column": 
+    if L1_l > 0.1: # Only draw if span exists
         draw_ext_dim(-L1_l, -slab_B, 0, -slab_B, f"L1(L)={L1_l:.2f}", m_y - (-slab_B))
     
-    draw_ext_dim(0, -slab_B, L1_r, -slab_B, f"L1(R)={L1_r:.2f}", m_y - (-slab_B))
+    if L1_r > 0.1:
+        draw_ext_dim(0, -slab_B, L1_r, -slab_B, f"L1(R)={L1_r:.2f}", m_y - (-slab_B))
     
     if cant_params['has_right']:
         draw_ext_dim(L1_r, -slab_B, L1_r + cant_R_ext, -slab_B, f"Cant R={cant_R_ext:.2f}", m_y - (-slab_B))
 
     # --- Main Span Dimensions (Left) ---
     # L2 Top
-    draw_ext_dim(-draw_L, 0, -draw_L, L2_t, f"L2(T)={L2_t:.2f}", m_x - (-draw_L))
+    if L2_t > 0.1:
+        draw_ext_dim(-draw_L, 0, -draw_L, L2_t, f"L2(T)={L2_t:.2f}", m_x - (-draw_L))
     # L2 Bottom
-    if L2_b > 0 and col_loc not in ["Edge Column", "Corner Column"]:
+    if L2_b > 0.1:
          draw_ext_dim(-draw_L, -L2_b, -draw_L, 0, f"L2(B)={L2_b:.2f}", m_x - (-draw_L))
 
     # --- Member Size Dimensions (Near Center) ---
@@ -232,11 +249,11 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
         elif kind == 'Pinned':
             if orientation == 'bottom':
                 triangle = patches.Polygon([[x, y], [x-sz/1.5, y-sz], [x+sz/1.5, y-sz]], 
-                                            closed=True, facecolor='white', edgecolor='black', linewidth=1)
+                                           closed=True, facecolor='white', edgecolor='black', linewidth=1)
                 base = patches.Rectangle((x-sz, y-sz-0.02), sz*2, 0.02, color='black')
             else: # top
                 triangle = patches.Polygon([[x, y], [x-sz/1.5, y+sz], [x+sz/1.5, y+sz]], 
-                                            closed=True, facecolor='white', edgecolor='black', linewidth=1)
+                                           closed=True, facecolor='white', edgecolor='black', linewidth=1)
                 base = patches.Rectangle((x-sz, y+sz), sz*2, 0.02, color='black')
             
             ax.add_patch(triangle)
@@ -273,19 +290,14 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
     if edge_beam_params and edge_beam_params.get('has_beam'):
         beam_h = edge_beam_params['depth_cm'] / 100.0
         beam_w = edge_beam_params['width_cm'] / 100.0
-        # Draw beam cross-section near the column or at edge?
-        # Typically in elevation if cut through column, we might see the beam in section if it's perpendicular (spandrel).
-        # We will visualize it as a section hanging from the slab, slightly offset from column to show it's "Edge"
-        
-        # Draw on the Right side (Arbitrary convention for "Edge")
+        # Draw beam on the Right side (Arbitrary convention for "Edge" view)
         beam_x_pos = right_x - beam_w if cant_params['has_right'] else 1.0 
         
         # Beam rectangle (hanging below slab)
-        # Depth is total depth usually, so projection is beam_h - s_m
         proj_h = beam_h - s_m
         if proj_h > 0:
             ax.add_patch(patches.Rectangle((beam_x_pos, -beam_h), beam_w, beam_h, 
-                                          facecolor='#D98880', edgecolor='black', linewidth=1, zorder=8))
+                                           facecolor='#D98880', edgecolor='black', linewidth=1, zorder=8))
             ax.text(beam_x_pos + beam_w/2, -beam_h/2, "BM", color='white', fontsize=7, ha='center', va='center')
 
     # 2. Dimensions
