@@ -23,7 +23,7 @@ def draw_dim_line(ax, start, end, text, offset=0.5, axis='x'):
         ax.plot([end[0]-0.1, end[0]-offset-0.2], [end[1], end[1]], **ext_line_style)
         ax.text(start[0]-offset-0.3, (start[1]+end[1])/2, text, ha='right', va='center', rotation=90, color=COLORS['dim_line'])
 
-def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1, d_w2, cant_params):
+def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1, d_w2, cant_params, edge_beam_params):
     """High-fidelity Plan View with Cantilevers and Complete Dimensions"""
     fig, ax = plt.subplots(figsize=(12, 10))
     
@@ -90,6 +90,31 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
     ax.text((slab_R - slab_L)/2, 0, "COLUMN STRIP", color=COLORS['cs_text'], 
             fontsize=10, fontweight='bold', ha='center', va='center',
             bbox=dict(facecolor='white', edgecolor='none', alpha=0.3, pad=1))
+
+    # --- Edge Beam (New Feature) ---
+    if edge_beam_params and edge_beam_params.get('has_beam'):
+        beam_w = edge_beam_params['width_cm'] / 100.0
+        beam_color = '#C0392B' # Dark Red
+        
+        # Check if Edge Beam is along L1 (Horizontal) or L2 (Vertical) edge
+        # Assume Edge Beam is usually at the exterior edge.
+        # For this visualization, we'll draw it along the exterior edge defined by col_loc
+        
+        # Logic: If 'Edge Column', beam is usually along the free edge (Bottom in this coord system if we assume standard orientation)
+        # But for generic purpose, let's draw it along the 'Edge' indicated by coordinate 0 if applicable, 
+        # or simplified: Just show a beam along the exterior-most edge if it's an edge/corner column.
+        
+        beam_rects = []
+        if col_loc in ["Edge Column", "Corner Column"]:
+            # Draw beam along the bottom edge (arbitrary choice for visualization consistency with 'Exterior')
+            # Rectangle from Left Limit to Right Limit
+            beam_rect = patches.Rectangle((-draw_L, -slab_B), draw_L + draw_R, beam_w, 
+                                          facecolor='none', edgecolor=beam_color, linestyle='--', linewidth=1.5, zorder=3)
+            beam_rects.append(beam_rect)
+            ax.text(0, -slab_B + beam_w/2, "EDGE BEAM", color=beam_color, fontsize=8, ha='center', va='center', fontweight='bold')
+
+        for br in beam_rects:
+            ax.add_patch(br)
 
     # 5. Drop Panel
     if has_drop:
@@ -164,7 +189,7 @@ def draw_plan_view(L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, col_loc, has_drop, d_w1
     return fig
 
 def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm, 
-                              is_roof, far_end_up, far_end_lo, cant_params):
+                              is_roof, far_end_up, far_end_lo, cant_params, edge_beam_params):
     """High-fidelity Section View with Boundary Conditions, Cantilevers, and Complete Dimensions"""
     fig, ax = plt.subplots(figsize=(10, 7))
     
@@ -207,11 +232,11 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
         elif kind == 'Pinned':
             if orientation == 'bottom':
                 triangle = patches.Polygon([[x, y], [x-sz/1.5, y-sz], [x+sz/1.5, y-sz]], 
-                                           closed=True, facecolor='white', edgecolor='black', linewidth=1)
+                                            closed=True, facecolor='white', edgecolor='black', linewidth=1)
                 base = patches.Rectangle((x-sz, y-sz-0.02), sz*2, 0.02, color='black')
             else: # top
                 triangle = patches.Polygon([[x, y], [x-sz/1.5, y+sz], [x+sz/1.5, y+sz]], 
-                                           closed=True, facecolor='white', edgecolor='black', linewidth=1)
+                                            closed=True, facecolor='white', edgecolor='black', linewidth=1)
                 base = patches.Rectangle((x-sz, y+sz), sz*2, 0.02, color='black')
             
             ax.add_patch(triangle)
@@ -243,6 +268,25 @@ def draw_elevation_real_scale(h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h
     if has_drop:
         ax.add_patch(patches.Rectangle((-d_w/2, bot_struct), d_w, d_m, facecolor=col_concrete, edgecolor='black', linewidth=1, zorder=5))
         ax.add_patch(patches.Rectangle((-d_w/2, bot_struct), d_w, d_m, fill=False, edgecolor=col_hatch, hatch='///', linewidth=0, zorder=6))
+
+    # --- Edge Beam (Section View) ---
+    if edge_beam_params and edge_beam_params.get('has_beam'):
+        beam_h = edge_beam_params['depth_cm'] / 100.0
+        beam_w = edge_beam_params['width_cm'] / 100.0
+        # Draw beam cross-section near the column or at edge?
+        # Typically in elevation if cut through column, we might see the beam in section if it's perpendicular (spandrel).
+        # We will visualize it as a section hanging from the slab, slightly offset from column to show it's "Edge"
+        
+        # Draw on the Right side (Arbitrary convention for "Edge")
+        beam_x_pos = right_x - beam_w if cant_params['has_right'] else 1.0 
+        
+        # Beam rectangle (hanging below slab)
+        # Depth is total depth usually, so projection is beam_h - s_m
+        proj_h = beam_h - s_m
+        if proj_h > 0:
+            ax.add_patch(patches.Rectangle((beam_x_pos, -beam_h), beam_w, beam_h, 
+                                          facecolor='#D98880', edgecolor='black', linewidth=1, zorder=8))
+            ax.text(beam_x_pos + beam_w/2, -beam_h/2, "BM", color='white', fontsize=7, ha='center', va='center')
 
     # 2. Dimensions
     def draw_side_dim(y_start, y_end, x_loc, label, fontsize=9):
