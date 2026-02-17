@@ -344,11 +344,13 @@ with tab1:
 with tab2:
     app_theory.display_theory(calc_obj)
 
+
 with tab3:
-    st.header("🏗️ Direct Design Method (DDM)")
+    # เรียกใช้ฟังก์ชัน render_ddm_tab โดยส่งค่า calc_obj เข้าไป
     if ddm_ok:
-        st.success("✅ This structure meets the criteria for Direct Design Method.")
-        st.info("Module `app_ddm` ready.")
+        # ลบ st.info("Module app_ddm ready.") อันเก่าออก
+        # แล้วใส่บรรทัดนี้แทนครับ:
+        app_ddm.render_ddm_tab(calc_obj) 
     else:
         st.error("❌ This structure DOES NOT meet DDM criteria.")
         for r in ddm_reasons: st.write(f"- {r}")
