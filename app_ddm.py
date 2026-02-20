@@ -8,41 +8,46 @@ def render_ddm_tab(calc_obj):
     st.markdown("---")
 
     # ==========================================================================
-    # 1. DATA ADAPTER (Safe Extraction)
+    # 1. DATA ADAPTER (Safe Extraction & Unit Match)
     # ==========================================================================
     try:
         geom = calc_obj.get('geom', {})
-        L1 = geom.get('L1_l', 6.0) if geom.get('L1_l', 0) > 0.1 else geom.get('L1_r', 6.0)
+        # ดึง L1, L2, Ln จาก geom (หน่วยเป็นเมตรทั้งหมด)
+        L1 = geom.get('L1', 6.0)
         L2 = geom.get('L2', 6.0)
-        h_slab = geom.get('h_slab', 0.20)
-        has_drop = geom.get('has_drop', False)
-        h_drop = geom.get('h_drop', h_slab)
+        ln = geom.get('Ln', L1)
+        c1 = geom.get('c1', 0.5)
+        c2 = geom.get('c2', 0.5)
         
-        col_data = calc_obj.get('col_size', {})
-        c1 = col_data.get('c1', 50) / 100.0
-        c2 = col_data.get('c2', 50) / 100.0
-        ln = L1 - c1
+        # 🚨 BUG FIX: แปลงความหนาจากเมตรกลับเป็น เซนติเมตร (cm) ให้ calc_ddm.py
+        h_slab_m = geom.get('h_s', 0.20)
+        h_drop_m = geom.get('h_d', h_slab_m)
+        h_slab = h_slab_m * 100 
+        h_drop = h_drop_m * 100 
+        has_drop = h_drop > h_slab
         
-        case_type = "Exterior" if geom.get('L1_l', 1.0) <= 0.01 else "Interior"
-        
-        # ดึงข้อมูลคานขอบแบบละเอียด (แปลงเป็นเมตร)
-        edge_beam = calc_obj.get('edge_beam', {})
+        edge_beam = geom.get('edge_beam_params', {})
         has_edge_beam = edge_beam.get('has_beam', False)
         eb_width = edge_beam.get('width_cm', 0) / 100.0
         eb_depth = edge_beam.get('depth_cm', 0) / 100.0
         
-        mat = calc_obj.get('mat', {})
-        fc = mat.get('fc', 240)
-        fy_val = str(mat.get('fy', "4000"))
-        fy = 3000 if "30" in fy_val else (5000 if "50" in fy_val else 4000)
-
-        # ดึงโหลดแยกประเภทเพื่อใช้ตรวจสอบเงื่อนไข DDM
-        loads = calc_obj.get('loads', {})
-        # ใช้ Load Factor ปัจจุบัน 1.2 DL + 1.6 LL
-        dl = loads.get('w_dead', 2400 * h_slab)
-        ll = loads.get('LL', 300)
-        wu = (1.2 * dl) + (1.6 * ll)
+        # อนุมานเคสของเสา (หากมีคานขอบ ให้ถือเป็น Exterior)
+        case_type = "Exterior" if has_edge_beam else "Interior"
         
+        mat = calc_obj.get('mat', {})
+        # 🚨 BUG FIX: แปลงหน่วยกำลังจาก Pascal (Pa) กลับเป็น ksc
+        KSC_TO_PA = 98066.5
+        fc = mat.get('fc_pa', 240 * KSC_TO_PA) / KSC_TO_PA
+        fy = mat.get('fy_pa', 4000 * KSC_TO_PA) / KSC_TO_PA
+
+        loads = calc_obj.get('loads', {})
+        G = 9.80665
+        # 🚨 BUG FIX: แปลงหน่วย Load จาก Pascal (N/m2) เป็น kg/m2
+        wu = loads.get('wu_pa', 0) / G
+        dl = loads.get('w_dead', 0) / G
+        # ประมาณค่า LL กลับมาเพื่อใช้เช็คเงื่อนไข ACI
+        ll = (wu - 1.4 * dl) / 1.7 if wu > 0 else 300
+
         ddm_inputs = {
             'l1': L1, 'l2': L2, 'ln': ln, 'c1': c1, 'c2': c2,
             'wu': wu, 'dl': dl, 'll': ll,
@@ -61,13 +66,11 @@ def render_ddm_tab(calc_obj):
     st.subheader("🔍 ACI 318 DDM Constraints Check")
     col1, col2 = st.columns(2)
     
-    # Check 1: LL <= 2*DL
     is_load_ok = ll <= 2 * dl
-    col1.info(f"**Load Ratio Check:**\n\nLive Load ({ll} kg/m²) ≤ 2 × Dead Load ({2*dl} kg/m²)\n\n**Status:** {'✅ OK' if is_load_ok else '❌ Exceeds Limit (Requires EFM)'}")
+    col1.info(f"**Load Ratio Check:**\n\nLive Load ({ll:.0f} kg/m²) ≤ 2 × Dead Load ({2*dl:.0f} kg/m²)\n\n**Status:** {'✅ OK' if is_load_ok else '❌ Exceeds Limit'}")
     
-    # Check 2: Ln >= 0.65 L1
     is_span_ok = ln >= 0.65 * L1
-    col2.info(f"**Clear Span Check:**\n\nLn ({ln:.2f} m) ≥ 0.65 × L1 ({0.65*L1:.2f} m)\n\n**Status:** {'✅ OK' if is_span_ok else '⚠️ Modified Ln required in calculation'}")
+    col2.info(f"**Clear Span Check:**\n\nLn ({ln:.2f} m) ≥ 0.65 × L1 ({0.65*L1:.2f} m)\n\n**Status:** {'✅ OK' if is_span_ok else '⚠️ Modified Ln required'}")
 
     # ==========================================================================
     # 2. CALCULATION
@@ -89,7 +92,6 @@ def render_ddm_tab(calc_obj):
     st.subheader("📋 Reinforcement Results")
 
     if not df_results.empty and 'Location' in df_results.columns:
-        
         st.dataframe(df_results, use_container_width=True)
 
         if 'As Req (cm²)' in df_results.columns:
@@ -110,6 +112,6 @@ def render_ddm_tab(calc_obj):
             st.pyplot(fig)
     else:
         st.error("❌ ไม่สามารถแสดงผลการคำนวณได้ เนื่องจากข้อมูลไม่ครบถ้วน หรือหน้าตัดไม่เพียงพอ")
-        st.info("กรุณาตรวจสอบความหนาพื้น (Slab Thickness) หรือขนาดเสาอีกครั้ง")
+        st.info("💡 ข้อสังเกต: ตรวจสอบความลึกหน้าตัดและหน่วยอีกครั้ง")
 
     st.markdown("---")
