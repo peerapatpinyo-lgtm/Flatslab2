@@ -16,7 +16,7 @@ def get_moment_coefficients(case_type, has_edge_beam):
 def calculate_ddm(inputs):
     results = []
     messages = []
-    details = {} # 📌 เพิ่มตัวแปรเก็บรายละเอียดสมการ
+    details = {}
     
     # --- 1. Unpack Inputs ---
     try:
@@ -24,11 +24,6 @@ def calculate_ddm(inputs):
         l2 = float(inputs['l2'])
         ln_actual = float(inputs['ln'])
         wu = float(inputs['wu'])
-        
-        # ACI 318 Limitation
-        ln = max(ln_actual, 0.65 * l1)
-        if ln > ln_actual:
-            messages.append(f"ℹ️ Clear span Ln adjusted to 0.65*L1 ({ln:.2f} m) for Mo calculation.")
         
         h_slab = float(inputs['h_slab']) # cm
         h_drop = float(inputs.get('h_drop', h_slab)) # cm
@@ -39,26 +34,83 @@ def calculate_ddm(inputs):
         
         case_type = inputs.get('case_type', 'Interior')
         has_edge_beam = inputs.get('has_edge_beam', False)
-        eb_width = float(inputs.get('eb_width', 0)) * 100 # Convert m to cm
-        eb_depth = float(inputs.get('eb_depth', 0)) * 100 # Convert m to cm
+        eb_width = float(inputs.get('eb_width', 0)) * 100 # cm
+        eb_depth = float(inputs.get('eb_depth', 0)) * 100 # cm
         
     except Exception as e:
         return pd.DataFrame(), 0.0, [f"Input Error: {str(e)}"], details
 
-    # --- 2. Calculate Total Static Moment (Mo) ---
-    Mo = (wu * l2 * (ln**2)) / 8.0 # kg-m
+    # ==========================================
+    # --- 2. SAFETY & LIMITATION CHECKS (ACI 318) ---
+    # ==========================================
     
-    # 📌 เก็บสมการ Mo
-    details['Mo_step'] = rf"M_o = \frac{{w_u L_2 L_n^2}}{{8}} = \frac{{{wu:,.0f} \times {l2:.2f} \times {ln:.2f}^2}}{{8}} = {Mo:,.2f} \text{{ kg-m}}"
+    # Check 2.1: DDM Limitation (L2/L1 ratio)
+    ratio_l = l2 / l1 if l1 > 0 else 0
+    if ratio_l > 2.0 or ratio_l < 0.5:
+        messages.append(f"⚠️ ข้อจำกัด DDM: สัดส่วน L2/L1 = {ratio_l:.2f} (ACI แนะนำให้อยู่ระหว่าง 0.5 ถึง 2.0 หากเกินกว่านี้ควรใช้วิธีอื่น)")
 
-    # --- 3. Get Moment Distribution Coefficients ---
+    # Check 2.2: Minimum Thickness (Deflection Control)
+    fy_mpa = fy * 0.0980665 # Convert kg/cm² to MPa for ACI formula
+    fy_mult = 0.8 + (fy_mpa / 1400)
+    
+    if case_type == "Interior":
+        alpha = 33 if not has_drop else 36
+    else: # Exterior
+        if has_edge_beam:
+            alpha = 33 if not has_drop else 36
+        else:
+            alpha = 30 if not has_drop else 33
+            
+    h_min_cm = (ln_actual * 100 * fy_mult) / alpha
+    if h_slab < h_min_cm:
+        messages.append(f"⚠️ การแอ่นตัว (Deflection): ความหนาพื้น {h_slab:.0f} cm น้อยกว่าค่าต่ำสุดแนะนำที่ {h_min_cm:.1f} cm (ควรเพิ่มความหนา)")
+    details['h_min_step'] = rf"h_{{min}} = \frac{{L_n (0.8 + \frac{{f_y}}{{1400}})}}{{\alpha}} = {h_min_cm:.1f} \text{{ cm}}"
+
+    # Check 2.3: Punching Shear (Two-way Shear)
+    # Estimate column size (c) from L1 and Ln (Assume square column)
+    c_m = max(l1 - ln_actual, 0.20) # Assume at least 20cm column
+    c_cm = c_m * 100
+    
+    # Critical section depth (d) at the column
+    d_punch = (h_drop if has_drop else h_slab) - 3.0 # cm
+    c_crit = c_cm + d_punch # Critical section size (cm)
+    
+    # Calculate bo (Critical perimeter - assumed interior for heaviest load check)
+    bo = 4 * c_crit # cm
+    
+    # Vu at critical section
+    trib_area = (l1 * l2) - ((c_crit / 100)**2)
+    Vu = wu * trib_area # kg
+    
+    # phi Vc
+    phi_shear = 0.75
+    vc = 1.06 * np.sqrt(fc) # ACI metric equivalent in kg/cm²
+    phi_Vc = phi_shear * vc * bo * d_punch # kg
+    
+    details['punch_step'] = rf"\phi V_c = 0.75 \times 1.06\sqrt{{f'_c}} b_o d = {phi_Vc:,.0f} \text{{ kg}}"
+    
+    if Vu > phi_Vc:
+        messages.append(f"🚨 พังทลายด้วยแรงเฉือนทะลุ (Punching Shear FAIL): แรงเฉือน {Vu:,.0f} kg > ความต้านทาน {phi_Vc:,.0f} kg")
+    else:
+        details['punch_status'] = f"✅ Punching Shear ผ่าน: Vu ({Vu:,.0f} kg) ≤ φVc ({phi_Vc:,.0f} kg)"
+
+    # ==========================================
+    # --- 3. DDM MOMENT CALCULATION ---
+    # ==========================================
+    
+    # ACI 318 Limitation for Ln
+    ln = max(ln_actual, 0.65 * l1)
+    if ln > ln_actual:
+        messages.append(f"ℹ️ Clear span Ln ถูกปรับค่าเป็น 0.65*L1 ({ln:.2f} m) สำหรับการคำนวณโมเมนต์สถิต (Mo)")
+
+    Mo = (wu * l2 * (ln**2)) / 8.0 # kg-m
+    details['Mo_step'] = rf"M_o = \frac{{w_u L_2 L_n^2}}{{8}} = \frac{{{wu:,.0f} \times {l2:.2f} \times {ln:.2f}^2}}{{8}} = {Mo:,.0f} \text{{ kg-m}}"
+
     coeffs = get_moment_coefficients(case_type, has_edge_beam)
     m_neg_int_total = coeffs['neg_int'] * Mo
     m_pos_total     = coeffs['pos'] * Mo
     m_neg_ext_total = coeffs['neg_ext'] * Mo
     
-    # --- 4. ACI 318 Moment Distribution to Strips ---
-    # 4.1 Calculate Torsional Stiffness (beta_t) for Exterior Edge
     beta_t = 0.0
     if has_edge_beam and eb_width > 0 and eb_depth > 0:
         x = min(eb_width, eb_depth)
@@ -66,46 +118,33 @@ def calculate_ddm(inputs):
         C = (1 - 0.63 * (x / y)) * (x**3) * y / 3.0
         Is = (l2 * 100) * (h_slab**3) / 12.0
         beta_t = C / (2 * Is)
-        messages.append(f"🔧 Calculated Torsional Stiffness (βt) = {beta_t:.2f}")
-        # 📌 เก็บสมการ beta_t
         details['beta_t_step'] = rf"\beta_t = \frac{{C}}{{2 I_s}} = \frac{{{C:,.0f}}}{{2 \times {Is:,.0f}}} = {beta_t:.3f}"
     else:
         details['beta_t_step'] = r"\text{No Edge Beam (ไม่มีคานขอบ), } \beta_t = 0"
 
-    # 4.2 Interpolate Column Strip Percentages
-    l2_l1 = min(max(l2 / l1, 0.5), 2.0) # Limit between 0.5 and 2.0 per ACI
-    
-    # Positive & Interior Negative (Assuming alpha_f1 = 0 for Flat Plate)
+    l2_l1 = min(max(l2 / l1, 0.5), 2.0) 
     cs_pos_pct = 0.60
     cs_int_neg_pct = 0.75
     
-    # Exterior Negative (Interpolation based on beta_t and l2/l1)
     if beta_t == 0:
-        cs_ext_neg_pct = 1.00 # 100% to CS
+        cs_ext_neg_pct = 1.00 
     else:
-        # P25 is the percentage when beta_t >= 2.5
         p_25 = 75 if l2_l1 <= 1.0 else 75 + 15 * (l2_l1 - 1.0)
-        # Interpolate between beta_t = 0 (100%) and beta_t = 2.5 (P25%)
         cs_ext_neg_pct = (100 - (100 - p_25) * min(beta_t, 2.5) / 2.5) / 100.0
 
-    # 📌 เก็บค่าเปอร์เซ็นต์
     details['cs_ext_pct'] = cs_ext_neg_pct * 100
 
-    # 4.3 Apply Percentages to Total Moments
     cs_neg_int = cs_int_neg_pct * m_neg_int_total
     ms_neg_int = (1.0 - cs_int_neg_pct) * m_neg_int_total
-    
     cs_pos = cs_pos_pct * m_pos_total
     ms_pos = (1.0 - cs_pos_pct) * m_pos_total
-    
     cs_neg_ext = cs_ext_neg_pct * m_neg_ext_total
     ms_neg_ext = (1.0 - cs_ext_neg_pct) * m_neg_ext_total
         
-    # --- 5. Reinforcement Calculation Function ---
     def solve_rebar(moment_kgm, b_cm, h_cm, loc_name):
         if moment_kgm <= 0.1: return None 
         
-        cover = 3.0 # cm
+        cover = 3.0 
         d_cm = h_cm - cover
         mu_kgcm = moment_kgm * 100
         phi = 0.9
@@ -158,12 +197,11 @@ def calculate_ddm(inputs):
             "d (cm)": f"{d_cm:.0f}"
         }
 
-    # --- 6. Execution Loop ---
     width_cs_m = 0.5 * min(l1, l2)
     width_ms_m = l2 - width_cs_m
     
-    b_cs = width_cs_m * 100 # cm
-    b_ms = width_ms_m * 100 # cm
+    b_cs = width_cs_m * 100 
+    b_ms = width_ms_m * 100 
     h_cs_neg = h_drop if has_drop else h_slab
     
     if case_type == "Interior":
@@ -188,7 +226,6 @@ def calculate_ddm(inputs):
         if res:
             results.append(res)
             if "Fail" in res.get("Status", ""):
-                messages.append(f"⚠️ {name}: Section insufficient (Depth too low for applied moment).")
+                messages.append(f"⚠️ โมเมนต์ดัด (Flexure): ส่วน {name} ความหนาไม่พอรับโมเมนต์ดัด")
 
-    # 📌 ส่ง details กลับไปด้วยเป็นตัวที่ 4
     return pd.DataFrame(results), Mo, messages, details
