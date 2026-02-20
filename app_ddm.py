@@ -75,7 +75,8 @@ def render_ddm_tab(calc_obj):
     # ==========================================================================
     # 2. CALCULATION
     # ==========================================================================
-    df_results, Mo, warning_msgs = calc_ddm.calculate_ddm(ddm_inputs)
+    # 🚨 อัปเดตให้รับค่าตัวที่ 4 (details) มาด้วย
+    df_results, Mo, warning_msgs, details = calc_ddm.calculate_ddm(ddm_inputs)
 
     # --- Display Metrics ---
     st.markdown("---")
@@ -83,8 +84,13 @@ def render_ddm_tab(calc_obj):
     m1.metric("Design Load (Wu)", f"{wu:,.0f} kg/m²")
     m2.metric("Total Static Moment (Mo)", f"{Mo:,.2f} kg-m")
 
+    # แสดงข้อความแจ้งเตือน (Warning & Safety Errors)
     if warning_msgs:
-        for msg in warning_msgs: st.warning(msg)
+        for msg in warning_msgs: 
+            if "🚨" in msg or "❌" in msg:
+                st.error(msg)
+            else:
+                st.warning(msg)
 
     # ==========================================================================
     # 3. REBAR SCHEDULE & VISUALIZATION
@@ -113,5 +119,33 @@ def render_ddm_tab(calc_obj):
     else:
         st.error("❌ ไม่สามารถแสดงผลการคำนวณได้ เนื่องจากข้อมูลไม่ครบถ้วน หรือหน้าตัดไม่เพียงพอ")
         st.info("💡 ข้อสังเกต: ตรวจสอบความลึกหน้าตัดและหน่วยอีกครั้ง")
+
+    # ==========================================================================
+    # 4. CALCULATION STEPS & DETAILS (EXPANDER)
+    # ==========================================================================
+    st.markdown("---")
+    with st.expander("📝 ดูขั้นตอนการคำนวณและตรวจสอบข้อกำหนด (Calculation & Safety Checks)"):
+        st.markdown("### 🛡️ การตรวจสอบด้านความปลอดภัย (Safety Checks)")
+        st.markdown(f"**1. ตรวจสอบ Punching Shear (แรงเฉือนทะลุ):** {details.get('punch_status', 'ข้อมูลไม่เพียงพอ')}")
+        st.latex(details.get('punch_step', ''))
+        
+        st.markdown("**2. ตรวจสอบการแอ่นตัว (Minimum Thickness):**")
+        st.latex(details.get('h_min_step', ''))
+        
+        st.markdown("---")
+        st.markdown("### 📊 การกระจายโมเมนต์ (Moment Distribution)")
+        st.markdown("**1. โมเมนต์สถิตรวม (Total Static Moment)**")
+        st.latex(details.get('Mo_step', ''))
+        
+        st.markdown("**2. สติฟเนสแรงบิด (Torsional Stiffness, $\\beta_t$)**")
+        st.latex(details.get('beta_t_step', ''))
+        st.markdown(f"**สัดส่วนโมเมนต์ลบขอบนอกที่เข้า Column Strip:** `{details.get('cs_ext_pct', 100):.1f}%`")
+
+        st.markdown("---")
+        st.markdown("### 💡 สมการออกแบบเหล็กเสริม (Flexural Design)")
+        st.markdown("โปรแกรมใช้สมการของ ACI 318 ในการคำนวณหาปริมาณเหล็กเสริมดังนี้:")
+        st.latex(r"R_n = \frac{M_u}{\phi b d^2}")
+        st.latex(r"\rho = \frac{0.85 f'_c}{f_y} \left( 1 - \sqrt{1 - \frac{2 R_n}{0.85 f'_c}} \right)")
+        st.latex(r"A_{s,req} = \rho b d \geq A_{s,min}")
 
     st.markdown("---")
