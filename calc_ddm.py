@@ -2,9 +2,6 @@ import pandas as pd
 import numpy as np
 
 def get_moment_coefficients(case_type, has_edge_beam):
-    """
-    Selects ACI 318 Moment Coefficients based on panel location.
-    """
     if case_type == "Interior":
         return {'neg_int': 0.65, 'pos': 0.35, 'neg_ext': 0.65} 
     else: # "Exterior" 
@@ -24,6 +21,9 @@ def calculate_ddm(inputs):
         l2 = float(inputs['l2'])
         ln_actual = float(inputs['ln'])
         wu = float(inputs['wu'])
+        
+        c1 = float(inputs['c1']) # ขนาดเสาขนาน l1 (m)
+        c2 = float(inputs['c2']) # ขนาดเสาขนาน l2 (m)
         
         h_slab = float(inputs['h_slab']) # cm
         h_drop = float(inputs.get('h_drop', h_slab)) # cm
@@ -47,63 +47,102 @@ def calculate_ddm(inputs):
     # Check 2.1: DDM Limitation (L2/L1 ratio)
     ratio_l = l2 / l1 if l1 > 0 else 0
     if ratio_l > 2.0 or ratio_l < 0.5:
-        messages.append(f"⚠️ ข้อจำกัด DDM: สัดส่วน L2/L1 = {ratio_l:.2f} (ACI แนะนำให้อยู่ระหว่าง 0.5 ถึง 2.0 หากเกินกว่านี้ควรใช้วิธีอื่น)")
+        messages.append(f"⚠️ ข้อจำกัด DDM: สัดส่วน L2/L1 = {ratio_l:.2f} (เกินข้อกำหนด 2.0)")
 
-    # Check 2.2: Minimum Thickness (Deflection Control)
-    fy_mpa = fy * 0.0980665 # Convert kg/cm² to MPa for ACI formula
+    # Check 2.2: Minimum Thickness
+    fy_mpa = fy * 0.0980665 
     fy_mult = 0.8 + (fy_mpa / 1400)
     
     if case_type == "Interior":
-        alpha = 33 if not has_drop else 36
-    else: # Exterior
-        if has_edge_beam:
-            alpha = 33 if not has_drop else 36
-        else:
-            alpha = 30 if not has_drop else 33
+        alpha_val = 33 if not has_drop else 36
+    else: 
+        alpha_val = 33 if has_edge_beam and not has_drop else 36 if has_edge_beam and has_drop else 30 if not has_drop else 33
             
-    h_min_cm = (ln_actual * 100 * fy_mult) / alpha
+    h_min_cm = (ln_actual * 100 * fy_mult) / alpha_val
     if h_slab < h_min_cm:
-        messages.append(f"⚠️ การแอ่นตัว (Deflection): ความหนาพื้น {h_slab:.0f} cm น้อยกว่าค่าต่ำสุดแนะนำที่ {h_min_cm:.1f} cm (ควรเพิ่มความหนา)")
+        messages.append(f"⚠️ การแอ่นตัว: ความหนาพื้น {h_slab:.0f} cm น้อยกว่าค่า ACI แนะนำ ({h_min_cm:.1f} cm)")
     details['h_min_step'] = rf"h_{{min}} = \frac{{L_n (0.8 + \frac{{f_y}}{{1400}})}}{{\alpha}} = {h_min_cm:.1f} \text{{ cm}}"
 
-    # Check 2.3: Punching Shear (Two-way Shear)
-    # Estimate column size (c) from L1 and Ln (Assume square column)
-    c_m = max(l1 - ln_actual, 0.20) # Assume at least 20cm column
-    c_cm = c_m * 100
+    # ==========================================
+    # Check 2.3: PUNCHING SHEAR (Rigorous Check)
+    # ==========================================
+    c1_cm, c2_cm = c1 * 100, c2 * 100
+    beta_c = max(c1_cm, c2_cm) / min(c1_cm, c2_cm)
     
-    # Critical section depth (d) at the column
-    d_punch = (h_drop if has_drop else h_slab) - 3.0 # cm
-    c_crit = c_cm + d_punch # Critical section size (cm)
+    is_interior = (case_type == "Interior")
+    alpha_s = 40 if is_interior else 30  # Assume Edge for Exterior
     
-    # Calculate bo (Critical perimeter - assumed interior for heaviest load check)
-    bo = 4 * c_crit # cm
+    # Helper function: Calculate vc per ACI 318 (metric equivalent kg/cm2)
+    def calc_vc_aci(f_c, bo_val, d_val, alpha_s_val, beta_c_val):
+        sq_fc = np.sqrt(f_c)
+        v1 = 1.06 * sq_fc
+        v2 = 0.53 * (1 + (2 / beta_c_val)) * sq_fc
+        v3 = 0.265 * ((alpha_s_val * d_val / bo_val) + 2) * sq_fc
+        return min(v1, v2, v3)
+
+    punch_msgs = []
+    punch_steps = ""
+    punch_pass = True
+
+    # --- Section 1: At distance d/2 from Column Face ---
+    d1 = (h_drop if has_drop else h_slab) - 3.0 # cm
     
-    # Vu at critical section
-    trib_area = (l1 * l2) - ((c_crit / 100)**2)
-    Vu = wu * trib_area # kg
+    if is_interior:
+        bo1 = 2 * (c1_cm + d1) + 2 * (c2_cm + d1)
+        area_out_1 = (l1 * l2) - ((c1_cm + d1)/100 * (c2_cm + d1)/100)
+    else: # Edge (assuming c1 is perpendicular to edge)
+        bo1 = 2 * (c1_cm + d1/2) + (c2_cm + d1)
+        area_out_1 = (l1 * l2 / 2) - ((c1_cm + d1/2)/100 * (c2_cm + d1)/100)
+        
+    Vu1 = wu * area_out_1 # Direct Shear force
+    vc1 = calc_vc_aci(fc, bo1, d1, alpha_s, beta_c)
+    phi_Vc1 = 0.75 * vc1 * bo1 * d1
     
-    # phi Vc
-    phi_shear = 0.75
-    vc = 1.06 * np.sqrt(fc) # ACI metric equivalent in kg/cm²
-    phi_Vc = phi_shear * vc * bo * d_punch # kg
+    punch_steps += rf"\textbf{{1. รอบหัวเสา ($d_1={d_1:.0f}$ cm, $b_{{o1}}={bo1:.0f}$ cm):}} \\ \phi V_{{c1}} = {phi_Vc1:,.0f} \text{{ kg}}, V_{{u1}} = {Vu1:,.0f} \text{{ kg}}\\"
     
-    details['punch_step'] = rf"\phi V_c = 0.75 \times 1.06\sqrt{{f'_c}} b_o d = {phi_Vc:,.0f} \text{{ kg}}"
+    if Vu1 > phi_Vc1:
+        punch_msgs.append(f"🚨 ทะลุรอบหัวเสา: Vu ({Vu1:,.0f} kg) > φVc ({phi_Vc1:,.0f} kg)")
+        punch_pass = False
+
+    # --- Section 2: At distance d/2 from Drop Panel Face (If present) ---
+    if has_drop:
+        d2 = h_slab - 3.0
+        # ACI minimum drop panel dimensions (L/3)
+        w_drop1_cm, w_drop2_cm = (l1 / 3) * 100, (l2 / 3) * 100 
+        
+        if is_interior:
+            bo2 = 2 * (w_drop1_cm + d2) + 2 * (w_drop2_cm + d2)
+            area_out_2 = (l1 * l2) - ((w_drop1_cm + d2)/100 * (w_drop2_cm + d2)/100)
+        else:
+            bo2 = 2 * (w_drop1_cm + d2/2) + (w_drop2_cm + d2)
+            area_out_2 = (l1 * l2 / 2) - ((w_drop1_cm + d2/2)/100 * (w_drop2_cm + d2)/100)
+            
+        Vu2 = wu * max(area_out_2, 0)
+        vc2 = calc_vc_aci(fc, bo2, d2, alpha_s, 1.0) # beta_c ≈ 1.0 for drop panel proportion
+        phi_Vc2 = 0.75 * vc2 * bo2 * d2
+        
+        punch_steps += rf"\textbf{{2. รอบ Drop Panel ($d_2={d2:.0f}$ cm, $b_{{o2}}={bo2:.0f}$ cm):}} \\ \phi V_{{c2}} = {phi_Vc2:,.0f} \text{{ kg}}, V_{{u2}} = {Vu2:,.0f} \text{{ kg}}"
+        
+        if Vu2 > phi_Vc2:
+            punch_msgs.append(f"🚨 ทะลุรอบ Drop Panel: Vu ({Vu2:,.0f} kg) > φVc ({phi_Vc2:,.0f} kg)")
+            punch_pass = False
+
+    details['punch_step'] = punch_steps
     
-    if Vu > phi_Vc:
-        messages.append(f"🚨 พังทลายด้วยแรงเฉือนทะลุ (Punching Shear FAIL): แรงเฉือน {Vu:,.0f} kg > ความต้านทาน {phi_Vc:,.0f} kg")
+    if punch_pass:
+        details['punch_status'] = "✅ ผ่านเกณฑ์ (ปลอดภัยจากแรงเฉือนทะลุดิ่ง)"
     else:
-        details['punch_status'] = f"✅ Punching Shear ผ่าน: Vu ({Vu:,.0f} kg) ≤ φVc ({phi_Vc:,.0f} kg)"
+        details['punch_status'] = "❌ ไม่ผ่านเกณฑ์ (หน้าตัดรับแรงเฉือนไม่พอ)"
+        messages.extend(punch_msgs)
 
     # ==========================================
     # --- 3. DDM MOMENT CALCULATION ---
     # ==========================================
-    
-    # ACI 318 Limitation for Ln
     ln = max(ln_actual, 0.65 * l1)
     if ln > ln_actual:
-        messages.append(f"ℹ️ Clear span Ln ถูกปรับค่าเป็น 0.65*L1 ({ln:.2f} m) สำหรับการคำนวณโมเมนต์สถิต (Mo)")
+        messages.append(f"ℹ️ Clear span Ln ถูกปรับค่าเป็น 0.65*L1 ({ln:.2f} m)")
 
-    Mo = (wu * l2 * (ln**2)) / 8.0 # kg-m
+    Mo = (wu * l2 * (ln**2)) / 8.0 
     details['Mo_step'] = rf"M_o = \frac{{w_u L_2 L_n^2}}{{8}} = \frac{{{wu:,.0f} \times {l2:.2f} \times {ln:.2f}^2}}{{8}} = {Mo:,.0f} \text{{ kg-m}}"
 
     coeffs = get_moment_coefficients(case_type, has_edge_beam)
@@ -113,12 +152,11 @@ def calculate_ddm(inputs):
     
     beta_t = 0.0
     if has_edge_beam and eb_width > 0 and eb_depth > 0:
-        x = min(eb_width, eb_depth)
-        y = max(eb_width, eb_depth)
+        x, y = min(eb_width, eb_depth), max(eb_width, eb_depth)
         C = (1 - 0.63 * (x / y)) * (x**3) * y / 3.0
         Is = (l2 * 100) * (h_slab**3) / 12.0
         beta_t = C / (2 * Is)
-        details['beta_t_step'] = rf"\beta_t = \frac{{C}}{{2 I_s}} = \frac{{{C:,.0f}}}{{2 \times {Is:,.0f}}} = {beta_t:.3f}"
+        details['beta_t_step'] = rf"\beta_t = \frac{{C}}{{2 I_s}} = {beta_t:.3f}"
     else:
         details['beta_t_step'] = r"\text{No Edge Beam (ไม่มีคานขอบ), } \beta_t = 0"
 
@@ -176,48 +214,32 @@ def calculate_ddm(inputs):
         as_temp = rho_min * b_cm * h_cm 
         as_final = max(as_calc, as_temp)
         
-        db12_area = 1.13
-        n_bars = max(2, int(np.ceil(as_final / db12_area)))
-        spacing = b_cm / n_bars
+        n_bars = max(2, int(np.ceil(as_final / 1.13)))
+        spacing = min(b_cm / n_bars, min(2 * h_cm, 45))
+        n_bars = int(np.ceil(b_cm / spacing))
         
-        max_spacing = min(2 * h_cm, 45)
-        if spacing > max_spacing:
-            spacing = max_spacing
-            n_bars = int(np.ceil(b_cm / spacing))
-        
-        status = "OK"
-        if as_calc < as_temp: status = "Min Steel"
+        status = "Min Steel" if as_calc < as_temp else "OK"
         
         return {
-            "Location": loc_name,
-            "Moment (kg-m)": round(moment_kgm, 2),
-            "As Req (cm²)": round(as_final, 2),
-            "Rebar Suggestion": f"{n_bars}-DB12 @ {int(spacing)} cm",
-            "Status": status,
-            "d (cm)": f"{d_cm:.0f}"
+            "Location": loc_name, "Moment (kg-m)": round(moment_kgm, 2), "As Req (cm²)": round(as_final, 2),
+            "Rebar Suggestion": f"{n_bars}-DB12 @ {int(spacing)} cm", "Status": status, "d (cm)": f"{d_cm:.0f}"
         }
 
     width_cs_m = 0.5 * min(l1, l2)
     width_ms_m = l2 - width_cs_m
-    
-    b_cs = width_cs_m * 100 
-    b_ms = width_ms_m * 100 
+    b_cs, b_ms = width_cs_m * 100, width_ms_m * 100 
     h_cs_neg = h_drop if has_drop else h_slab
     
     if case_type == "Interior":
         sections = [
-            ("Col Strip (Int Neg)", cs_neg_int, b_cs, h_cs_neg),
-            ("Col Strip (Pos)",     cs_pos,     b_cs, h_slab),
-            ("Mid Strip (Int Neg)", ms_neg_int, b_ms, h_slab),
-            ("Mid Strip (Pos)",     ms_pos,     b_ms, h_slab)
+            ("Col Strip (Int Neg)", cs_neg_int, b_cs, h_cs_neg), ("Col Strip (Pos)", cs_pos, b_cs, h_slab),
+            ("Mid Strip (Int Neg)", ms_neg_int, b_ms, h_slab), ("Mid Strip (Pos)", ms_pos, b_ms, h_slab)
         ]
     else: 
         sections = [
-            ("Ext: Col Strip (Int Neg)", cs_neg_int, b_cs, h_cs_neg),
-            ("Ext: Col Strip (Pos)",     cs_pos,     b_cs, h_slab),
+            ("Ext: Col Strip (Int Neg)", cs_neg_int, b_cs, h_cs_neg), ("Ext: Col Strip (Pos)", cs_pos, b_cs, h_slab),
             ("Ext: Col Strip (Ext Neg)", cs_neg_ext, b_cs, h_cs_neg),
-            ("Ext: Mid Strip (Int Neg)", ms_neg_int, b_ms, h_slab),
-            ("Ext: Mid Strip (Pos)",     ms_pos,     b_ms, h_slab),
+            ("Ext: Mid Strip (Int Neg)", ms_neg_int, b_ms, h_slab), ("Ext: Mid Strip (Pos)", ms_pos, b_ms, h_slab),
             ("Ext: Mid Strip (Ext Neg)", ms_neg_ext, b_ms, h_slab) 
         ]
 
@@ -226,6 +248,6 @@ def calculate_ddm(inputs):
         if res:
             results.append(res)
             if "Fail" in res.get("Status", ""):
-                messages.append(f"⚠️ โมเมนต์ดัด (Flexure): ส่วน {name} ความหนาไม่พอรับโมเมนต์ดัด")
+                messages.append(f"⚠️ {name}: ความหนาไม่พอรับโมเมนต์ดัด")
 
     return pd.DataFrame(results), Mo, messages, details
