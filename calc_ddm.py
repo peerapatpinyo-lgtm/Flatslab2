@@ -98,7 +98,8 @@ def calculate_ddm(inputs):
     vc1 = calc_vc_aci(fc, bo1, d1, alpha_s, beta_c)
     phi_Vc1 = 0.75 * vc1 * bo1 * d1
     
-    punch_steps += rf"\textbf{{1. รอบหัวเสา ($d_1={d_1:.0f}$ cm, $b_{{o1}}={bo1:.0f}$ cm):}} \\ \phi V_{{c1}} = {phi_Vc1:,.0f} \text{{ kg}}, V_{{u1}} = {Vu1:,.0f} \text{{ kg}}\\"
+    # 🚨 แก้ไข Typo เปลี่ยน {d_1:.0f} เป็น {d1:.0f} ตรงนี้ครับ
+    punch_steps += rf"\textbf{{1. รอบหัวเสา ($d_1={d1:.0f}$ cm, $b_{{o1}}={bo1:.0f}$ cm):}} \\ \phi V_{{c1}} = {phi_Vc1:,.0f} \text{{ kg}}, V_{{u1}} = {Vu1:,.0f} \text{{ kg}}\\"
     
     if Vu1 > phi_Vc1:
         punch_msgs.append(f"🚨 ทะลุรอบหัวเสา: Vu ({Vu1:,.0f} kg) > φVc ({phi_Vc1:,.0f} kg)")
