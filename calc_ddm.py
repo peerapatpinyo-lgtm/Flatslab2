@@ -16,6 +16,7 @@ def get_moment_coefficients(case_type, has_edge_beam):
 def calculate_ddm(inputs):
     results = []
     messages = []
+    details = {} # 📌 เพิ่มตัวแปรเก็บรายละเอียดสมการ
     
     # --- 1. Unpack Inputs ---
     try:
@@ -42,10 +43,13 @@ def calculate_ddm(inputs):
         eb_depth = float(inputs.get('eb_depth', 0)) * 100 # Convert m to cm
         
     except Exception as e:
-        return pd.DataFrame(), 0.0, [f"Input Error: {str(e)}"]
+        return pd.DataFrame(), 0.0, [f"Input Error: {str(e)}"], details
 
     # --- 2. Calculate Total Static Moment (Mo) ---
     Mo = (wu * l2 * (ln**2)) / 8.0 # kg-m
+    
+    # 📌 เก็บสมการ Mo
+    details['Mo_step'] = rf"M_o = \frac{{w_u L_2 L_n^2}}{{8}} = \frac{{{wu:,.0f} \times {l2:.2f} \times {ln:.2f}^2}}{{8}} = {Mo:,.2f} \text{{ kg-m}}"
 
     # --- 3. Get Moment Distribution Coefficients ---
     coeffs = get_moment_coefficients(case_type, has_edge_beam)
@@ -63,6 +67,10 @@ def calculate_ddm(inputs):
         Is = (l2 * 100) * (h_slab**3) / 12.0
         beta_t = C / (2 * Is)
         messages.append(f"🔧 Calculated Torsional Stiffness (βt) = {beta_t:.2f}")
+        # 📌 เก็บสมการ beta_t
+        details['beta_t_step'] = rf"\beta_t = \frac{{C}}{{2 I_s}} = \frac{{{C:,.0f}}}{{2 \times {Is:,.0f}}} = {beta_t:.3f}"
+    else:
+        details['beta_t_step'] = r"\text{No Edge Beam (ไม่มีคานขอบ), } \beta_t = 0"
 
     # 4.2 Interpolate Column Strip Percentages
     l2_l1 = min(max(l2 / l1, 0.5), 2.0) # Limit between 0.5 and 2.0 per ACI
@@ -79,6 +87,9 @@ def calculate_ddm(inputs):
         p_25 = 75 if l2_l1 <= 1.0 else 75 + 15 * (l2_l1 - 1.0)
         # Interpolate between beta_t = 0 (100%) and beta_t = 2.5 (P25%)
         cs_ext_neg_pct = (100 - (100 - p_25) * min(beta_t, 2.5) / 2.5) / 100.0
+
+    # 📌 เก็บค่าเปอร์เซ็นต์
+    details['cs_ext_pct'] = cs_ext_neg_pct * 100
 
     # 4.3 Apply Percentages to Total Moments
     cs_neg_int = cs_int_neg_pct * m_neg_int_total
@@ -179,4 +190,5 @@ def calculate_ddm(inputs):
             if "Fail" in res.get("Status", ""):
                 messages.append(f"⚠️ {name}: Section insufficient (Depth too low for applied moment).")
 
-    return pd.DataFrame(results), Mo, messages
+    # 📌 ส่ง details กลับไปด้วยเป็นตัวที่ 4
+    return pd.DataFrame(results), Mo, messages, details
