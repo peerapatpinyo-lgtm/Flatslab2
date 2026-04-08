@@ -1,14 +1,25 @@
+# calc_ddm.py
 import pandas as pd
 import numpy as np
 
-def get_moment_coefficients(case_type, has_edge_beam):
+def get_moment_coefficients(case_type, edge_condition="Slab with edge beam"):
+    """
+    อ้างอิง ACI 318-19 Table 8.10.4.2
+    edge_condition options: "Unrestrained", "Slab with edge beam", "Slab without edge beam", "Fully restrained"
+    """
     if case_type == "Interior":
         return {'neg_int': 0.65, 'pos': 0.35, 'neg_ext': 0.65} 
     else: # "Exterior" 
-        if has_edge_beam:
+        if edge_condition == "Unrestrained": # เช่น วางบนกำแพงอิฐ
+            return {'neg_int': 0.75, 'pos': 0.63, 'neg_ext': 0.00}
+        elif edge_condition == "Slab with edge beam":
             return {'neg_int': 0.70, 'pos': 0.50, 'neg_ext': 0.30}
-        else:
+        elif edge_condition == "Slab without edge beam":
             return {'neg_int': 0.70, 'pos': 0.52, 'neg_ext': 0.26}
+        elif edge_condition == "Fully restrained": # เช่น หล่อเป็นเนื้อเดียวกับกำแพงรับแรงเฉือน
+            return {'neg_int': 0.65, 'pos': 0.35, 'neg_ext': 0.65}
+        else:
+            return {'neg_int': 0.70, 'pos': 0.50, 'neg_ext': 0.30} # Default
 
 def calculate_ddm(inputs):
     results = []
@@ -37,11 +48,18 @@ def calculate_ddm(inputs):
         eb_width = float(inputs.get('eb_width', 0)) * 100 # cm
         eb_depth = float(inputs.get('eb_depth', 0)) * 100 # cm
         
+        # แปลง boolean เป็น edge_condition แบบ ACI เพื่อใช้กับฟังก์ชันใหม่
+        edge_condition_input = inputs.get('edge_condition', None)
+        if edge_condition_input is None:
+            edge_condition = "Slab with edge beam" if has_edge_beam else "Slab without edge beam"
+        else:
+            edge_condition = edge_condition_input
+            
     except Exception as e:
         return pd.DataFrame(), 0.0, [f"Input Error: {str(e)}"], details
 
     # ==========================================
-    # --- 2. SAFETY & LIMITATION CHECKS (ACI 318) ---
+    # --- 2. SAFETY & LIMITATION CHECKS (ACI 318-19) ---
     # ==========================================
     
     # Check 2.1: DDM Limitation (L2/L1 ratio)
@@ -54,17 +72,20 @@ def calculate_ddm(inputs):
     fy_mult = 0.8 + (fy_mpa / 1400)
     
     if case_type == "Interior":
-        alpha_val = 33 if not has_drop else 36
+        alpha_val = 36 if has_drop else 33
     else: 
-        alpha_val = 33 if has_edge_beam and not has_drop else 36 if has_edge_beam and has_drop else 30 if not has_drop else 33
+        if has_drop:
+            alpha_val = 36 if has_edge_beam else 33
+        else:
+            alpha_val = 33 if has_edge_beam else 30
             
     h_min_cm = (ln_actual * 100 * fy_mult) / alpha_val
     if h_slab < h_min_cm:
         messages.append(f"⚠️ การแอ่นตัว: ความหนาพื้น {h_slab:.0f} cm น้อยกว่าค่า ACI แนะนำ ({h_min_cm:.1f} cm)")
-    details['h_min_step'] = rf"h_{{min}} = \frac{{L_n (0.8 + \frac{{f_y}}{{1400}})}}{{\alpha}} = {h_min_cm:.1f} \text{{ cm}}"
+    details['h_min_step'] = rf"h_{{min}} = \frac{{L_n (0.8 + \frac{{f_y}}{{1400}})}}{{{alpha_val}}} = {h_min_cm:.1f} \text{{ cm}}"
 
     # ==========================================
-    # Check 2.3: PUNCHING SHEAR (Rigorous Check)
+    # Check 2.3: PUNCHING SHEAR (Rigorous Check with Size Effect)
     # ==========================================
     c1_cm, c2_cm = c1 * 100, c2 * 100
     beta_c = max(c1_cm, c2_cm) / min(c1_cm, c2_cm)
@@ -72,12 +93,18 @@ def calculate_ddm(inputs):
     is_interior = (case_type == "Interior")
     alpha_s = 40 if is_interior else 30  # Assume Edge for Exterior
     
-    # Helper function: Calculate vc per ACI 318 (metric equivalent kg/cm2)
+    # Helper function: Calculate vc per ACI 318-19 (metric equivalent kg/cm2)
     def calc_vc_aci(f_c, bo_val, d_val, alpha_s_val, beta_c_val):
         sq_fc = np.sqrt(f_c)
-        v1 = 1.06 * sq_fc
-        v2 = 0.53 * (1 + (2 / beta_c_val)) * sq_fc
-        v3 = 0.265 * ((alpha_s_val * d_val / bo_val) + 2) * sq_fc
+        
+        # เพิ่ม Size Effect Factor (lambda_s) ตาม ACI 318-19
+        d_mm = d_val * 10
+        lambda_s = np.sqrt(2 / (1 + d_mm / 254))
+        lambda_s = min(lambda_s, 1.0) # ต้องไม่เกิน 1.0
+        
+        v1 = 1.06 * lambda_s * sq_fc
+        v2 = 0.53 * (1 + (2 / beta_c_val)) * lambda_s * sq_fc
+        v3 = 0.265 * ((alpha_s_val * d_val / bo_val) + 2) * lambda_s * sq_fc
         return min(v1, v2, v3)
 
     punch_msgs = []
@@ -98,7 +125,6 @@ def calculate_ddm(inputs):
     vc1 = calc_vc_aci(fc, bo1, d1, alpha_s, beta_c)
     phi_Vc1 = 0.75 * vc1 * bo1 * d1
     
-    # 🚨 แก้ไข Typo เปลี่ยน {d_1:.0f} เป็น {d1:.0f} ตรงนี้ครับ
     punch_steps += rf"\textbf{{1. รอบหัวเสา ($d_1={d1:.0f}$ cm, $b_{{o1}}={bo1:.0f}$ cm):}} \\ \phi V_{{c1}} = {phi_Vc1:,.0f} \text{{ kg}}, V_{{u1}} = {Vu1:,.0f} \text{{ kg}}\\"
     
     if Vu1 > phi_Vc1:
@@ -146,7 +172,7 @@ def calculate_ddm(inputs):
     Mo = (wu * l2 * (ln**2)) / 8.0 
     details['Mo_step'] = rf"M_o = \frac{{w_u L_2 L_n^2}}{{8}} = \frac{{{wu:,.0f} \times {l2:.2f} \times {ln:.2f}^2}}{{8}} = {Mo:,.0f} \text{{ kg-m}}"
 
-    coeffs = get_moment_coefficients(case_type, has_edge_beam)
+    coeffs = get_moment_coefficients(case_type, edge_condition)
     m_neg_int_total = coeffs['neg_int'] * Mo
     m_pos_total     = coeffs['pos'] * Mo
     m_neg_ext_total = coeffs['neg_ext'] * Mo
@@ -215,7 +241,7 @@ def calculate_ddm(inputs):
         as_temp = rho_min * b_cm * h_cm 
         as_final = max(as_calc, as_temp)
         
-        n_bars = max(2, int(np.ceil(as_final / 1.13)))
+        n_bars = max(2, int(np.ceil(as_final / 1.13))) # 1.13 คือพื้นที่หน้าตัด DB12
         spacing = min(b_cm / n_bars, min(2 * h_cm, 45))
         n_bars = int(np.ceil(b_cm / spacing))
         
