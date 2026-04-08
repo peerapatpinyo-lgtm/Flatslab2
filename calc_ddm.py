@@ -26,7 +26,9 @@ def calculate_ddm(inputs):
     messages = []
     details = {}
     
+    # ==========================================
     # --- 1. Unpack Inputs ---
+    # ==========================================
     try:
         l1 = float(inputs['l1'])
         l2 = float(inputs['l2'])
@@ -51,7 +53,7 @@ def calculate_ddm(inputs):
         # รับค่าขนาดเหล็กเสริมจาก UI (หน่วย mm) ค่าเริ่มต้นคือ 12
         rebar_size = float(inputs.get('rebar_size', 12)) 
         
-        # แปลง boolean เป็น edge_condition แบบ ACI เพื่อใช้กับฟังก์ชันใหม่
+        # แปลง boolean เป็น edge_condition แบบ ACI 
         edge_condition_input = inputs.get('edge_condition', None)
         if edge_condition_input is None:
             edge_condition = "Slab with edge beam" if has_edge_beam else "Slab without edge beam"
@@ -88,85 +90,8 @@ def calculate_ddm(inputs):
     details['h_min_step'] = rf"h_{{min}} = \frac{{L_n (0.8 + \frac{{f_y}}{{1400}})}}{{{alpha_val}}} = {h_min_cm:.1f} \text{{ cm}}"
 
     # ==========================================
-    # Check 2.3: PUNCHING SHEAR (Rigorous Check with Size Effect)
-    # ==========================================
-    c1_cm, c2_cm = c1 * 100, c2 * 100
-    beta_c = max(c1_cm, c2_cm) / min(c1_cm, c2_cm)
-    
-    is_interior = (case_type == "Interior")
-    alpha_s = 40 if is_interior else 30  # Assume Edge for Exterior
-    
-    # Helper function: Calculate vc per ACI 318-19 (metric equivalent kg/cm2)
-    def calc_vc_aci(f_c, bo_val, d_val, alpha_s_val, beta_c_val):
-        sq_fc = np.sqrt(f_c)
-        
-        # เพิ่ม Size Effect Factor (lambda_s) ตาม ACI 318-19
-        d_mm = d_val * 10
-        lambda_s = np.sqrt(2 / (1 + d_mm / 254))
-        lambda_s = min(lambda_s, 1.0) # ต้องไม่เกิน 1.0
-        
-        v1 = 1.06 * lambda_s * sq_fc
-        v2 = 0.53 * (1 + (2 / beta_c_val)) * lambda_s * sq_fc
-        v3 = 0.265 * ((alpha_s_val * d_val / bo_val) + 2) * lambda_s * sq_fc
-        return min(v1, v2, v3)
-
-    punch_msgs = []
-    punch_steps = ""
-    punch_pass = True
-
-    # --- Section 1: At distance d/2 from Column Face ---
-    d1 = (h_drop if has_drop else h_slab) - 3.0 # cm
-    
-    if is_interior:
-        bo1 = 2 * (c1_cm + d1) + 2 * (c2_cm + d1)
-        area_out_1 = (l1 * l2) - ((c1_cm + d1)/100 * (c2_cm + d1)/100)
-    else: # Edge (assuming c1 is perpendicular to edge)
-        bo1 = 2 * (c1_cm + d1/2) + (c2_cm + d1)
-        area_out_1 = (l1 * l2 / 2) - ((c1_cm + d1/2)/100 * (c2_cm + d1)/100)
-        
-    Vu1 = wu * area_out_1 # Direct Shear force
-    vc1 = calc_vc_aci(fc, bo1, d1, alpha_s, beta_c)
-    phi_Vc1 = 0.75 * vc1 * bo1 * d1
-    
-    punch_steps += rf"\textbf{{1. รอบหัวเสา ($d_1={d1:.0f}$ cm, $b_{{o1}}={bo1:.0f}$ cm):}} \\ \phi V_{{c1}} = {phi_Vc1:,.0f} \text{{ kg}}, V_{{u1}} = {Vu1:,.0f} \text{{ kg}}\\"
-    
-    if Vu1 > phi_Vc1:
-        punch_msgs.append(f"🚨 ทะลุรอบหัวเสา: Vu ({Vu1:,.0f} kg) > φVc ({phi_Vc1:,.0f} kg)")
-        punch_pass = False
-
-    # --- Section 2: At distance d/2 from Drop Panel Face (If present) ---
-    if has_drop:
-        d2 = h_slab - 3.0
-        # ACI minimum drop panel dimensions (L/3)
-        w_drop1_cm, w_drop2_cm = (l1 / 3) * 100, (l2 / 3) * 100 
-        
-        if is_interior:
-            bo2 = 2 * (w_drop1_cm + d2) + 2 * (w_drop2_cm + d2)
-            area_out_2 = (l1 * l2) - ((w_drop1_cm + d2)/100 * (w_drop2_cm + d2)/100)
-        else:
-            bo2 = 2 * (w_drop1_cm + d2/2) + (w_drop2_cm + d2)
-            area_out_2 = (l1 * l2 / 2) - ((w_drop1_cm + d2/2)/100 * (w_drop2_cm + d2)/100)
-            
-        Vu2 = wu * max(area_out_2, 0)
-        vc2 = calc_vc_aci(fc, bo2, d2, alpha_s, 1.0) # beta_c ≈ 1.0 for drop panel proportion
-        phi_Vc2 = 0.75 * vc2 * bo2 * d2
-        
-        punch_steps += rf"\textbf{{2. รอบ Drop Panel ($d_2={d2:.0f}$ cm, $b_{{o2}}={bo2:.0f}$ cm):}} \\ \phi V_{{c2}} = {phi_Vc2:,.0f} \text{{ kg}}, V_{{u2}} = {Vu2:,.0f} \text{{ kg}}"
-        
-        if Vu2 > phi_Vc2:
-            punch_msgs.append(f"🚨 ทะลุรอบ Drop Panel: Vu ({Vu2:,.0f} kg) > φVc ({phi_Vc2:,.0f} kg)")
-            punch_pass = False
-
-    details['punch_step'] = punch_steps
-    
-    if punch_pass:
-        details['punch_status'] = "✅ ผ่านเกณฑ์ (ปลอดภัยจากแรงเฉือนทะลุดิ่ง)"
-    else:
-        details['punch_status'] = "❌ ไม่ผ่านเกณฑ์ (หน้าตัดรับแรงเฉือนไม่พอ)"
-        messages.extend(punch_msgs)
-
-    # ==========================================
     # --- 3. DDM MOMENT CALCULATION ---
+    # (ต้องคำนวณก่อนเพื่อเอาโมเมนต์ลบไปใช้เช็ค Unbalanced Moment)
     # ==========================================
     ln = max(ln_actual, 0.65 * l1)
     if ln > ln_actual:
@@ -208,6 +133,120 @@ def calculate_ddm(inputs):
     ms_pos = (1.0 - cs_pos_pct) * m_pos_total
     cs_neg_ext = cs_ext_neg_pct * m_neg_ext_total
     ms_neg_ext = (1.0 - cs_ext_neg_pct) * m_neg_ext_total
+
+    # ==========================================
+    # --- 4. PUNCHING SHEAR WITH UNBALANCED MOMENT ---
+    # ==========================================
+    c1_cm, c2_cm = c1 * 100, c2 * 100
+    beta_c = max(c1_cm, c2_cm) / min(c1_cm, c2_cm)
+    
+    is_interior = (case_type == "Interior")
+    alpha_s = 40 if is_interior else 30  # 40 for interior, 30 for edge
+    
+    # Helper function: Calculate vc per ACI 318-19 (metric equivalent kg/cm2)
+    def calc_vc_aci(f_c, bo_val, d_val, alpha_s_val, beta_c_val):
+        sq_fc = np.sqrt(f_c)
+        
+        # Size Effect Factor (lambda_s) ACI 318-19
+        d_mm = d_val * 10
+        lambda_s = np.sqrt(2 / (1 + d_mm / 254))
+        lambda_s = min(lambda_s, 1.0) 
+        
+        v1 = 1.06 * lambda_s * sq_fc
+        v2 = 0.53 * (1 + (2 / beta_c_val)) * lambda_s * sq_fc
+        v3 = 0.265 * ((alpha_s_val * d_val / bo_val) + 2) * lambda_s * sq_fc
+        return min(v1, v2, v3)
+
+    punch_msgs = []
+    punch_steps = ""
+    punch_pass = True
+
+    # --- Section 1: At distance d/2 from Column Face ---
+    d1 = (h_drop if has_drop else h_slab) - 3.0 # cm
+    
+    if is_interior:
+        b1 = c1_cm + d1
+        b2 = c2_cm + d1
+        bo1 = 2 * b1 + 2 * b2
+        Ac = bo1 * d1
+        area_out_1 = (l1 * l2) - ((b1/100) * (b2/100))
+        Vu1 = wu * area_out_1
+        
+        vu_applied = Vu1 / Ac
+        punch_steps += rf"\textbf{{1. รอบหัวเสาใน ($A_c={Ac:.0f} \text{{ cm}}^2$):}} \\ v_u = {vu_applied:.2f} \text{{ ksc}} \\"
+        
+    else:
+        # Edge Column (คิด Unbalanced Moment)
+        b1 = c1_cm + d1/2  # ตั้งฉากกับขอบ
+        b2 = c2_cm + d1    # ขนานกับขอบ
+        bo1 = 2 * b1 + b2
+        Ac = bo1 * d1
+        
+        # หาจุดเซนทรอยด์ของกลุ่มรอยแตกและ Jc
+        c_AB = (b1**2 * d1) / Ac
+        Jc = (d1 * b1**3)/6 + (b1 * d1**3)/6 + 2*(d1*b1)*((b1/2) - c_AB)**2 + (d1*b2)*c_AB**2
+        
+        # สัดส่วนการถ่ายเทโมเมนต์ผ่านแรงเฉือน
+        gamma_f = 1 / (1 + (2/3)*np.sqrt(b1/b2))
+        gamma_v = 1 - gamma_f
+        
+        area_out_1 = (l1 * l2 / 2) - ((b1/100) * (b2/100))
+        Vu1 = wu * area_out_1
+        M_unbal_kgcm = m_neg_ext_total * 100
+        
+        vu_shear = Vu1 / Ac
+        vu_moment = (gamma_v * M_unbal_kgcm * c_AB) / Jc
+        vu_applied = vu_shear + vu_moment
+        
+        punch_steps += rf"\textbf{{1. รอบหัวเสาขอบ (รวมโมเมนต์ถ่ายเท):}} \\"
+        punch_steps += rf"V_u = {Vu1:,.0f} \text{{ kg}}, M_{{unbal}} = {m_neg_ext_total:,.0f} \text{{ kg-m}} \\"
+        punch_steps += rf"J_c = {Jc:,.0f} \text{{ cm}}^4, \gamma_v = {gamma_v:.2f} \\"
+        punch_steps += rf"v_u = {vu_shear:.2f} + {vu_moment:.2f} = {vu_applied:.2f} \text{{ ksc}} \\"
+
+    # เช็คความต้านทานแรงเฉือนของคอนกรีต (Section 1)
+    vc1 = calc_vc_aci(fc, bo1, d1, alpha_s, beta_c)
+    phi_vc1_stress = 0.75 * vc1
+    punch_steps += rf"\phi v_c = {phi_vc1_stress:.2f} \text{{ ksc}} \\"
+    
+    if vu_applied > phi_vc1_stress:
+        punch_msgs.append(f"🚨 ทะลุรอบหัวเสา: vu ({vu_applied:.2f} ksc) > φvc ({phi_vc1_stress:.2f} ksc)")
+        punch_pass = False
+
+    # --- Section 2: At distance d/2 from Drop Panel Face (If present) ---
+    if has_drop:
+        d2 = h_slab - 3.0
+        # ACI minimum drop panel dimensions (L/3)
+        w_drop1_cm, w_drop2_cm = (l1 / 3) * 100, (l2 / 3) * 100 
+        
+        if is_interior:
+            bo2 = 2 * (w_drop1_cm + d2) + 2 * (w_drop2_cm + d2)
+            area_out_2 = (l1 * l2) - ((w_drop1_cm + d2)/100 * (w_drop2_cm + d2)/100)
+        else:
+            bo2 = 2 * (w_drop1_cm + d2/2) + (w_drop2_cm + d2)
+            area_out_2 = (l1 * l2 / 2) - ((w_drop1_cm + d2/2)/100 * (w_drop2_cm + d2)/100)
+            
+        Vu2 = wu * max(area_out_2, 0)
+        vc2 = calc_vc_aci(fc, bo2, d2, alpha_s, 1.0) # beta_c ≈ 1.0 for drop panel proportion
+        phi_Vc2_force = 0.75 * vc2 * bo2 * d2
+        
+        punch_steps += rf"\textbf{{2. รอบ Drop Panel ($d_2={d2:.0f}$ cm, $b_{{o2}}={bo2:.0f}$ cm):}} \\"
+        punch_steps += rf"\phi V_{{c2}} = {phi_Vc2_force:,.0f} \text{{ kg}}, V_{{u2}} = {Vu2:,.0f} \text{{ kg}}"
+        
+        if Vu2 > phi_Vc2_force:
+            punch_msgs.append(f"🚨 ทะลุรอบ Drop Panel: Vu ({Vu2:,.0f} kg) > φVc ({phi_Vc2_force:,.0f} kg)")
+            punch_pass = False
+
+    details['punch_step'] = punch_steps
+    
+    if punch_pass:
+        details['punch_status'] = "✅ ผ่านเกณฑ์ (ปลอดภัยจากแรงเฉือนทะลุดิ่ง + โมเมนต์ถ่ายเท)"
+    else:
+        details['punch_status'] = "❌ ไม่ผ่านเกณฑ์ (หน้าตัดรับแรงเฉือนไม่พอ)"
+        messages.extend(punch_msgs)
+
+    # ==========================================
+    # --- 5. REBAR CALCULATION ---
+    # ==========================================
         
     def solve_rebar(moment_kgm, b_cm, h_cm, loc_name):
         if moment_kgm <= 0.1: return None 
