@@ -48,6 +48,9 @@ def calculate_ddm(inputs):
         eb_width = float(inputs.get('eb_width', 0)) * 100 # cm
         eb_depth = float(inputs.get('eb_depth', 0)) * 100 # cm
         
+        # รับค่าขนาดเหล็กเสริมจาก UI (หน่วย mm) ค่าเริ่มต้นคือ 12
+        rebar_size = float(inputs.get('rebar_size', 12)) 
+        
         # แปลง boolean เป็น edge_condition แบบ ACI เพื่อใช้กับฟังก์ชันใหม่
         edge_condition_input = inputs.get('edge_condition', None)
         if edge_condition_input is None:
@@ -241,7 +244,11 @@ def calculate_ddm(inputs):
         as_temp = rho_min * b_cm * h_cm 
         as_final = max(as_calc, as_temp)
         
-        n_bars = max(2, int(np.ceil(as_final / 1.13))) # 1.13 คือพื้นที่หน้าตัด DB12
+        # คำนวณพื้นที่หน้าตัดเหล็ก (Area) จากขนาดเหล็กที่เลือก
+        rebar_dia_cm = rebar_size / 10.0
+        rebar_area = (np.pi * (rebar_dia_cm ** 2)) / 4.0
+        
+        n_bars = max(2, int(np.ceil(as_final / rebar_area))) 
         spacing = min(b_cm / n_bars, min(2 * h_cm, 45))
         n_bars = int(np.ceil(b_cm / spacing))
         
@@ -249,7 +256,7 @@ def calculate_ddm(inputs):
         
         return {
             "Location": loc_name, "Moment (kg-m)": round(moment_kgm, 2), "As Req (cm²)": round(as_final, 2),
-            "Rebar Suggestion": f"{n_bars}-DB12 @ {int(spacing)} cm", "Status": status, "d (cm)": f"{d_cm:.0f}"
+            "Rebar Suggestion": f"{n_bars}-DB{int(rebar_size)} @ {int(spacing)} cm", "Status": status, "d (cm)": f"{d_cm:.0f}"
         }
 
     width_cs_m = 0.5 * min(l1, l2)
