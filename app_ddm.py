@@ -20,7 +20,7 @@ def render_ddm_tab(calc_obj):
         c1 = geom.get('c1', 0.5)
         c2 = geom.get('c2', 0.5)
         
-        # 🚨 BUG FIX: แปลงความหนาจากเมตรกลับเป็น เซนติเมตร (cm) ให้ calc_ddm.py
+        # แปลงความหนาจากเมตรกลับเป็น เซนติเมตร (cm) ให้ calc_ddm.py
         h_slab_m = geom.get('h_s', 0.20)
         h_drop_m = geom.get('h_d', h_slab_m)
         h_slab = h_slab_m * 100 
@@ -36,26 +36,26 @@ def render_ddm_tab(calc_obj):
         case_type = "Exterior" if has_edge_beam else "Interior"
         
         mat = calc_obj.get('mat', {})
-        # 🚨 BUG FIX: แปลงหน่วยกำลังจาก Pascal (Pa) กลับเป็น ksc
+        # แปลงหน่วยกำลังจาก Pascal (Pa) กลับเป็น ksc
         KSC_TO_PA = 98066.5
         fc = mat.get('fc_pa', 240 * KSC_TO_PA) / KSC_TO_PA
         fy = mat.get('fy_pa', 4000 * KSC_TO_PA) / KSC_TO_PA
 
         loads = calc_obj.get('loads', {})
         G = 9.80665
-        # 🚨 BUG FIX: แปลงหน่วย Load จาก Pascal (N/m2) เป็น kg/m2
+        # แปลงหน่วย Load จาก Pascal (N/m2) เป็น kg/m2
         wu = loads.get('wu_pa', 0) / G
         dl = loads.get('w_dead', 0) / G
         # ประมาณค่า LL กลับมาเพื่อใช้เช็คเงื่อนไข ACI
         ll = (wu - 1.4 * dl) / 1.7 if wu > 0 else 300
 
-        # ✨ [เพิ่มโค้ดส่วนนี้ 1] สร้างตัวเลือกขนาดเหล็กเสริม ✨
+        # สร้างตัวเลือกขนาดเหล็กเสริม
         st.markdown("### ⚙️ Rebar Settings (ตั้งค่าเหล็กเสริม)")
         selected_rebar = st.selectbox(
             "เลือกขนาดเหล็กเสริมหลัก (mm):", 
             options=[10, 12, 16, 20, 25], 
             index=1, # ค่า Default คือ Index 1 (DB12)
-            format_func=lambda x: f"DB{x}" # ทำให้แสดงผลเป็น DB12, DB16 แทนที่จะเป็นเลขโดดๆ
+            format_func=lambda x: f"DB{x}" 
         )
 
         ddm_inputs = {
@@ -65,7 +65,7 @@ def render_ddm_tab(calc_obj):
             'fc': fc, 'fy': fy, 'case_type': case_type, 
             'has_edge_beam': has_edge_beam,
             'eb_width': eb_width, 'eb_depth': eb_depth,
-            'rebar_size': selected_rebar  # ✨ [เพิ่มโค้ดส่วนนี้ 2] ส่งค่าขนาดเหล็กไปให้ calc_ddm.py ✨
+            'rebar_size': selected_rebar 
         }
     except Exception as e:
         st.error(f"⚠️ Input Data Missing: {e}")
@@ -87,14 +87,13 @@ def render_ddm_tab(calc_obj):
     # ==========================================================================
     # 2. CALCULATION
     # ==========================================================================
-    # 🚨 อัปเดตให้รับค่าตัวที่ 4 (details) มาด้วย
     df_results, Mo, warning_msgs, details = calc_ddm.calculate_ddm(ddm_inputs)
 
     # --- Display Metrics ---
     st.markdown("---")
     m1, m2 = st.columns(2)
     m1.metric("Design Load (Wu)", f"{wu:,.0f} kg/m²")
-    m2.metric("Total Static Moment (Mo)", f"{Mo:,.2f} kg-m")
+    m2.metric("Total Static Moment (Mo)", f"{Mo:,.0f} kg-m")
 
     # แสดงข้อความแจ้งเตือน (Warning & Safety Errors)
     if warning_msgs:
@@ -136,28 +135,44 @@ def render_ddm_tab(calc_obj):
     # 4. CALCULATION STEPS & DETAILS (EXPANDER)
     # ==========================================================================
     st.markdown("---")
-    with st.expander("📝 ดูขั้นตอนการคำนวณและตรวจสอบข้อกำหนด (Calculation & Safety Checks)"):
+    with st.expander("📝 ดูรายการคำนวณและตรวจสอบข้อกำหนด (Calculation & Safety Checks)", expanded=True):
         st.markdown("### 🛡️ การตรวจสอบด้านความปลอดภัย (Safety Checks)")
         st.markdown(f"**1. ตรวจสอบ Punching Shear (แรงเฉือนทะลุ):** {details.get('punch_status', 'ข้อมูลไม่เพียงพอ')}")
-        st.latex(details.get('punch_step', ''))
+        
+        # ✨ จุดที่แก้ไข: ครอบด้วย \begin{aligned} เพื่อรองรับการเว้นบรรทัด
+        punch_tex = details.get('punch_step', '')
+        if punch_tex:
+            st.latex(rf"\begin{{aligned}} {punch_tex} \end{{aligned}}")
         
         st.markdown("**2. ตรวจสอบการแอ่นตัว (Minimum Thickness):**")
-        st.latex(details.get('h_min_step', ''))
+        h_min_tex = details.get('h_min_step', '')
+        if h_min_tex:
+            st.latex(h_min_tex)
         
         st.markdown("---")
         st.markdown("### 📊 การกระจายโมเมนต์ (Moment Distribution)")
         st.markdown("**1. โมเมนต์สถิตรวม (Total Static Moment)**")
-        st.latex(details.get('Mo_step', ''))
+        mo_tex = details.get('Mo_step', '')
+        if mo_tex:
+            st.latex(mo_tex)
         
         st.markdown("**2. สติฟเนสแรงบิด (Torsional Stiffness, $\\beta_t$)**")
-        st.latex(details.get('beta_t_step', ''))
-        st.markdown(f"**สัดส่วนโมเมนต์ลบขอบนอกที่เข้า Column Strip:** `{details.get('cs_ext_pct', 100):.1f}%`")
+        beta_t_tex = details.get('beta_t_step', '')
+        if beta_t_tex:
+            st.latex(beta_t_tex)
+            
+        st.markdown(f"> **💡 สัดส่วนโมเมนต์ลบขอบนอกที่เข้า Column Strip:** `{details.get('cs_ext_pct', 100):.1f}%`")
 
         st.markdown("---")
         st.markdown("### 💡 สมการออกแบบเหล็กเสริม (Flexural Design)")
         st.markdown("โปรแกรมใช้สมการของ ACI 318 ในการคำนวณหาปริมาณเหล็กเสริมดังนี้:")
-        st.latex(r"R_n = \frac{M_u}{\phi b d^2}")
-        st.latex(r"\rho = \frac{0.85 f'_c}{f_y} \left( 1 - \sqrt{1 - \frac{2 R_n}{0.85 f'_c}} \right)")
-        st.latex(r"A_{s,req} = \rho b d \geq A_{s,min}")
+        # รวมสมการออกแบบเหล็กไว้ใน Block เดียวให้อ่านง่าย
+        st.latex(r"""
+        \begin{aligned} 
+        R_n &= \frac{M_u}{\phi b d^2} \\ 
+        \rho &= \frac{0.85 f'_c}{f_y} \left( 1 - \sqrt{1 - \frac{2 R_n}{0.85 f'_c}} \right) \\ 
+        A_{s,req} &= \rho b d \ge A_{s,min} 
+        \end{aligned}
+        """)
 
     st.markdown("---")
