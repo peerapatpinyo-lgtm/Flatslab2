@@ -1,3 +1,4 @@
+# app_ddm.py
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -48,17 +49,28 @@ def render_ddm_tab(calc_obj):
         # ประมาณค่า LL กลับมาเพื่อใช้เช็คเงื่อนไข ACI
         ll = (wu - 1.4 * dl) / 1.7 if wu > 0 else 300
 
+        # ✨ [เพิ่มโค้ดส่วนนี้ 1] สร้างตัวเลือกขนาดเหล็กเสริม ✨
+        st.markdown("### ⚙️ Rebar Settings (ตั้งค่าเหล็กเสริม)")
+        selected_rebar = st.selectbox(
+            "เลือกขนาดเหล็กเสริมหลัก (mm):", 
+            options=[10, 12, 16, 20, 25], 
+            index=1, # ค่า Default คือ Index 1 (DB12)
+            format_func=lambda x: f"DB{x}" # ทำให้แสดงผลเป็น DB12, DB16 แทนที่จะเป็นเลขโดดๆ
+        )
+
         ddm_inputs = {
             'l1': L1, 'l2': L2, 'ln': ln, 'c1': c1, 'c2': c2,
             'wu': wu, 'dl': dl, 'll': ll,
             'h_slab': h_slab, 'h_drop': h_drop, 'has_drop': has_drop,
             'fc': fc, 'fy': fy, 'case_type': case_type, 
             'has_edge_beam': has_edge_beam,
-            'eb_width': eb_width, 'eb_depth': eb_depth
+            'eb_width': eb_width, 'eb_depth': eb_depth,
+            'rebar_size': selected_rebar  # ✨ [เพิ่มโค้ดส่วนนี้ 2] ส่งค่าขนาดเหล็กไปให้ calc_ddm.py ✨
         }
     except Exception as e:
         st.error(f"⚠️ Input Data Missing: {e}")
         return
+
 
     # ==========================================================================
     # 1.5 DDM LIMITATIONS CHECK
