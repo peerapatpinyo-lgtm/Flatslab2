@@ -8,17 +8,42 @@ def render_ddm_tab(calc_obj):
     st.markdown("---")
 
     # ==========================================================================
-    # 1. DATA ADAPTER (Safe Extraction & Unit Match)
+    # 1. DATA ADAPTER & DIRECTION SELECTION
     # ==========================================================================
     try:
         geom = calc_obj.get('geom', {})
-        # ดึง L1, L2, Ln จาก geom (หน่วยเป็นเมตรทั้งหมด)
-        L1 = geom.get('L1', 6.0)
-        L2 = geom.get('L2', 6.0)
-        ln = geom.get('Ln', L1)
-        c1 = geom.get('c1', 0.5)
-        c2 = geom.get('c2', 0.5)
         
+        # ดึงค่าตั้งต้นทั้งหมดมาก่อน
+        orig_L1 = geom.get('L1', 6.0)
+        orig_L2 = geom.get('L2', 6.0)
+        orig_c1 = geom.get('c1', 0.5)
+        orig_c2 = geom.get('c2', 0.5)
+        
+        # --- 🌟 เพิ่ม UI สลับทิศทางการวิเคราะห์ 🌟 ---
+        st.markdown("### 🧭 Analysis Direction (เลือกแกนที่ต้องการวิเคราะห์)")
+        analysis_dir = st.radio(
+            "เลือกทิศทาง:",
+            ["Direction 1 (วิเคราะห์ตามแนว L1 เดิม)", "Direction 2 (วิเคราะห์ตามแนว L2)"],
+            horizontal=True
+        )
+        
+        # Logic การสลับแกน
+        if analysis_dir == "Direction 1 (วิเคราะห์ตามแนว L1 เดิม)":
+            L1, L2 = orig_L1, orig_L2
+            c1, c2 = orig_c1, orig_c2
+        else:
+            # สลับแกน: ให้ L2 กลายเป็นความยาวช่วงวิเคราะห์, c2 กลายเป็นมิติเสาแนววิเคราะห์
+            L1, L2 = orig_L2, orig_L1
+            c1, c2 = orig_c2, orig_c1
+            
+            st.info(f"🔄 **Swapped:** วิเคราะห์ตามแกน L2 (Span={L1:.2f} m, Transverse Width={L2:.2f} m)")
+
+        # คำนวณ Clear Span (Ln) ใหม่ตามแกนที่ถูกเลือก
+        ln = L1 - c1
+        # ตาม ACI 318: Ln ต้องไม่น้อยกว่า 0.65 L1
+        if ln < 0.65 * L1:
+            ln = 0.65 * L1
+
         # แปลงความหนาจากเมตรกลับเป็น เซนติเมตร (cm) ให้ calc_ddm.py
         h_slab_m = geom.get('h_s', 0.20)
         h_drop_m = geom.get('h_d', h_slab_m)
@@ -28,6 +53,7 @@ def render_ddm_tab(calc_obj):
         
         edge_beam = geom.get('edge_beam_params', {})
         has_edge_beam = edge_beam.get('has_beam', False)
+        # ถ้าสลับแกน อาจจะต้องพิจารณาคานขอบใหม่ (เบื้องต้นให้คงเดิม หรือปรับตามความซับซ้อนของโมเดล)
         eb_width = edge_beam.get('width_cm', 0) / 100.0
         eb_depth = edge_beam.get('depth_cm', 0) / 100.0
         
@@ -53,7 +79,7 @@ def render_ddm_tab(calc_obj):
         selected_rebar = st.selectbox(
             "เลือกขนาดเหล็กเสริมหลัก (mm):", 
             options=[10, 12, 16, 20, 25], 
-            index=1, # ค่า Default คือ Index 1 (DB12)
+            index=1, 
             format_func=lambda x: f"DB{x}" 
         )
 
