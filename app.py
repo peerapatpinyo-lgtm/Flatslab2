@@ -221,10 +221,7 @@ with tab1:
         # ----------------------------------------------------------------------
         st.divider()
         st.markdown("### 📋 Code Compliance & Calculations")
-
-  
-
-
+        
         # 1. SLAB THICKNESS CALCULATION (DETAILED)
         if thk_res['status']:
             st.success(f"✅ **Slab Thickness OK** (Prov: {thk_res['actual_h']} cm >= Req: {thk_res['req_h']:.2f} cm)")
@@ -363,3 +360,4 @@ with tab4:
     st.info("✅ EFM is valid.")
     st.info("Module `app_efm` ready.")
 
+เอามาแบบ full code link ค่า L ที่กรอกจริงมาคำนวณด้วยนะ
