@@ -359,5 +359,3 @@ with tab4:
     st.header("📐 Equivalent Frame Method (EFM)")
     st.info("✅ EFM is valid.")
     st.info("Module `app_efm` ready.")
-
-เอามาแบบ full code link ค่า L ที่กรอกจริงมาคำนวณด้วยนะ
