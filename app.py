@@ -15,6 +15,7 @@ import app_viz
 import app_theory 
 import app_ddm  
 import app_efm
+
 # ==============================================================================
 # MAIN APPLICATION INTERFACE
 # ==============================================================================
@@ -217,10 +218,36 @@ with tab1:
             st.pyplot(fig_elev)
             
         # ----------------------------------------------------------------------
-        # DETAILED CALCULATIONS (RESTORED)
+        # DETAILED CALCULATIONS & CODE COMPLIANCE
         # ----------------------------------------------------------------------
         st.divider()
         st.markdown("### 📋 Code Compliance & Calculations")
+        
+        # ======================================================================
+        # 🌟 เพิ่มส่วนตรวจสอบ DDM / EFM ตรงนี้ครับ 🌟
+        # ======================================================================
+        st.markdown("#### 🔍 Method Applicability Check (การเลือกวิธีคำนวณ)")
+        
+        # ดึงค่า L1, L2 ที่ประมวลผลแล้วจาก calc_obj มาใช้
+        actual_L1 = calc_obj['geom']['L1']
+        actual_L2 = calc_obj['geom']['L2']
+        ratio = actual_L2 / actual_L1 if actual_L1 > 0 else 0
+        
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            if ddm_ok:
+                st.success(f"✅ **DDM (Direct Design Method)**\n\n**ผ่านเงื่อนไข ACI 318:**\n- สัดส่วน L2/L1 = {ratio:.2f}\n- น้ำหนักบรรทุกผ่านเกณฑ์")
+            else:
+                st.error(f"❌ **DDM (Direct Design Method)**\n\n**ไม่ผ่านเงื่อนไข ACI 318:**")
+                for r in ddm_reasons:
+                    st.write(f"- {r}")
+                st.caption(f"*(อ้างอิง: L1 = {actual_L1:.2f} m, L2 = {actual_L2:.2f} m, Ratio = {ratio:.2f})*")
+                
+        with col_m2:
+            st.info("✅ **EFM (Equivalent Frame Method)**\n\nสามารถใช้วิธีนี้ได้เสมอ (ครอบคลุมและไม่มีข้อจำกัดด้านสัดส่วนเรขาคณิตหรือน้ำหนักบรรทุก)")
+            
+        st.markdown("---")
+        # ======================================================================
         
         # 1. SLAB THICKNESS CALCULATION (DETAILED)
         if thk_res['status']:
@@ -232,17 +259,11 @@ with tab1:
             st.markdown(f"**Method:** ACI 318 Table 8.3.1.1")
             st.markdown(f"**Condition Case:** {thk_res['case_name']}")
             
-            # Extract values for clear display
             Ln_disp = thk_res['Ln']
-            fy_disp = float(fy.replace('SD', '')) * 10 # Convert to ksc roughly or use int
+            fy_disp = float(fy.replace('SD', '')) * 10 
             if 'SD30' in str(fy): fy_val = 3000
             elif 'SD40' in str(fy): fy_val = 4000
             else: fy_val = 5000
-            
-            # Logic for denominator display (Re-deriving for display clarity)
-            # h = Ln(0.8 + fy/14000) / 30, 33, 36 etc. (Note: ACI uses psi/MPa, here adapted for ksc)
-            # Assuming the app_calc does the metric conversion correctly. 
-            # Showing the FORMULA structure:
             
             st.latex(r"h_{min} = \frac{L_n (0.8 + \frac{f_y}{1400})}{N}")
             
@@ -255,10 +276,7 @@ with tab1:
                 st.write(f"- **Actual Slab ($h_{{slab}}$):** {h_slab_cm} cm")
 
             st.markdown("**Calculation Substitution:**")
-            # Create a string for the denominator based on the result
-            # N = Ln * (0.8 + fy/1400) / (req_h/100) roughly
-            term_fy = 0.8 + (fy_val / 14000) # Note: 14000 if ksc to match ACI ratio or 1400 depending on units. 
-            # Let's trust the thk_res['req_h'] is correct and just show the comparison.
+            term_fy = 0.8 + (fy_val / 14000) 
             
             st.info(f"""
             $$ h_{{req}} = {thk_res['req_h']:.2f} \\text{{ cm}} $$
@@ -271,7 +289,6 @@ with tab1:
             drop_res = validator.check_drop_panel_detailed(h_drop_cm, drop_w1, drop_w2)
             st.markdown("#### 📉 Drop Panel Checks")
             
-            # Summary Metrics
             dp_c1, dp_c2, dp_c3 = st.columns(3)
             def status_mark(passed): return "✅" if passed else "❌"
             
@@ -285,19 +302,15 @@ with tab1:
                 st.metric("Width (W2)", f"{drop_res['act_w2']:.2f} m", 
                           f"Min: {drop_res['req_total_w2']:.2f} m {status_mark(drop_res['chk_w2'])}")
             
-            # --- THE FULL DETAIL SECTION YOU REQUESTED ---
             with st.expander("📝 Drop Panel Calculation Details (Full)", expanded=True):
                 st.markdown("##### 1. Depth Check (ความหนา)")
                 st.markdown("Requirement: Drop panel projection below slab must be at least $h_s/4$.")
                 
-                # Show Formula
                 st.latex(r"\text{Req Depth } (d_{drop}) \ge \frac{h_{slab}}{4}")
                 
-                # Show Substitution
                 req_proj_val = h_slab_cm / 4.0
                 st.latex(r"d_{drop} \ge \frac{" + f"{h_slab_cm}" + r"}{4} = " + f"{req_proj_val:.2f}" + r" \text{ cm}")
                 
-                # Show Compare
                 chk_sym = "\ge" if h_drop_cm >= req_proj_val else "<"
                 st.latex(f"\\text{{Provided }} {h_drop_cm} \\text{{ cm }} {chk_sym} {req_proj_val:.2f} \\text{{ cm}}")
                 
@@ -312,7 +325,6 @@ with tab1:
                 
                 st.latex(r"\text{Req Width } (W) \ge \frac{L_{span}}{3}")
                 
-                # W1 Calculation
                 st.markdown("**Direction 1 (L1 Analysis):**")
                 req_w1 = drop_res['req_total_w1']
                 st.latex(r"W_{1,req} = \frac{L_1}{3} = " + f"{req_w1:.2f} \\text{{ m}}")
@@ -320,7 +332,6 @@ with tab1:
                 if drop_res['chk_w1']: st.success("✅ W1 OK") 
                 else: st.error("❌ W1 Too Narrow")
                 
-                # W2 Calculation
                 st.markdown("**Direction 2 (L2 Transverse):**")
                 req_w2 = drop_res['req_total_w2']
                 st.latex(r"W_{2,req} = \frac{L_2}{3} = " + f"{req_w2:.2f} \\text{{ m}}")
@@ -344,12 +355,8 @@ with tab1:
 with tab2:
     app_theory.display_theory(calc_obj)
 
-
 with tab3:
-    # เรียกใช้ฟังก์ชัน render_ddm_tab โดยส่งค่า calc_obj เข้าไป
     if ddm_ok:
-        # ลบ st.info("Module app_ddm ready.") อันเก่าออก
-        # แล้วใส่บรรทัดนี้แทนครับ:
         app_ddm.render_ddm_tab(calc_obj) 
     else:
         st.error("❌ This structure DOES NOT meet DDM criteria.")
@@ -359,6 +366,3 @@ with tab4:
     st.header("📐 Equivalent Frame Method (EFM)")
     st.info("✅ EFM is valid.")
     st.info("Module `app_efm` ready.")
-
-
-
