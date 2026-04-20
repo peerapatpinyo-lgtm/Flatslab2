@@ -359,3 +359,68 @@ with tab4:
     st.header("📐 Equivalent Frame Method (EFM)")
     st.info("✅ EFM is valid.")
     st.info("Module `app_efm` ready.")
+
+
+
+def main():
+    st.title("Flat Slab Design / Analysis")
+
+    # ==========================================
+    # 1. ส่วนรับค่า Input (มักจะอยู่ใน st.sidebar)
+    # ==========================================
+    st.sidebar.header("Geometry Inputs")
+    l1 = st.sidebar.number_input("L1 (m)", value=6.0)
+    l2 = st.sidebar.number_input("L2 (m)", value=6.0)
+    
+    st.sidebar.header("Load Inputs")
+    dl = st.sidebar.number_input("Dead Load (kg/m2)", value=200)
+    ll = st.sidebar.number_input("Live Load (kg/m2)", value=300)
+    # ... (รับค่าอื่นๆ จนจบ) ...
+
+    # ==========================================
+    # 📍 แทรกโค้ดตรวจสอบเงื่อนไข DDM / EFM ตรงนี้ครับ 📍
+    # ==========================================
+    st.markdown("### 🔍 Method Applicability Check (การตรวจสอบเงื่อนไขวิธีคำนวณ)")
+
+    # 1. เช็คสัดส่วนเรขาคณิต (0.5 <= L2/L1 <= 2.0)
+    ratio = l2 / l1 if l1 > 0 else 0
+    geom_pass = 0.5 <= ratio <= 2.0
+
+    # 2. เช็คโหลด (Live Load ต้องไม่เกิน 2 เท่าของ Dead Load)
+    # ตามมาตรฐาน ACI 318 วิธี DDM จะใช้ได้เมื่อ LL <= 2*DL
+    load_pass = ll <= (2 * dl)
+    
+    ddm_pass = geom_pass and load_pass
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if ddm_pass:
+            st.success(f"✅ **DDM (Direct Design Method)**\n\nผ่านเงื่อนไข ACI 318:\n- สัดส่วน L2/L1 = {ratio:.2f}\n- LL $\le$ 2DL")
+        else:
+            error_msg = f"❌ **DDM (Direct Design Method)**\n\nไม่ตรงตามข้อกำหนด ACI 318:"
+            if not geom_pass:
+                error_msg += f"\n- สัดส่วน L2/L1 = {ratio:.2f} (ต้องอยู่ระหว่าง 0.5 - 2.0)"
+            if not load_pass:
+                error_msg += f"\n- Live Load ({ll}) มากกว่า 2 เท่าของ Dead Load ({2*dl})"
+            st.warning(error_msg)
+
+    with col2:
+        st.info("✅ **EFM (Equivalent Frame Method)**\n\nสามารถใช้วิธีนี้ได้เสมอ (ไม่มีข้อจำกัดด้านสัดส่วนเรขาคณิตหรือสัดส่วนน้ำหนักบรรทุก)")
+        
+    st.markdown("---")
+    # ==========================================
+    
+    # ==========================================
+    # 2. ส่วนแสดงผลหลัก (แท็บต่างๆ)
+    # ==========================================
+    tabs = st.tabs(["📊 DDM Calculation", "📐 EFM Calculation", "📚 Theory"])
+    
+    with tabs[0]:
+        # app_ddm.render(...)
+        pass
+        
+    # ... (ส่วนที่เหลือของโค้ด) ...
+
+if __name__ == "__main__":
+    main()
