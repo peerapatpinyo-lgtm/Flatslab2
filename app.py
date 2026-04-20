@@ -222,27 +222,7 @@ with tab1:
         st.divider()
         st.markdown("### 📋 Code Compliance & Calculations")
 
-        st.markdown("#### 🔍 Method Applicability Check (การเลือกวิธีคำนวณ)")
-        
-        # ดึงค่า L1, L2 ที่ประมวลผลแล้วจาก calc_obj มาใช้
-        actual_L1 = calc_obj['geom']['L1']
-        actual_L2 = calc_obj['geom']['L2']
-        ratio = actual_L2 / actual_L1 if actual_L1 > 0 else 0
-        
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            if ddm_ok:
-                st.success(f"✅ **DDM (Direct Design Method)**\n\n**ผ่านเงื่อนไข ACI 318:**\n- สัดส่วน L2/L1 = {ratio:.2f}\n- น้ำหนักบรรทุกผ่านเกณฑ์")
-            else:
-                st.error(f"❌ **DDM (Direct Design Method)**\n\n**ไม่ผ่านเงื่อนไข ACI 318:**")
-                for r in ddm_reasons:
-                    st.write(f"- {r}")
-                st.caption(f"*(อ้างอิง: L1 = {actual_L1:.2f} m, L2 = {actual_L2:.2f} m, Ratio = {ratio:.2f})*")
-                
-        with col_m2:
-            st.info("✅ **EFM (Equivalent Frame Method)**\n\nสามารถใช้วิธีนี้ได้เสมอ (ครอบคลุมและไม่มีข้อจำกัดด้านสัดส่วนเรขาคณิตหรือน้ำหนักบรรทุก)")
-            
-        st.markdown("---")
+  
 
 
         # 1. SLAB THICKNESS CALCULATION (DETAILED)
