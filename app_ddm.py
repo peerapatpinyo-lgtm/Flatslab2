@@ -1,7 +1,6 @@
 # app_ddm.py
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 import calc_ddm
 
 def render_ddm_tab(calc_obj):
@@ -104,29 +103,12 @@ def render_ddm_tab(calc_obj):
                 st.warning(msg)
 
     # ==========================================================================
-    # 3. REBAR SCHEDULE & VISUALIZATION
+    # 3. REBAR SCHEDULE
     # ==========================================================================
     st.subheader("📋 Reinforcement Results")
 
     if not df_results.empty and 'Location' in df_results.columns:
         st.dataframe(df_results, use_container_width=True)
-
-        if 'As Req (cm²)' in df_results.columns:
-            st.subheader("📊 Steel Area Distribution")
-            fig, ax = plt.subplots(figsize=(10, 4))
-            
-            locations = df_results['Location']
-            as_req = df_results['As Req (cm²)']
-            
-            bars = ax.bar(locations, as_req, color='#1f77b4')
-            ax.set_ylabel("As Required (sq.cm)")
-            plt.xticks(rotation=15)
-            
-            for bar in bars:
-                yval = bar.get_height()
-                ax.text(bar.get_x() + bar.get_width()/2, yval + 0.1, round(yval, 2), ha='center')
-            
-            st.pyplot(fig)
     else:
         st.error("❌ ไม่สามารถแสดงผลการคำนวณได้ เนื่องจากข้อมูลไม่ครบถ้วน หรือหน้าตัดไม่เพียงพอ")
         st.info("💡 ข้อสังเกต: ตรวจสอบความลึกหน้าตัดและหน่วยอีกครั้ง")
@@ -139,7 +121,6 @@ def render_ddm_tab(calc_obj):
         st.markdown("### 🛡️ การตรวจสอบด้านความปลอดภัย (Safety Checks)")
         st.markdown(f"**1. ตรวจสอบ Punching Shear (แรงเฉือนทะลุ):** {details.get('punch_status', 'ข้อมูลไม่เพียงพอ')}")
         
-        # ✨ จุดที่แก้ไข: ครอบด้วย \begin{aligned} เพื่อรองรับการเว้นบรรทัด
         punch_tex = details.get('punch_step', '')
         if punch_tex:
             st.latex(rf"\begin{{aligned}} {punch_tex} \end{{aligned}}")
@@ -166,7 +147,6 @@ def render_ddm_tab(calc_obj):
         st.markdown("---")
         st.markdown("### 💡 สมการออกแบบเหล็กเสริม (Flexural Design)")
         st.markdown("โปรแกรมใช้สมการของ ACI 318 ในการคำนวณหาปริมาณเหล็กเสริมดังนี้:")
-        # รวมสมการออกแบบเหล็กไว้ใน Block เดียวให้อ่านง่าย
         st.latex(r"""
         \begin{aligned} 
         R_n &= \frac{M_u}{\phi b d^2} \\ 
