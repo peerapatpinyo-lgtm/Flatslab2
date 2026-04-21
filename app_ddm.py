@@ -10,13 +10,13 @@ def render_ddm_tab(calc_obj):
     st.divider()
 
     try:
+        # ==========================================================================
+        # STEP 1: EXTRACT INPUTS
+        # ==========================================================================
         geom = calc_obj.get('geom', {})
         orig_L1, orig_L2 = geom.get('L1', 6.0), geom.get('L2', 6.0)
         orig_c1, orig_c2 = geom.get('c1', 0.5), geom.get('c2', 0.5)
         
-        # ==========================================================================
-        # STEP 1 & 2: SETUP
-        # ==========================================================================
         col_setup1, col_setup2 = st.columns(2)
         
         with col_setup1:
@@ -43,14 +43,14 @@ def render_ddm_tab(calc_obj):
             with col_r2:
                 default_spacing = st.number_input("Base Spacing (cm):", 5.0, 50.0, 20.0, 2.5)
 
-        # Background calculations & Geometry
+        # Geometry & Clear Span
         ln_actual = L1 - c1
         ln = max(ln_actual, 0.65 * L1)
         h_slab_m = geom.get('h_s', 0.20)
         h_drop_m = geom.get('h_d', h_slab_m)
         has_drop = h_drop_m > h_slab_m
         
-        # ACI 20.5.1.3: Specified concrete cover for cast-in-place slabs (not exposed to weather) is generally 20 mm
+        # ACI 20.5.1.3: Concrete cover
         cc_m = 0.020 
         d_eff_m = h_slab_m - cc_m - (selected_rebar / 2000.0) 
         
@@ -60,11 +60,13 @@ def render_ddm_tab(calc_obj):
         eb_depth = edge_beam.get('depth_cm', 0) / 100.0
         case_type = "Exterior" if has_edge_beam else "Interior"
         
+        # Materials
         KSC_TO_PA = 98066.5
         mat = calc_obj.get('mat', {})
         fc_ksc = mat.get('fc_pa', 240 * KSC_TO_PA) / KSC_TO_PA
         fy_ksc = mat.get('fy_pa', 4000 * KSC_TO_PA) / KSC_TO_PA
 
+        # Loads
         loads = calc_obj.get('loads', {})
         G = 9.80665
         wu = loads.get('wu_pa', 0) / G
@@ -89,6 +91,7 @@ def render_ddm_tab(calc_obj):
     # ==========================================================================
     # STEP 3: CONSTRAINTS & FORCES
     # ==========================================================================
+    # Ensure calc_ddm returns the DataFrame and forces properly
     df_results, Mo, warning_msgs, details = calc_ddm.calculate_ddm(ddm_inputs)
 
     st.markdown("### Step 3: Forces & Constraints")
@@ -121,9 +124,11 @@ def render_ddm_tab(calc_obj):
         df_design['Bar Size (mm)'] = selected_rebar
         df_design['Spacing (cm)'] = default_spacing
 
-        # Clean column names to prevent Streamlit rendering issues
+        # Normalize column names to avoid special characters
         if 'As Req (cm²)' in df_design.columns:
             df_design.rename(columns={'As Req (cm²)': 'As Req (cm2)'}, inplace=True)
+        if 'Mu (kg-m)' not in df_design.columns and 'Moment (kg-m)' in df_design.columns:
+            df_design.rename(columns={'Moment (kg-m)': 'Mu (kg-m)'}, inplace=True)
 
         editor_cols = ['Location', 'As Req (cm2)', 'Bar Size (mm)', 'Spacing (cm)']
         
@@ -142,21 +147,24 @@ def render_ddm_tab(calc_obj):
             width_m = original_df.loc[original_df['Location'] == row['Location'], 'Strip Width (m)'].values[0]
             bar_area = math.pi * (row['Bar Size (mm)'] / 10.0)**2 / 4.0
             as_req = row['As Req (cm2)']
-            as_prov = bar_area * ((width_m * 100.0) / row['Spacing (cm)'])
-            num_bars = math.ceil((width_m * 100.0) / row['Spacing (cm)'])
+            
+            # Avoid division by zero
+            spacing = row['Spacing (cm)'] if row['Spacing (cm)'] > 0 else 1.0
+            as_prov = bar_area * ((width_m * 100.0) / spacing)
+            num_bars = math.ceil((width_m * 100.0) / spacing)
             
             # ACI Maximum Spacing Rule: Min of 2h or 450 mm
             max_spacing_aci = min(2 * h_slab_m * 100, 45.0)
             
-            status = "PASS" if (as_prov >= as_req and row['Spacing (cm)'] <= max_spacing_aci) else "FAIL"
+            status = "PASS" if (as_prov >= as_req and spacing <= max_spacing_aci) else "FAIL"
             return pd.Series([width_m, num_bars, max_spacing_aci, as_prov, status])
 
         edited_df[['Width (m)', 'Total Bars', 'Max Spacing (cm)', 'Prov. Area (cm2)', 'Status']] = edited_df.apply(lambda r: compute_results(r, df_design), axis=1)
 
         if "FAIL" in edited_df['Status'].values:
-            st.error("Overall Status: FAIL. Ensure provided area exceeds required area AND spacing does not exceed ACI limits.")
+            st.error("Overall Status: FAIL. Ensure provided area exceeds required area AND spacing complies with ACI limits.")
         else:
-            st.success("Overall Status: PASS. Reinforcement is structurally adequate and strictly complies with ACI 318 spacing limits.")
+            st.success("Overall Status: PASS. Reinforcement is structurally adequate per ACI 318 spacing limits.")
 
         display_cols = ['Location', 'Bar Size (mm)', 'Spacing (cm)', 'Max Spacing (cm)', 'As Req (cm2)', 'Prov. Area (cm2)', 'Status']
         def highlight_status(val):
@@ -211,34 +219,46 @@ def render_ddm_tab(calc_obj):
     # --- TAB 3: Flexural Design (ALL SECTIONS) ---
     with tab_flex:
         st.markdown("#### ACI 318 Section 22.2: Flexural Reinforcement Required")
-        st.markdown("Calculations for **every strip** based on the equivalent rectangular concrete stress block.")
+        st.markdown("Calculations for **every strip** based on the equivalent rectangular concrete stress block. ($\phi = 0.90$)")
         
-        st.markdown("**General Formulas & Limits:**")
-        st.latex(r"R_n = \frac{M_u}{\phi b d^2}, \quad \rho = \frac{0.85 f'_c}{f_y} \left( 1 - \sqrt{1 - \frac{2 R_n}{0.85 f'_c}} \right)")
-        st.latex(r"A_{s} = \rho b d")
+        st.markdown("**General Formulas:**")
+        st.latex(r"R_n = \frac{M_u}{\phi \cdot b \cdot d^2}")
+        st.latex(r"\rho = \frac{0.85 f'_c}{f_y} \left( 1 - \sqrt{1 - \frac{2 R_n}{0.85 f'_c}} \right)")
         
         rho_min = 0.0020 if fy_ksc < 4000 else 0.0018
-        st.markdown("**ACI 24.4.3.2 Shrinkage and Temperature Limit:**")
+        st.markdown("**ACI 24.4.3.2 Minimum Shrinkage and Temperature Steel:**")
         st.latex(rf"\rho_{{min}} = {rho_min} \quad \rightarrow \quad A_{{s,min}} = \rho_{{min}} \cdot b \cdot h_{{slab}}")
         st.divider()
         
         if not df_results.empty and 'Location' in df_results.columns:
-            # Iterating through every single location calculated by the system
+            phi_flex = 0.90
+            
             for index, row in df_results.iterrows():
                 loc_name = row['Location']
                 as_req = row.get('As Req (cm2)', 0)
+                
+                # Fetch Mu from DataFrame, assuming common column names. Fallback to 0 if missing.
+                mu_val = row.get('Mu (kg-m)', row.get('Mu', row.get('Moment (kg-m)', 0)))
                 
                 b_width_m = get_strip_width(loc_name)
                 b_width_cm = b_width_m * 100.0 
                 d_eff_cm = d_eff_m * 100.0
                 
-                # Derive rho from required area for step-by-step verification
-                rho_calc = as_req / (b_width_cm * d_eff_cm) if (b_width_cm * d_eff_cm) > 0 else 0
+                # Safe calculations
+                if b_width_cm > 0 and d_eff_cm > 0:
+                    rn_calc = (mu_val * 100) / (phi_flex * b_width_cm * (d_eff_cm**2))
+                    rho_calc = as_req / (b_width_cm * d_eff_cm)
+                else:
+                    rn_calc = 0
+                    rho_calc = 0
+                    
                 as_min = rho_min * b_width_cm * (h_slab_m * 100.0)
                 
                 st.markdown(f"**Section: `{loc_name}`**")
+                st.markdown(f"- Design Moment ($M_u$) = **{mu_val:,.0f} kg-m**")
                 st.markdown(f"- Width ($b$) = {b_width_cm:.1f} cm, Effective Depth ($d$) = {d_eff_cm:.2f} cm")
                 
+                st.latex(rf"R_n = \frac{{{mu_val:,.0f} \times 100}}{{{phi_flex} \times {b_width_cm:.1f} \times {d_eff_cm:.2f}^2}} = {rn_calc:.2f} \text{{ kg/cm}}^2")
                 st.latex(rf"\text{{Required }} \rho = \frac{{{as_req:.2f}}}{{{b_width_cm:.1f} \times {d_eff_cm:.2f}}} = {rho_calc:.5f}")
                 st.latex(rf"A_{{s,min}} = {rho_min} \times {b_width_cm:.1f} \times {h_slab_m*100.0:.1f} = {as_min:.2f} \text{{ cm}}^2")
                 
