@@ -368,48 +368,108 @@ def render_ddm_tab(calc_obj):
                 
                 st.markdown("---")
 
-    # --- TAB 5: Punching Shear ---
+
+    # --- TAB 5: Punching Shear (Updated with Unbalanced Moment Transfer) ---
     with tab_shear:
-        st.markdown("#### ACI 318 Section 22.6.4: Critical Section for Two-Way Shear")
+        st.markdown("#### ACI 318 Section 22.6: Two-Way Shear with Moment Transfer")
         
+        # --- 1. Critical Section Geometry ---
         d_shear_cm = d_eff_m * 100.0
-        bo_cm = 2 * ((c1*100 + d_shear_cm) + (c2*100 + d_shear_cm))
+        c1_cm = c1 * 100.0
+        c2_cm = c2 * 100.0
         
-        st.markdown(f"$$ b_o = 2 \\times [({c1*100:.1f} + {d_shear_cm:.1f}) + ({c2*100:.1f} + {d_shear_cm:.1f})] = {bo_cm:.1f} \\text{{ cm}} $$")
+        # สมมติฐานเป็นเสาต้นใน (Interior Column) สำหรับรูปทรง Critical Section
+        b1 = c1_cm + d_shear_cm  # ด้านขนานกับทิศทางโมเมนต์
+        b2 = c2_cm + d_shear_cm  # ด้านตั้งฉากกับทิศทางโมเมนต์
+        bo_cm = 2 * (b1 + b2)
+        Ac = bo_cm * d_shear_cm
+        
+        st.markdown("**1. Critical Section Properties ($b_o$, $A_c$, $J_c$)**")
+        st.markdown(f"- $b_1 = {c1_cm:.1f} + {d_shear_cm:.1f} = {b1:.1f} \\text{{ cm}}$")
+        st.markdown(f"- $b_2 = {c2_cm:.1f} + {d_shear_cm:.1f} = {b2:.1f} \\text{{ cm}}$")
+        st.markdown(f"$$ b_o = 2 \\times ({b1:.1f} + {b2:.1f}) = {bo_cm:.1f} \\text{{ cm}} $$")
+        st.markdown(f"$$ A_c = b_o \\times d = {bo_cm:.1f} \\times {d_shear_cm:.1f} = {Ac:,.1f} \\text{{ cm}}^2 $$")
+        
+        # คำนวณ Jc (Polar Moment of Inertia สำหรับ Interior Column)
+        Jc = (d_shear_cm * (b1**3) / 6.0) + ((b1 * (d_shear_cm**3)) / 6.0) + (d_shear_cm * b1 * (b2**2) / 2.0)
+        c_dist = b1 / 2.0
+        
+        st.markdown(f"$$ J_c = \\frac{{d b_1^3}}{{6}} + \\frac{{b_1 d^3}}{{6}} + \\frac{{d b_1 b_2^2}}{{2}} = {Jc:,.0f} \\text{{ cm}}^4 $$")
+        st.markdown(f"- ระยะจากจุดศูนย์ถ่วงถึงขอบหน้าตัดวิกฤต ($c$) = **{c_dist:.1f} cm**")
         
         st.divider()
-        st.markdown("#### ACI 318 Table 22.6.5.2: Two-Way Shear Strength ($V_c$)")
+        
+        # --- 2. Demand Calculation (Vu and Munbal) ---
+        st.markdown("**2. Shear and Unbalanced Moment Demand**")
+        vu_kg = wu * ((L1 * L2) - ((c1 + d_eff_m) * (c2 + d_eff_m)))
+        st.markdown(f"$$ V_u = {wu:,.0f} \\times \\left[ ({L1:.2f} \\times {L2:.2f}) - ({c1+d_eff_m:.2f} \\times {c2+d_eff_m:.2f}) \\right] = {vu_kg:,.0f} \\text{{ kg}} $$")
+        
+        # ดึงค่าโมเมนต์ลบที่หัวเสาเพื่อมาเป็น Unbalanced Moment
+        mu_at_column = 0
+        if not df_design.empty and 'Location' in df_design.columns:
+            try:
+                # ดึง Mu จาก Interior Negative เป็นหลัก (หรือปรับตาม Location ที่พิจารณา)
+                match_int_neg = df_design[df_design['Location'].str.contains("Interior Negative", case=False, na=False)].iloc[0]
+                mu_at_column = match_int_neg.get('Mu (kg-m)', match_int_neg.get('Moment (kg-m)', 0))
+            except IndexError:
+                mu_at_column = 0
+                
+        st.markdown(f"$$ M_{{unbal}} = {mu_at_column:,.0f} \\text{{ kg-m}} $$ *(อ้างอิงจากโมเมนต์ลบที่หัวเสา)*")
+        
+        # คำนวณสัดส่วนการถ่ายโอนโมเมนต์ (Moment Transfer Fractions)
+        gamma_f = 1.0 / (1.0 + (2.0/3.0) * math.sqrt(b1/b2))
+        gamma_v = 1.0 - gamma_f
+        st.markdown(f"$$ \\gamma_f = \\frac{{1}}{{1 + \\frac{{2}}{{3}}\\sqrt{{b_1/b_2}}}} = {gamma_f:.3f} \\implies \\gamma_v = {gamma_v:.3f} $$")
+        
+        # คำนวณหน่วยแรงเค้นเฉือนรวมสูงสุด (Maximum Combined Shear Stress)
+        vu_direct = vu_kg / Ac
+        vu_moment = (gamma_v * (mu_at_column * 100.0) * c_dist) / Jc if Jc > 0 else 0
+        vu_max = vu_direct + vu_moment
+        
+        st.markdown(f"$$ v_{{u,direct}} = \\frac{{V_u}}{{A_c}} = {vu_direct:.2f} \\text{{ ksc}} $$")
+        st.markdown(f"$$ v_{{u,moment}} = \\frac{{\\gamma_v M_{{unbal}} c}}{{J_c}} = \\frac{{{gamma_v:.3f} \\times {mu_at_column:,.0f} \\times 100 \\times {c_dist:.1f}}}{{{Jc:,.0f}}} = {vu_moment:.2f} \\text{{ ksc}} $$")
+        st.markdown(f"$$ v_{{u,max}} = v_{{u,direct}} + v_{{u,moment}} = {vu_max:.2f} \\text{{ ksc}} $$")
+
+        st.divider()
+        
+        # --- 3. Capacity Calculation ---
+        st.markdown("#### ACI 318 Table 22.6.5.2: Two-Way Shear Strength ($v_c$)")
+        st.info("💡 **Note:** Coefficients updated to **MKS System (kg/cm²)**: 1.06, 0.53, 0.27 (Equivalent to SI: 0.33, 0.17, 0.083)")
         
         phi_shear = 0.85 # ACI 318-19 Table 21.2.1
         alpha_s = 40 if case_type == "Interior" else (30 if has_edge_beam else 20)
         beta_c = max(c1, c2) / min(c1, c2)
         
-        vc1 = 0.33 * math.sqrt(fc_ksc) * bo_cm * d_shear_cm
-        vc2 = 0.17 * (1 + (2/beta_c)) * math.sqrt(fc_ksc) * bo_cm * d_shear_cm
-        vc3 = 0.083 * (2 + (alpha_s * d_shear_cm / bo_cm)) * math.sqrt(fc_ksc) * bo_cm * d_shear_cm
-        vc_gov = min(vc1, vc2, vc3)
-        phi_vc = phi_shear * vc_gov
+        # คำนวณกำลังต้านทานในรูปแบบของแรง (Force: kg)
+        vc1 = 1.06 * math.sqrt(fc_ksc) * bo_cm * d_shear_cm
+        vc2 = 0.53 * (1 + (2/beta_c)) * math.sqrt(fc_ksc) * bo_cm * d_shear_cm
+        vc3 = 0.27 * (2 + (alpha_s * d_shear_cm / bo_cm)) * math.sqrt(fc_ksc) * bo_cm * d_shear_cm
+        vc_gov_force = min(vc1, vc2, vc3)
+        phi_vc_force = phi_shear * vc_gov_force
+        
+        # แปลงเป็นหน่วยแรงเค้น (Stress: ksc) สำหรับตรวจสอบร่วมกับโมเมนต์
+        phi_vc_stress = phi_vc_force / Ac
         
         st.markdown(f"- $\\beta$ (Column Aspect Ratio) = **{beta_c:.2f}**")
         st.markdown(f"- $\\alpha_s$ (Position Factor) = **{alpha_s}**")
 
         st.markdown("**Equation (a):**")
-        st.markdown(f"$$ V_{{c1}} = 0.33 \\sqrt{{{fc_ksc:.0f}}} \\times {bo_cm:.1f} \\times {d_shear_cm:.1f} = {vc1:,.0f} \\text{{ kg}} $$")
+        st.markdown(f"$$ V_{{c1}} = 1.06 \\sqrt{{{fc_ksc:.0f}}} \\times {bo_cm:.1f} \\times {d_shear_cm:.1f} = {vc1:,.0f} \\text{{ kg}} $$")
         
         st.markdown("**Equation (b):**")
-        st.markdown(f"$$ V_{{c2}} = 0.17 \\left( 1 + \\frac{{2}}{{{beta_c:.2f}}} \\right) \\sqrt{{{fc_ksc:.0f}}} \\times {bo_cm:.1f} \\times {d_shear_cm:.1f} = {vc2:,.0f} \\text{{ kg}} $$")
+        st.markdown(f"$$ V_{{c2}} = 0.53 \\left( 1 + \\frac{{2}}{{{beta_c:.2f}}} \\right) \\sqrt{{{fc_ksc:.0f}}} \\times {bo_cm:.1f} \\times {d_shear_cm:.1f} = {vc2:,.0f} \\text{{ kg}} $$")
         
         st.markdown("**Equation (c):**")
-        st.markdown(f"$$ V_{{c3}} = 0.083 \\left( 2 + \\frac{{{alpha_s} \\times {d_shear_cm:.1f}}}{{{bo_cm:.1f}}} \\right) \\sqrt{{{fc_ksc:.0f}}} \\times {bo_cm:.1f} \\times {d_shear_cm:.1f} = {vc3:,.0f} \\text{{ kg}} $$")
+        st.markdown(f"$$ V_{{c3}} = 0.27 \\left( 2 + \\frac{{{alpha_s} \\times {d_shear_cm:.1f}}}{{{bo_cm:.1f}}} \\right) \\sqrt{{{fc_ksc:.0f}}} \\times {bo_cm:.1f} \\times {d_shear_cm:.1f} = {vc3:,.0f} \\text{{ kg}} $$")
         
         st.markdown("**Governing Capacity:**")
-        st.markdown(f"$$ \\phi V_c = {phi_shear} \\times \\min(V_{{c1}}, V_{{c2}}, V_{{c3}}) = {phi_shear} \\times {vc_gov:,.0f} = {phi_vc:,.0f} \\text{{ kg}} $$")
+        st.markdown(f"$$ \\phi V_c = {phi_shear} \\times \\min(V_{{c1}}, V_{{c2}}, V_{{c3}}) = {phi_vc_force:,.0f} \\text{{ kg}} $$")
+        st.markdown(f"$$ \\phi v_c = \\frac{{\\phi V_c}}{{A_c}} = {phi_vc_stress:.2f} \\text{{ ksc}} $$")
 
         st.divider()
-        st.markdown("#### Demand vs Capacity Verification")
-        vu_kg = wu * ((L1 * L2) - ((c1 + d_eff_m) * (c2 + d_eff_m)))
         
-        st.markdown(f"$$ V_u = {wu:,.0f} \\times \\left[ ({L1:.2f} \\times {L2:.2f}) - ({c1+d_eff_m:.2f} \\times {c2+d_eff_m:.2f}) \\right] = {vu_kg:,.0f} \\text{{ kg}} $$")
+        # --- 4. Demand vs Capacity Verification ---
+        st.markdown("#### Demand vs Capacity Verification (Stress Basis)")
+        punch_status = "✅ SAFE" if vu_max <= phi_vc_stress else "❌ FAIL (Increase slab thickness / f'c)"
         
-        punch_status = "SAFE" if vu_kg <= phi_vc else "FAIL (Increase slab thickness)"
-        st.markdown(f"**Final Verification:** $V_u \le \phi V_c \implies {vu_kg:,.0f} \le {phi_vc:,.0f}$ ➡️ **{punch_status}**")
+        st.markdown(f"**Final Verification:** $v_{{u,max}} \le \phi v_c \implies {vu_max:.2f} \\text{{ ksc}} \le {phi_vc_stress:.2f} \\text{{ ksc}}$ ➡️ **{punch_status}**")
