@@ -4,6 +4,21 @@ import pandas as pd
 import math
 import calc_ddm
 
+def translate_warnings(msg):
+    """Intercepts and translates Thai messages from the backend calc_ddm file."""
+    msg = str(msg)
+    translations = {
+        "การแอ่นตัว:": "Deflection Limit:",
+        "ความหนาพื้น": "Slab thickness",
+        "น้อยกว่าค่า ACI แนะนำ": "is less than the ACI recommended minimum",
+        "ทะลุรอบหัวเสา:": "Punching Shear:",
+        "ไม่ปลอดภัย": "Unsafe",
+        "ปลอดภัย": "Safe"
+    }
+    for th, en in translations.items():
+        msg = msg.replace(th, en)
+    return msg
+
 def render_ddm_tab(calc_obj):
     st.header("🏗️ Direct Design Method (DDM) - Professional Edition")
     st.caption("Comprehensive reinforcement and two-way shear design per ACI 318-19.")
@@ -91,7 +106,6 @@ def render_ddm_tab(calc_obj):
     # ==========================================================================
     # STEP 3: CONSTRAINTS & FORCES
     # ==========================================================================
-    # Ensure calc_ddm returns the DataFrame and forces properly
     df_results, Mo, warning_msgs, details = calc_ddm.calculate_ddm(ddm_inputs)
 
     st.markdown("### Step 3: Forces & Constraints")
@@ -103,7 +117,8 @@ def render_ddm_tab(calc_obj):
 
     if warning_msgs:
         for msg in warning_msgs: 
-            st.warning(msg) if "Fail" not in msg else st.error(msg)
+            clean_msg = translate_warnings(msg)
+            st.warning(clean_msg) if " > " not in clean_msg else st.error(clean_msg)
 
     st.divider()
 
@@ -124,7 +139,7 @@ def render_ddm_tab(calc_obj):
         df_design['Bar Size (mm)'] = selected_rebar
         df_design['Spacing (cm)'] = default_spacing
 
-        # Normalize column names to avoid special characters
+        # Normalize column names 
         if 'As Req (cm²)' in df_design.columns:
             df_design.rename(columns={'As Req (cm²)': 'As Req (cm2)'}, inplace=True)
         if 'Mu (kg-m)' not in df_design.columns and 'Moment (kg-m)' in df_design.columns:
@@ -148,14 +163,11 @@ def render_ddm_tab(calc_obj):
             bar_area = math.pi * (row['Bar Size (mm)'] / 10.0)**2 / 4.0
             as_req = row['As Req (cm2)']
             
-            # Avoid division by zero
             spacing = row['Spacing (cm)'] if row['Spacing (cm)'] > 0 else 1.0
             as_prov = bar_area * ((width_m * 100.0) / spacing)
             num_bars = math.ceil((width_m * 100.0) / spacing)
             
-            # ACI Maximum Spacing Rule: Min of 2h or 450 mm
             max_spacing_aci = min(2 * h_slab_m * 100, 45.0)
-            
             status = "PASS" if (as_prov >= as_req and spacing <= max_spacing_aci) else "FAIL"
             return pd.Series([width_m, num_bars, max_spacing_aci, as_prov, status])
 
@@ -203,7 +215,7 @@ def render_ddm_tab(calc_obj):
 
         st.divider()
         st.latex(r"L_n = \max(L_1 - c_1, \ 0.65 L_1)")
-        st.markdown(f"**Result:** Ln = max({L1:.2f} - {c1:.2f}, 0.65 x {L1:.2f}) = **{ln:.2f}** m")
+        st.markdown(f"**Result:** Ln = max({L1:.2f} - {c1:.2f}, 0.65 \times {L1:.2f}) = **{ln:.2f}** m")
 
     # --- TAB 2: Loads & Moments ---
     with tab_load:
@@ -214,7 +226,7 @@ def render_ddm_tab(calc_obj):
         st.divider()
         st.markdown("#### ACI 318 Section 8.10.3.2: Total Factored Static Moment")
         st.latex(r"M_o = \frac{W_u L_2 L_n^2}{8}")
-        st.markdown(f"**Result:** Mo = ({wu:,.0f} x {L2:.2f} x {ln:.2f}^2) / 8 = **{Mo:,.0f}** kg-m")
+        st.markdown(f"**Result:** Mo = ({wu:,.0f} \times {L2:.2f} \times {ln:.2f}^2) / 8 = **{Mo:,.0f}** kg-m")
 
     # --- TAB 3: Flexural Design (ALL SECTIONS) ---
     with tab_flex:
@@ -222,6 +234,7 @@ def render_ddm_tab(calc_obj):
         st.markdown("Calculations for **every strip** based on the equivalent rectangular concrete stress block. ($\phi = 0.90$)")
         
         st.markdown("**General Formulas:**")
+        st.latex(r"M_u = \text{Distribution Factor} \times M_o")
         st.latex(r"R_n = \frac{M_u}{\phi \cdot b \cdot d^2}")
         st.latex(r"\rho = \frac{0.85 f'_c}{f_y} \left( 1 - \sqrt{1 - \frac{2 R_n}{0.85 f'_c}} \right)")
         
@@ -235,35 +248,48 @@ def render_ddm_tab(calc_obj):
             
             for index, row in df_results.iterrows():
                 loc_name = row['Location']
-                as_req = row.get('As Req (cm2)', 0)
                 
-                # Fetch Mu from DataFrame, assuming common column names. Fallback to 0 if missing.
+                # Robustly extract Mu from the backend dataframe
                 mu_val = row.get('Mu (kg-m)', row.get('Mu', row.get('Moment (kg-m)', 0)))
+                # Calculate distribution percentage from Mo
+                dist_factor = (mu_val / Mo) * 100 if Mo > 0 else 0
                 
                 b_width_m = get_strip_width(loc_name)
                 b_width_cm = b_width_m * 100.0 
                 d_eff_cm = d_eff_m * 100.0
                 
-                # Safe calculations
+                # Active Calculation of Rn and Rho (Overrides backend 0s)
                 if b_width_cm > 0 and d_eff_cm > 0:
-                    rn_calc = (mu_val * 100) / (phi_flex * b_width_cm * (d_eff_cm**2))
-                    rho_calc = as_req / (b_width_cm * d_eff_cm)
-                else:
-                    rn_calc = 0
-                    rho_calc = 0
+                    rn_calc = (mu_val * 100.0) / (phi_flex * b_width_cm * (d_eff_cm**2))
+                    radicand = 1.0 - (2.0 * rn_calc) / (0.85 * fc_ksc)
                     
+                    if radicand < 0:
+                        rho_calc = 0  # Section fails, handle safely
+                        st.error(f"Section {loc_name} is over-reinforced. Increase depth.")
+                    else:
+                        rho_calc = (0.85 * fc_ksc / fy_ksc) * (1.0 - math.sqrt(radicand))
+                else:
+                    rn_calc, rho_calc = 0, 0
+                    
+                as_calc = rho_calc * b_width_cm * d_eff_cm
                 as_min = rho_min * b_width_cm * (h_slab_m * 100.0)
+                as_req_final = max(as_calc, as_min)
                 
                 st.markdown(f"**Section: `{loc_name}`**")
-                st.markdown(f"- Design Moment ($M_u$) = **{mu_val:,.0f} kg-m**")
                 st.markdown(f"- Width ($b$) = {b_width_cm:.1f} cm, Effective Depth ($d$) = {d_eff_cm:.2f} cm")
                 
+                st.markdown("**1. Design Moment ($M_u$) Calculation:**")
+                st.latex(rf"M_u = {dist_factor:.1f}\% \times M_o = {dist_factor/100:.3f} \times {Mo:,.0f} = \mathbf{{{mu_val:,.0f} \text{{ kg-m}}}}")
+                
+                st.markdown("**2. Resistance Factor ($R_n$) and Steel Ratio ($\rho$):**")
                 st.latex(rf"R_n = \frac{{{mu_val:,.0f} \times 100}}{{{phi_flex} \times {b_width_cm:.1f} \times {d_eff_cm:.2f}^2}} = {rn_calc:.2f} \text{{ kg/cm}}^2")
-                st.latex(rf"\text{{Required }} \rho = \frac{{{as_req:.2f}}}{{{b_width_cm:.1f} \times {d_eff_cm:.2f}}} = {rho_calc:.5f}")
+                st.latex(rf"\text{{Calculated }} \rho = \frac{{0.85 \times {fc_ksc:.0f}}}{{{fy_ksc:.0f}}} \left( 1 - \sqrt{{1 - \frac{{2 \times {rn_calc:.2f}}}{{0.85 \times {fc_ksc:.0f}}}}} \right) = {rho_calc:.5f}")
+                
+                st.markdown("**3. Required Steel Area ($A_s$):**")
+                st.latex(rf"A_{{s,calc}} = {rho_calc:.5f} \times {b_width_cm:.1f} \times {d_eff_cm:.2f} = {as_calc:.2f} \text{{ cm}}^2")
                 st.latex(rf"A_{{s,min}} = {rho_min} \times {b_width_cm:.1f} \times {h_slab_m*100.0:.1f} = {as_min:.2f} \text{{ cm}}^2")
                 
-                # Highlight the governing area
-                st.latex(rf"A_{{s,req}} = \max(\rho \cdot b \cdot d, \ A_{{s,min}}) = \mathbf{{{as_req:.2f} \text{{ cm}}^2}}")
+                st.latex(rf"A_{{s,req}} = \max(A_{{s,calc}}, A_{{s,min}}) = \mathbf{{{as_req_final:.2f} \text{{ cm}}^2}}")
                 st.markdown("---")
 
     # --- TAB 4: Punching Shear ---
@@ -277,7 +303,6 @@ def render_ddm_tab(calc_obj):
         
         st.divider()
         st.markdown("#### ACI 318 Table 22.6.5.2: Two-Way Shear Strength ($V_c$)")
-        st.markdown("$V_c$ is strictly determined as the smallest value from the three equations below.")
         
         phi_shear = 0.85 # ACI 318-19 Table 21.2.1
         alpha_s = 40 if case_type == "Interior" else (30 if has_edge_beam else 20)
@@ -314,5 +339,5 @@ def render_ddm_tab(calc_obj):
         st.latex(r"V_u = W_u \left[ L_1 L_2 - (c_1 + d)(c_2 + d) \right]")
         st.latex(rf"V_u = {wu:,.0f} \times \left[ ({L1:.2f} \times {L2:.2f}) - ({c1+d_eff_m:.2f} \times {c2+d_eff_m:.2f}) \right] = {vu_kg:,.0f} \text{{ kg}}")
         
-        punch_status = "SAFE (Demand <= Capacity)" if vu_kg <= phi_vc else "FAIL (Increase slab thickness or drop panel)"
+        punch_status = "SAFE" if vu_kg <= phi_vc else "FAIL (Increase slab thickness)"
         st.markdown(f"**Final Verification:** $V_u \le \phi V_c \implies {vu_kg:,.0f} \le {phi_vc:,.0f}$ ➡️ **{punch_status}**")
