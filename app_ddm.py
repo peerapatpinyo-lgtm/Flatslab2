@@ -262,7 +262,7 @@ def render_ddm_tab(calc_obj):
                 b_width_cm = b_width_m * 100.0 
                 d_eff_cm = d_eff_m * 100.0
                 
-                # Active Calculation of Rn and Rho (Overrides backend 0s)
+                # Active Calculation of Rn and Rho
                 if b_width_cm > 0 and d_eff_cm > 0:
                     rn_calc = (mu_val * 100.0) / (phi_flex * b_width_cm * (d_eff_cm**2))
                     radicand = 1.0 - (2.0 * rn_calc) / (0.85 * fc_ksc)
@@ -285,27 +285,32 @@ def render_ddm_tab(calc_obj):
                 as_prov = a_bar * b_width_cm / spacing_cm
                 
                 st.markdown(f"#### 📍 Section: `{loc_name}`")
-                st.markdown(f"- **Dimensions:** Width ($b$) = {b_width_cm:.1f} cm, Effective Depth ($d$) = {d_eff_cm:.2f} cm")
                 
-                col_calc, col_prov = st.columns(2)
-                
-                with col_calc:
-                    st.markdown("**1. Required Steel Calculation ($A_{s,req}$)**")
-                    st.latex(rf"M_u = {dist_factor:.1f}\% \times M_o = {dist_factor/100:.3f} \times {Mo:,.0f} = \mathbf{{{mu_val:,.0f} \text{{ kg-m}}}}")
-                    st.latex(rf"R_n = \frac{{{mu_val:,.0f} \times 100}}{{{phi_flex} \times {b_width_cm:.1f} \times {d_eff_cm:.2f}^2}} = {rn_calc:.2f} \text{{ kg/cm}}^2")
-                    st.latex(rf"\rho_{{calc}} = \frac{{0.85 \times {fc_ksc:.0f}}}{{{fy_ksc:.0f}}} \left( 1 - \sqrt{{1 - \frac{{2 \times {rn_calc:.2f}}}{{0.85 \times {fc_ksc:.0f}}}}} \right) = {rho_calc:.5f}")
-                    st.latex(rf"A_{{s,calc}} = {rho_calc:.5f} \times {b_width_cm:.1f} \times {d_eff_cm:.2f} = {as_calc:.2f} \text{{ cm}}^2")
-                    st.latex(rf"A_{{s,min}} = {rho_min} \times {b_width_cm:.1f} \times {h_slab_m*100.0:.1f} = {as_min:.2f} \text{{ cm}}^2")
-                    st.latex(rf"A_{{s,req}} = \max(A_{{s,calc}}, A_{{s,min}}) = \mathbf{{{as_req_final:.2f} \text{{ cm}}^2}}")
+                # --- EXPLICIT SOURCE OF b AND d ---
+                st.markdown("**📌 Parameter Sources:**")
+                st.markdown(f"- **Strip Width ($b$):** Derived from span geometry (Column or Middle Strip) $\\rightarrow b = {b_width_cm:.1f}$ cm.")
+                st.markdown(f"- **Effective Depth ($d$):** $h_{{slab}} - \\text{{Cover}} - (d_b/2) = {h_slab_m*100:.1f} - {cc_m*100:.1f} - ({selected_rebar/10:.1f}/2) \\rightarrow d = {d_eff_cm:.2f}$ cm.")
+                st.write("") # Spacer
 
-                with col_prov:
-                    st.markdown("**2. Provided Steel Verification ($A_{s,prov}$)**")
-                    st.info(f"**Selected:** DB{bar_size} @ {spacing_cm:.1f} cm")
-                    st.latex(rf"A_{{bar}} = \frac{{\pi \times {bar_dia_cm:.2f}^2}}{{4}} = {a_bar:.3f} \text{{ cm}}^2")
-                    st.latex(rf"A_{{s,prov}} = \frac{{A_{{bar}} \times b}}{{s}} = \frac{{{a_bar:.3f} \times {b_width_cm:.1f}}}{{{spacing_cm:.1f}}} = \mathbf{{{as_prov:.2f} \text{{ cm}}^2}}")
-                    
-                    check_status = "✅ PASS" if as_prov >= as_req_final else "❌ FAIL"
-                    st.markdown(f"**Conclusion:** $A_{{s,prov}} \ge A_{{s,req}} \implies {as_prov:.2f} \ge {as_req_final:.2f}$ ➡️ **{check_status}**")
+                # --- PART 1: Required Steel ---
+                st.markdown("##### 1. Required Steel Calculation ($A_{s,req}$)")
+                st.latex(rf"M_u = {dist_factor:.1f}\% \times M_o = {dist_factor/100:.3f} \times {Mo:,.0f} = \mathbf{{{mu_val:,.0f} \text{{ kg-m}}}}")
+                st.latex(rf"R_n = \frac{{{mu_val:,.0f} \times 100}}{{{phi_flex} \times {b_width_cm:.1f} \times {d_eff_cm:.2f}^2}} = {rn_calc:.2f} \text{{ kg/cm}}^2")
+                st.latex(rf"\rho_{{calc}} = \frac{{0.85 \times {fc_ksc:.0f}}}{{{fy_ksc:.0f}}} \left( 1 - \sqrt{{1 - \frac{{2 \times {rn_calc:.2f}}}{{0.85 \times {fc_ksc:.0f}}}}} \right) = {rho_calc:.5f}")
+                st.latex(rf"A_{{s,calc}} = {rho_calc:.5f} \times {b_width_cm:.1f} \times {d_eff_cm:.2f} = {as_calc:.2f} \text{{ cm}}^2")
+                st.latex(rf"A_{{s,min}} = {rho_min} \times {b_width_cm:.1f} \times {h_slab_m*100.0:.1f} = {as_min:.2f} \text{{ cm}}^2")
+                st.latex(rf"A_{{s,req}} = \max(A_{{s,calc}}, A_{{s,min}}) = \mathbf{{{as_req_final:.2f} \text{{ cm}}^2}}")
+
+                st.write("") # Spacer
+                
+                # --- PART 2: Provided Steel ---
+                st.markdown("##### 2. Provided Steel Verification ($A_{s,prov}$)")
+                st.info(f"**Selected Reinforcement in Table:** DB{bar_size} @ {spacing_cm:.1f} cm")
+                st.latex(rf"A_{{bar}} = \frac{{\pi \times {bar_dia_cm:.2f}^2}}{{4}} = {a_bar:.3f} \text{{ cm}}^2")
+                st.latex(rf"A_{{s,prov}} = \frac{{A_{{bar}} \times b}}{{s}} = \frac{{{a_bar:.3f} \times {b_width_cm:.1f}}}{{{spacing_cm:.1f}}} = \mathbf{{{as_prov:.2f} \text{{ cm}}^2}}")
+                
+                check_status = "✅ PASS" if as_prov >= as_req_final else "❌ FAIL"
+                st.success(f"**Conclusion:** $A_{{s,prov}} \ge A_{{s,req}} \implies {as_prov:.2f} \ge {as_req_final:.2f}$ ➡️ **{check_status}**")
                 
                 st.markdown("---")
 
