@@ -256,12 +256,15 @@ def render_ddm_tab(calc_obj):
         st.info("*Note: The system backend (`calc_ddm.py`) automatically interpolates exact percentages dynamically based on actual span ratios ($L_2/L_1$) and torsional stiffness per ACI 318.*")
 
     # --- TAB 4: Flexural Design (ALL SECTIONS) ---
+
     with tab_flex:
         st.markdown("#### ACI 318 Section 22.2: Flexural Reinforcement Required")
         st.markdown("Calculations for **every strip** based on the equivalent rectangular concrete stress block. ($\\phi = 0.90$)")
         
+        st.info("💡 **Concept:** $M_u = M_o \\times \\text{Longitudinal Factor} \\times \\text{Transverse Factor}$")
+        
         st.markdown("**General Formulas:**")
-        st.markdown(f"$$ M_u = \\text{{Distribution Factor}} \\times M_o $$")
+        st.markdown(f"$$ M_u = \\text{{Net Distribution Factor}} \\times M_o $$")
         st.markdown(f"$$ R_n = \\frac{{M_u}}{{\\phi \\times b \\times d^2}} $$")
         st.markdown(f"$$ \\rho = \\frac{{0.85 f'_c}}{{f_y}} \\left( 1 - \\sqrt{{1 - \\frac{{2 R_n}}{{0.85 f'_c}}}} \\right) $$")
         
@@ -283,7 +286,8 @@ def render_ddm_tab(calc_obj):
                 mu_val = match_row.get('Mu (kg-m)', match_row.get('Moment (kg-m)', 0))
                 
                 # Calculate distribution percentage from Mo
-                dist_factor = (mu_val / Mo) * 100 if Mo > 0 else 0
+                net_factor = (mu_val / Mo) if Mo > 0 else 0
+                dist_factor = net_factor * 100
                 
                 b_width_m = row['Width (m)']
                 b_width_cm = b_width_m * 100.0 
@@ -298,7 +302,7 @@ def render_ddm_tab(calc_obj):
                         rho_calc = 0  # Section fails, handle safely
                         st.error(f"Section {loc_name} is over-reinforced. Increase depth.")
                     else:
-                        rho_calc = (0.85 * fc_ksc / fy_ksc) * (1.0 - math.sqrt(radicand))
+                        rho_calc = (0.85 * fc_ksc / fy_ksc) * (1.0 - math.sqrt(max(0, radicand)))
                 else:
                     rn_calc, rho_calc = 0, 0
                     
@@ -313,14 +317,27 @@ def render_ddm_tab(calc_obj):
                 
                 st.markdown(f"#### 📍 Section: `{loc_name}`")
                 
+                # --- NEW: Moment Distribution Breakdown ---
+                st.markdown("**🔍 Moment Distribution Breakdown:**")
+                is_col_strip = 'col' in str(loc_name).lower()
+                
+                if "Negative" in loc_name:
+                    long_f = 0.65 if "Interior" in loc_name else (0.70 if has_edge_beam else 0.26)
+                else: # Positive
+                    long_f = 0.35 if "Interior" in loc_name else (0.50 if has_edge_beam else 0.52)
+                
+                trans_f = net_factor / long_f if long_f > 0 else 0
+                
+                st.markdown(f"- **Longitudinal Factor:** {long_f:.3f} (ACI 8.10.4)")
+                st.markdown(f"- **Transverse Factor:** {trans_f:.3f} (ACI 8.10.5 - to {'Column Strip' if is_col_strip else 'Middle Strip'})")
+                st.markdown(f"- **Net Multiplier:** ${long_f:.3f} \\times {trans_f:.3f} = {net_factor:.4f}$")
+                
                 # --- EXPLICIT SOURCE OF b AND d ---
                 st.markdown("**📌 Parameter Sources:**")
                 
-                is_col_strip = 'col' in str(loc_name).lower()
-                
                 if is_col_strip:
                     st.markdown("- **Strip Width ($b$):** Based on **Column Strip** geometry")
-                    st.markdown(f"$$ b = \\frac{{\\min(L_1, L_2)}}{{2}} = \\frac{{\\min({L1:.2f}, {L2:.2f})}}{{2}} = {b_width_m:.2f} \\text{{ m}} = {b_width_cm:.1f} \\text{{ cm}} $$")
+                    st.markdown(f"$$ b = \\min(0.5 L_1, 0.5 L_2) = \\min(0.5 \\times {L1:.2f}, 0.5 \\times {L2:.2f}) = {b_width_m:.2f} \\text{{ m}} = {b_width_cm:.1f} \\text{{ cm}} $$")
                 else:
                     st.markdown("- **Strip Width ($b$):** Based on **Middle Strip** geometry")
                     st.markdown(f"$$ b = L_2 - b_{{cs}} = {L2:.2f} - {cs_width:.2f} = {b_width_m:.2f} \\text{{ m}} = {b_width_cm:.1f} \\text{{ cm}} $$")
@@ -331,7 +348,7 @@ def render_ddm_tab(calc_obj):
 
                 # --- PART 1: Required Steel ---
                 st.markdown("##### 1. Required Steel Calculation ($A_{s,req}$)")
-                st.markdown(f"$$ M_u = {dist_factor:.1f}\\% \\times M_o = {dist_factor/100:.3f} \\times {Mo:,.0f} = {mu_val:,.0f} \\text{{ kg-m}} $$")
+                st.markdown(f"$$ M_u = {net_factor:.4f} \\times M_o = {net_factor:.4f} \\times {Mo:,.0f} = {mu_val:,.0f} \\text{{ kg-m}} $$")
                 st.markdown(f"$$ R_n = \\frac{{{mu_val:,.0f} \\times 100}}{{{phi_flex} \\times {b_width_cm:.1f} \\times {d_eff_cm:.2f}^2}} = {rn_calc:.2f} \\text{{ kg/cm}}^2 $$")
                 st.markdown(f"$$ \\rho_{{calc}} = \\frac{{0.85 \\times {fc_ksc:.0f}}}{{{fy_ksc:.0f}}} \\left( 1 - \\sqrt{{1 - \\frac{{2 \\times {rn_calc:.2f}}}{{0.85 \\times {fc_ksc:.0f}}}}} \\right) = {rho_calc:.5f} $$")
                 st.markdown(f"$$ A_{{s,calc}} = {rho_calc:.5f} \\times {b_width_cm:.1f} \\times {d_eff_cm:.2f} = {as_calc:.2f} \\text{{ cm}}^2 $$")
@@ -347,7 +364,7 @@ def render_ddm_tab(calc_obj):
                 st.markdown(f"$$ A_{{s,prov}} = \\frac{{A_{{bar}} \\times b}}{{s}} = \\frac{{{a_bar:.3f} \\times {b_width_cm:.1f}}}{{{spacing_cm:.1f}}} = {as_prov:.2f} \\text{{ cm}}^2 $$")
                 
                 check_status = "✅ PASS" if as_prov >= as_req_final else "❌ FAIL"
-                st.success(f"**Conclusion:** $A_{{s,prov}} \ge A_{{s,req}} \implies {as_prov:.2f} \ge {as_req_final:.2f}$ ➡️ **{check_status}**")
+                st.success(f"**Conclusion:** $A_{{s,prov}} \\ge A_{{s,req}} \\implies {as_prov:.2f} \\ge {as_req_final:.2f}$ ➡️ **{check_status}**")
                 
                 st.markdown("---")
 
