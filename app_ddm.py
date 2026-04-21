@@ -44,7 +44,8 @@ def render_ddm_tab(calc_obj):
                 default_spacing = st.number_input("Base Spacing (cm):", 5.0, 50.0, 20.0, 2.5)
 
         # Background calculations
-        ln = max(L1 - c1, 0.65 * L1)
+        ln_actual = L1 - c1
+        ln = max(ln_actual, 0.65 * L1)
         h_slab_m = geom.get('h_s', 0.20)
         h_drop_m = geom.get('h_d', h_slab_m)
         has_drop = h_drop_m > h_slab_m
@@ -58,8 +59,6 @@ def render_ddm_tab(calc_obj):
         mat = calc_obj.get('mat', {})
         fc_ksc = mat.get('fc_pa', 240 * KSC_TO_PA) / KSC_TO_PA
         fy_ksc = mat.get('fy_pa', 4000 * KSC_TO_PA) / KSC_TO_PA
-        fc = fc_ksc
-        fy = fy_ksc
 
         loads = calc_obj.get('loads', {})
         G = 9.80665
@@ -71,7 +70,7 @@ def render_ddm_tab(calc_obj):
             'l1': L1, 'l2': L2, 'ln': ln, 'c1': c1, 'c2': c2,
             'wu': wu, 'dl': dl, 'll': ll,
             'h_slab': h_slab_m * 100, 'h_drop': h_drop_m * 100, 'has_drop': has_drop,
-            'fc': fc, 'fy': fy, 'case_type': case_type, 
+            'fc': fc_ksc, 'fy': fy_ksc, 'case_type': case_type, 
             'has_edge_beam': has_edge_beam, 'eb_width': eb_width, 'eb_depth': eb_depth,
             'rebar_size': selected_rebar 
         }
@@ -90,9 +89,9 @@ def render_ddm_tab(calc_obj):
     st.markdown("### ✅ Step 3: Forces & Constraints")
     
     c1_col, c2_col, c3_col = st.columns(3)
-    c1_col.metric("Design Load (Wu)", f"{wu:,.0f} kg/m²")
+    c1_col.metric("Factored Load (Wu)", f"{wu:,.0f} kg/m²")
     c2_col.metric("Total Static Moment (Mo)", f"{Mo:,.0f} kg-m")
-    c3_col.metric("Load Ratio (LL ≤ 2 DL)", "Pass" if ll <= 2*dl else "Fail")
+    c3_col.metric("Load Ratio Limit", "PASS" if ll <= 2*dl else "FAIL")
 
     if warning_msgs:
         for msg in warning_msgs: 
@@ -123,7 +122,7 @@ def render_ddm_tab(calc_obj):
             df_design[editor_cols],
             column_config={
                 "Location": st.column_config.TextColumn("Strip Location", disabled=True),
-                "As Req (cm²)": st.column_config.NumberColumn("Required Area (cm²)", disabled=True, format="%.2f"),
+                "As Req (cm²)": st.column_config.NumberColumn("Req. Area (cm²)", disabled=True, format="%.2f"),
                 "Bar Size (mm)": st.column_config.SelectboxColumn("Bar Size (mm) ✏️", options=[10, 12, 16, 20, 25]),
                 "Spacing (cm)": st.column_config.NumberColumn("Spacing (cm) ✏️", min_value=2.5, max_value=50.0, step=2.5),
             },
@@ -140,19 +139,19 @@ def render_ddm_tab(calc_obj):
             status = "✅ PASS" if as_prov >= as_req else "❌ FAIL"
             return pd.Series([width_m, num_bars, max_space, as_prov, status])
 
-        edited_df[['Width (m)', 'Total Bars', 'Max Allowable Spacing (cm)', 'As Provided (cm²)', 'Status']] = edited_df.apply(lambda r: compute_results(r, df_design), axis=1)
+        edited_df[['Width (m)', 'Total Bars', 'Max Allowable Spacing (cm)', 'Prov. Area (cm²)', 'Status']] = edited_df.apply(lambda r: compute_results(r, df_design), axis=1)
 
         if "❌ FAIL" in edited_df['Status'].values:
-            st.error("⚠️ **Overall Status:** Some sections do NOT have enough reinforcement. Please reduce spacing or increase bar size.")
+            st.error("⚠️ **Overall Status:** Insufficient reinforcement in some sections. Decrease spacing or increase bar size.")
         else:
-            st.success("🎉 **Overall Status:** All sections PASSED! The design is safe.")
+            st.success("🎉 **Overall Status:** All sections PASSED! Reinforcement is adequate.")
 
-        display_cols = ['Location', 'Bar Size (mm)', 'Spacing (cm)', 'Total Bars', 'As Req (cm²)', 'As Provided (cm²)', 'Status']
+        display_cols = ['Location', 'Bar Size (mm)', 'Spacing (cm)', 'Total Bars', 'As Req (cm²)', 'Prov. Area (cm²)', 'Status']
         def highlight_status(val):
             return f"color: {'#ff4b4b' if 'FAIL' in str(val) else '#21c354'}; font-weight: bold;"
             
         styled_df = edited_df[display_cols].style.map(highlight_status, subset=['Status']).format({
-            'As Req (cm²)': "{:.2f}", 'As Provided (cm²)': "{:.2f}", 'Total Bars': "{:.0f}"
+            'As Req (cm²)': "{:.2f}", 'Prov. Area (cm²)': "{:.2f}", 'Total Bars': "{:.0f}"
         })
         st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
@@ -160,86 +159,116 @@ def render_ddm_tab(calc_obj):
     # STEP 5: COMPREHENSIVE CALCULATION NOTE (ACI 318)
     # ==========================================================================
     st.markdown("---")
-    st.markdown("### 📑 รายการคำนวณโดยละเอียด (Detailed Calculation Report)")
-    st.caption("อ้างอิงข้อกำหนดตามมาตรฐาน ACI 318-19 (Building Code Requirements for Structural Concrete)")
+    st.markdown("### 📑 Detailed Calculation Report")
+    st.caption("Reference: ACI 318 Building Code Requirements for Structural Concrete")
 
     tab_limit, tab_load, tab_moment, tab_design, tab_shear = st.tabs([
-        "📏 1. ข้อกำหนด DDM", 
-        "⚖️ 2. น้ำหนักบรรทุกประลัย", 
-        "📈 3. โมเมนต์สถิตยศาสตร์", 
-        "⚙️ 4. ออกแบบเหล็กเสริม", 
-        "🛡️ 5. แรงเฉือนทะลุ"
+        "📏 1. DDM Limitations", 
+        "⚖️ 2. Factored Loads", 
+        "📈 3. Static Moment", 
+        "⚙️ 4. Flexural Design", 
+        "🛡️ 5. Punching Shear"
     ])
 
     # --- TAB 1: Limitations ---
     with tab_limit:
-        st.markdown("**ACI 318 Section 8.10.2: ข้อจำกัดสำหรับการใช้วิธี Direct Design Method**")
-        st.markdown(f"- **Span Ratio (อัตราส่วนด้านยาวต่อด้านสั้น):** $L_1 / L_2 = {max(L1, L2) / min(L1, L2):.2f}$")
-        st.markdown(f"  - *เงื่อนไข:* ต้องไม่เกิน 2.0 ➡️ **{'✅ ผ่าน' if (max(L1, L2)/min(L1, L2)) <= 2.0 else '❌ ไม่ผ่าน'}**")
+        st.markdown("#### 1.1 Span Aspect Ratio")
+        st.markdown("**Explanation:** Verifies that the panel is two-way and appropriate for DDM analysis.")
+        st.markdown("**Formula:**")
+        st.latex(r"\text{Ratio} = \frac{\max(L_1, L_2)}{\min(L_1, L_2)} \le 2.0")
+        st.markdown("**Substitution:**")
+        st.latex(rf"\text{{Ratio}} = \frac{{{max(L1, L2):.2f}}}{{{min(L1, L2):.2f}}}")
+        span_ratio_val = max(L1, L2) / min(L1, L2)
+        span_status = "✅ PASS" if span_ratio_val <= 2.0 else "❌ FAIL"
+        st.markdown(f"**Result:** Ratio $= {span_ratio_val:.2f}$ ➡️ **{span_status}**")
         
-        st.markdown(f"- **Load Ratio (อัตราส่วนน้ำหนักบรรทุก):** $LL / DL = {ll / dl:.2f}$")
-        st.markdown(f"  - *เงื่อนไข:* Live Load ต้องไม่เกิน 2 เท่าของ Dead Load ($LL \le 2 DL$) ➡️ **{'✅ ผ่าน' if ll <= 2*dl else '❌ ไม่ผ่าน'}**")
-        
-        st.markdown(f"- **Clear Span ($L_n$):** $\max(L_1 - c_1, 0.65L_1) = {ln:.2f}$ m")
-        st.markdown("  - *เงื่อนไข:* ระยะเคลียร์สแปนต้องไม่น้อยกว่า 65% ของระยะสแปนอ้างอิง")
+        st.divider()
+        st.markdown("#### 1.2 Loading Ratio")
+        st.markdown("**Explanation:** Live load must not exceed two times the dead load for DDM applicability.")
+        st.markdown("**Formula:**")
+        st.latex(r"\text{Ratio} = \frac{LL}{DL} \le 2.0")
+        st.markdown("**Substitution:**")
+        st.latex(rf"\text{{Ratio}} = \frac{{{ll:.0f}}}{{{dl:.0f}}}")
+        load_ratio_val = ll / dl if dl > 0 else 0
+        load_status = "✅ PASS" if load_ratio_val <= 2.0 else "❌ FAIL"
+        st.markdown(f"**Result:** Ratio $= {load_ratio_val:.2f}$ ➡️ **{load_status}**")
+
+        st.divider()
+        st.markdown("#### 1.3 Effective Clear Span ($L_n$)")
+        st.markdown("**Explanation:** The clear span used for moment calculation must not be less than 65% of the center-to-center span.")
+        st.markdown("**Formula:**")
+        st.latex(r"L_n = \max(L_1 - c_1, \ 0.65 L_1)")
+        st.markdown("**Substitution:**")
+        st.latex(rf"L_n = \max({L1:.2f} - {c1:.2f}, \ 0.65 \times {L1:.2f})")
+        st.markdown(f"**Result:** $L_n = {ln:.2f}$ m")
 
     # --- TAB 2: Loads ---
     with tab_load:
-        st.markdown("**ACI 318 Chapter 5: Loads & Load Combinations**")
-        st.markdown("การคำนวณน้ำหนักบรรทุกประลัย (Factored Load) ที่กระทำลงบนพื้น")
+        st.markdown("#### Ultimate Factored Load ($W_u$)")
+        st.markdown("**Explanation:** Computes the total design load per square meter applying load factors.")
+        st.markdown("**Formula:**")
         st.latex(r"W_u = 1.4 DL + 1.7 LL")
-        st.markdown(f"โดยที่:")
-        st.markdown(f"- $DL = {dl:,.0f}$ kg/m² (น้ำหนักบรรทุกคงที่ รวมน้ำหนักพื้น)")
-        st.markdown(f"- $LL = {ll:,.0f}$ kg/m² (น้ำหนักบรรทุกจร)")
-        st.latex(rf"W_u = 1.4({dl:,.0f}) + 1.7({ll:,.0f}) = {wu:,.0f} \text{{ kg/m}}^2")
+        st.markdown("**Substitution:**")
+        st.latex(rf"W_u = 1.4({dl:,.0f}) + 1.7({ll:,.0f})")
+        st.markdown(f"**Result:** $W_u = {wu:,.0f}$ kg/m²")
 
     # --- TAB 3: Moments ---
     with tab_moment:
-        st.markdown("**ACI 318 Section 8.10.3: Total Factored Static Moment ($M_o$)**")
-        st.markdown("คำนวณค่าโมเมนต์สถิตยศาสตร์รวมทั้งหมดใน 1 สแปน")
-        st.latex(r"M_o = \frac{W_u \ell_2 \ell_n^2}{8}")
-        st.latex(rf"M_o = \frac{{({wu:,.0f})({L2:.2f})({ln:.2f})^2}}{{8}} = {Mo:,.0f} \text{{ kg-m}}")
+        st.markdown("#### Total Factored Static Moment ($M_o$)")
+        st.markdown("**Explanation:** Calculates the total static moment in the designated span direction.")
+        st.markdown("**Formula:**")
+        st.latex(r"M_o = \frac{W_u L_2 L_n^2}{8}")
+        st.markdown("**Substitution:**")
+        st.latex(rf"M_o = \frac{{({wu:,.0f}) \times ({L2:.2f}) \times ({ln:.2f})^2}}{{8}}")
+        st.markdown(f"**Result:** $M_o = {Mo:,.0f}$ kg-m")
         
         st.divider()
-        st.markdown("**ACI 318 Section 8.10.4 & 8.10.5: Moment Distribution**")
-        st.markdown("สัดส่วนการกระจายโมเมนต์ตามยาว (Longitudinal) และตามขวาง (Transverse) เข้าสู่ Column Strip และ Middle Strip")
-        
+        st.markdown("#### Moment Distribution Coefficients")
+        st.markdown("**Explanation:** Shows the intermediate parameters used to distribute $M_o$ into column and middle strips.")
         if details.get('Mo_step'): 
-            st.info("💡 ตัวแปรที่ใช้ในการกระจายโมเมนต์ (Torsional Constant & Alpha)")
             st.latex(details['Mo_step'])
         if details.get('beta_t_step'): 
             st.latex(details['beta_t_step'])
+        else:
+            st.info("Distribution coefficients are internally handled by the ACI 318 table matrix based on boundary conditions.")
 
     # --- TAB 4: Flexural Design ---
     with tab_design:
-        st.markdown("**ACI 318 Chapter 22: Sectional Strength (Flexure)**")
-        st.markdown("การคำนวณปริมาณเหล็กเสริมในแต่ละหน้าตัด อาศัยหลักการ Ultimate Strength Design (USD):")
+        st.markdown("#### Required Reinforcement Area ($A_{s,req}$)")
+        st.markdown("**Explanation:** Determines the necessary steel area for each strip using Ultimate Strength Design (USD).")
         
+        st.markdown("**Formulas:**")
         st.latex(r"R_n = \frac{M_u}{\phi b d^2}")
         st.latex(r"\rho = \frac{0.85 f'_c}{f_y} \left( 1 - \sqrt{1 - \frac{2 R_n}{0.85 f'_c}} \right)")
         st.latex(r"A_{s,req} = \rho b d \ge A_{s,min}")
         
-        st.markdown("โดยมีข้อกำหนดเพิ่มเติมดังนี้:")
-        st.markdown("- Strength Reduction Factor (ดัด), $\phi = 0.90$")
-        st.markdown(f"- Minimum Reinforcement Area, $A_{{s,min}} = 0.0018 b h$")
-        st.markdown("- ระยะแอดเหล็กสูงสุด (Max Spacing) $\le 2h$ หรือไม่เกิน 45 ซม.")
+        st.markdown("**Design Parameters:**")
+        st.markdown("- Strength Reduction Factor ($\phi$): **$0.90$**")
+        st.markdown(f"- Concrete Compressive Strength ($f'_c$): **${fc_ksc:.0f}$ kg/cm²**")
+        st.markdown(f"- Steel Yield Strength ($f_y$): **${fy_ksc:.0f}$ kg/cm²**")
+        st.markdown("- Minimum Reinforcement Ratio ($\\rho_{min}$): **$0.0018$** (for Grade 4000/SD40)")
+        
+        st.info("💡 Note: The exact substitution for each specific strip (Column Strip/Middle Strip) is computed iteratively and summarized in the Step 4 Table above.")
 
     # --- TAB 5: Punching Shear ---
     with tab_shear:
-        st.markdown("**ACI 318 Section 22.6: Two-Way Shear (Punching Shear) Strength**")
-        st.markdown("ตรวจสอบแรงเฉือนทะลุที่ระยะวิกฤต $d/2$ จากขอบเสา (Critical Section)")
+        st.markdown("#### Two-Way (Punching) Shear Capacity")
+        st.markdown("**Explanation:** Verifies that the concrete section can resist punching shear at the critical perimeter ($d/2$ from column face) without shear reinforcement.")
         
         if details.get('punch_step'):
+            st.markdown("**Formulas & Substitution:**")
             st.latex(rf"\begin{{aligned}} {details['punch_step']} \end{{aligned}}")
         else:
+            st.markdown("**Formulas:**")
             st.latex(r"V_u \le \phi V_c")
             st.latex(r"\phi V_c = \phi \cdot 0.33 \sqrt{f'_c} b_o d")
-            st.markdown("*(หมายเหตุ: ต้องคำนวณค่า $V_u$ จากปฏิกิริยาเสาและหักลบน้ำหนักพื้นภายในพื้นที่ $b_o$)*")
+            st.markdown("**Design Parameters:**")
+            st.markdown("- Shear Reduction Factor ($\phi$): **$0.85$** (or $0.75$ per newer ACI codes)")
             
         punch_status = details.get('punch_status', 'N/A')
         if 'Safe' in punch_status or 'Pass' in punch_status:
-            st.success(f"**สถานะแรงเฉือนทะลุ:** {punch_status} ✅")
+            st.success(f"**Result:** {punch_status} ✅")
         elif 'Fail' in punch_status:
-            st.error(f"**สถานะแรงเฉือนทะลุ:** {punch_status} ❌ (จำเป็นต้องเพิ่ม Drop Panel หรือ Shear Reinforcement)")
+            st.error(f"**Result:** {punch_status} ❌ (Consider adding a Drop Panel, Column Capital, or Shear Studs)")
         else:
-            st.info("สถานะแรงเฉือนทะลุ: รอการคำนวณจากโมดูลหลัก (calc_ddm)")
+            st.info("**Result:** Waiting for shear variables from core module.")
