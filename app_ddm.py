@@ -305,7 +305,7 @@ def render_ddm_tab(calc_obj):
                     st.latex(rf"A_{{s,prov}} = \frac{{A_{{bar}} \times b}}{{s}} = \frac{{{a_bar:.3f} \times {b_width_cm:.1f}}}{{{spacing_cm:.1f}}} = \mathbf{{{as_prov:.2f} \text{{ cm}}^2}}")
                     
                     check_status = "✅ PASS" if as_prov >= as_req_final else "❌ FAIL"
-                    st.markdown(f"**Conclusion:** $A_{s,prov} \ge A_{s,req} \implies {as_prov:.2f} \ge {as_req_final:.2f}$ ➡️ **{check_status}**")
+                    st.markdown(f"**Conclusion:** $A_{{s,prov}} \ge A_{{s,req}} \implies {as_prov:.2f} \ge {as_req_final:.2f}$ ➡️ **{check_status}**")
                 
                 st.markdown("---")
 
