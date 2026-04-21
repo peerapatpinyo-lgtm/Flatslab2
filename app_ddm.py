@@ -121,12 +121,12 @@ def render_ddm_tab(calc_obj):
         df_design['Bar Size (mm)'] = selected_rebar
         df_design['Spacing (cm)'] = default_spacing
 
-        editor_cols = ['Location', 'As Req (cm2)', 'Bar Size (mm)', 'Spacing (cm)']
-        
-        # Mapping column names to avoid special characters in Streamlit backend
+        # Clean column names to prevent Streamlit rendering issues
         if 'As Req (cm²)' in df_design.columns:
             df_design.rename(columns={'As Req (cm²)': 'As Req (cm2)'}, inplace=True)
-            
+
+        editor_cols = ['Location', 'As Req (cm2)', 'Bar Size (mm)', 'Spacing (cm)']
+        
         edited_df = st.data_editor(
             df_design[editor_cols],
             column_config={
@@ -184,80 +184,71 @@ def render_ddm_tab(calc_obj):
     # --- TAB 1: Limitations ---
     with tab_limit:
         st.markdown("#### ACI 318 Section 8.10.2: Dimensional Criteria for DDM")
-        st.markdown("**1. Span Aspect Ratio:**")
-        st.latex(r"\text{Ratio} = \frac{\max(L_1, L_2)}{\min(L_1, L_2)} \le 2.0")
+        st.latex(r"\text{Span Aspect Ratio} = \frac{\max(L_1, L_2)}{\min(L_1, L_2)} \le 2.0")
         span_ratio_val = max(L1, L2) / min(L1, L2)
-        st.markdown(f"Result: Ratio = {max(L1, L2):.2f} / {min(L1, L2):.2f} = **{span_ratio_val:.2f}**")
+        st.markdown(f"**Result:** Ratio = {max(L1, L2):.2f} / {min(L1, L2):.2f} = **{span_ratio_val:.2f}**")
         
         st.divider()
-        st.markdown("**2. Loading Ratio Limit:**")
-        st.latex(r"\text{Ratio} = \frac{LL}{DL} \le 2.0")
+        st.latex(r"\text{Loading Ratio} = \frac{LL}{DL} \le 2.0")
         load_ratio_val = ll / dl if dl > 0 else 0
-        st.markdown(f"Result: Ratio = {ll:.0f} / {dl:.0f} = **{load_ratio_val:.2f}**")
+        st.markdown(f"**Result:** Ratio = {ll:.0f} / {dl:.0f} = **{load_ratio_val:.2f}**")
 
         st.divider()
-        st.markdown("**3. Effective Clear Span (Ln):**")
         st.latex(r"L_n = \max(L_1 - c_1, \ 0.65 L_1)")
-        st.markdown(f"Result: Ln = max({L1:.2f} - {c1:.2f}, 0.65 * {L1:.2f}) = **{ln:.2f}** m")
+        st.markdown(f"**Result:** Ln = max({L1:.2f} - {c1:.2f}, 0.65 x {L1:.2f}) = **{ln:.2f}** m")
 
     # --- TAB 2: Loads & Moments ---
     with tab_load:
         st.markdown("#### ACI 318 Section 5.3.1: Load Combinations")
         st.latex(r"W_u = 1.4 DL + 1.7 LL")
-        st.markdown(f"Result: Wu = 1.4({dl:,.0f}) + 1.7({ll:,.0f}) = **{wu:,.0f}** kg/m2")
+        st.markdown(f"**Result:** Wu = 1.4({dl:,.0f}) + 1.7({ll:,.0f}) = **{wu:,.0f}** kg/m2")
 
         st.divider()
         st.markdown("#### ACI 318 Section 8.10.3.2: Total Factored Static Moment")
         st.latex(r"M_o = \frac{W_u L_2 L_n^2}{8}")
-        st.markdown(f"Result: Mo = ({wu:,.0f} * {L2:.2f} * {ln:.2f}^2) / 8 = **{Mo:,.0f}** kg-m")
+        st.markdown(f"**Result:** Mo = ({wu:,.0f} x {L2:.2f} x {ln:.2f}^2) / 8 = **{Mo:,.0f}** kg-m")
 
-    # --- TAB 3: Flexural Design ---
+    # --- TAB 3: Flexural Design (ALL SECTIONS) ---
     with tab_flex:
-        st.markdown("#### ACI 318 Section 22.2: Design Assumptions for Flexure")
-        st.markdown("The required flexural reinforcement is determined based on the equivalent rectangular concrete stress distribution.")
+        st.markdown("#### ACI 318 Section 22.2: Flexural Reinforcement Required")
+        st.markdown("Calculations for **every strip** based on the equivalent rectangular concrete stress block.")
         
-        st.markdown("**General Formulas:**")
-        st.latex(r"R_n = \frac{M_u}{\phi \cdot b \cdot d^2}")
-        st.latex(r"\rho = \frac{0.85 f'_c}{f_y} \left( 1 - \sqrt{1 - \frac{2 R_n}{0.85 f'_c}} \right)")
-        st.latex(r"A_{s} = \rho \cdot b \cdot d")
+        st.markdown("**General Formulas & Limits:**")
+        st.latex(r"R_n = \frac{M_u}{\phi b d^2}, \quad \rho = \frac{0.85 f'_c}{f_y} \left( 1 - \sqrt{1 - \frac{2 R_n}{0.85 f'_c}} \right)")
+        st.latex(r"A_{s} = \rho b d")
         
-        if not df_results.empty and 'As Req (cm2)' in df_results.columns:
-            st.divider()
-            # Extract the critical row (maximum required reinforcement)
-            max_row = df_results.loc[df_results['As Req (cm2)'].idxmax()]
-            loc_name = max_row['Location']
-            max_as = max_row['As Req (cm2)']
-            
-            b_width_m = get_strip_width(loc_name)
-            b_width_cm = b_width_m * 100.0 
-            d_eff_cm = d_eff_m * 100.0
-            
-            # Reverse engineer Mu from As_req for the sake of clear demonstration
-            # As = rho * b * d => rho = As / (b * d)
-            rho_calc = max_as / (b_width_cm * d_eff_cm)
-            
-            st.markdown(f"**Sample Calculation for Critical Section: `{loc_name}`**")
-            st.markdown(f"- Strip Width ($b$): **{b_width_cm:.1f} cm**")
-            st.markdown(f"- Effective Depth ($d$): **{d_eff_cm:.2f} cm**")
-            st.markdown(f"- Flexural Reduction Factor ($\phi$): **0.90**")
-            
-            st.markdown("**Step 1: Calculate Required Steel Ratio ($\rho$)**")
-            st.latex(rf"\text{{Required }} \rho = \frac{{{max_as:.2f}}}{{{b_width_cm:.1f} \times {d_eff_cm:.2f}}} = {rho_calc:.5f}")
-            
-            # Minimum reinforcement check ACI 24.4.3.2
-            rho_min = 0.0020 if fy_ksc < 4000 else 0.0018
-            st.markdown("**Step 2: Check Minimum Shrinkage & Temperature Steel (ACI 24.4.3.2)**")
-            st.latex(rf"\rho_{{min}} = {rho_min}")
-            as_min = rho_min * b_width_cm * (h_slab_m * 100.0)
-            st.latex(rf"A_{{s,min}} = {rho_min} \times {b_width_cm:.1f} \times {h_slab_m*100.0:.1f} = {as_min:.2f} \text{{ cm}}^2")
-            
-            st.markdown("**Step 3: Final Governing Area**")
-            st.latex(rf"A_{{s,req}} = \max(\rho \cdot b \cdot d, \ A_{{s,min}}) = \mathbf{{{max_as:.2f} \text{{ cm}}^2}}")
+        rho_min = 0.0020 if fy_ksc < 4000 else 0.0018
+        st.markdown("**ACI 24.4.3.2 Shrinkage and Temperature Limit:**")
+        st.latex(rf"\rho_{{min}} = {rho_min} \quad \rightarrow \quad A_{{s,min}} = \rho_{{min}} \cdot b \cdot h_{{slab}}")
+        st.divider()
+        
+        if not df_results.empty and 'Location' in df_results.columns:
+            # Iterating through every single location calculated by the system
+            for index, row in df_results.iterrows():
+                loc_name = row['Location']
+                as_req = row.get('As Req (cm2)', 0)
+                
+                b_width_m = get_strip_width(loc_name)
+                b_width_cm = b_width_m * 100.0 
+                d_eff_cm = d_eff_m * 100.0
+                
+                # Derive rho from required area for step-by-step verification
+                rho_calc = as_req / (b_width_cm * d_eff_cm) if (b_width_cm * d_eff_cm) > 0 else 0
+                as_min = rho_min * b_width_cm * (h_slab_m * 100.0)
+                
+                st.markdown(f"**Section: `{loc_name}`**")
+                st.markdown(f"- Width ($b$) = {b_width_cm:.1f} cm, Effective Depth ($d$) = {d_eff_cm:.2f} cm")
+                
+                st.latex(rf"\text{{Required }} \rho = \frac{{{as_req:.2f}}}{{{b_width_cm:.1f} \times {d_eff_cm:.2f}}} = {rho_calc:.5f}")
+                st.latex(rf"A_{{s,min}} = {rho_min} \times {b_width_cm:.1f} \times {h_slab_m*100.0:.1f} = {as_min:.2f} \text{{ cm}}^2")
+                
+                # Highlight the governing area
+                st.latex(rf"A_{{s,req}} = \max(\rho \cdot b \cdot d, \ A_{{s,min}}) = \mathbf{{{as_req:.2f} \text{{ cm}}^2}}")
+                st.markdown("---")
 
     # --- TAB 4: Punching Shear ---
     with tab_shear:
         st.markdown("#### ACI 318 Section 22.6.4: Critical Section for Two-Way Shear")
-        st.markdown("The critical section perimeter ($b_o$) is located at a distance $d/2$ from the column face.")
         
         d_shear_cm = d_eff_m * 100.0
         bo_cm = 2 * ((c1*100 + d_shear_cm) + (c2*100 + d_shear_cm))
@@ -265,8 +256,8 @@ def render_ddm_tab(calc_obj):
         st.latex(rf"b_o = 2 \times [({c1*100:.1f} + {d_shear_cm:.1f}) + ({c2*100:.1f} + {d_shear_cm:.1f})] = {bo_cm:.1f} \text{{ cm}}")
         
         st.divider()
-        st.markdown("#### ACI 318 Section 22.6.5.2: Two-Way Shear Strength ($V_c$)")
-        st.markdown("According to Table 22.6.5.2, $V_c$ shall be the smallest of the following three expressions:")
+        st.markdown("#### ACI 318 Table 22.6.5.2: Two-Way Shear Strength ($V_c$)")
+        st.markdown("$V_c$ is strictly determined as the smallest value from the three equations below.")
         
         phi_shear = 0.85 # ACI 318-19 Table 21.2.1
         alpha_s = 40 if case_type == "Interior" else (30 if has_edge_beam else 20)
@@ -278,30 +269,30 @@ def render_ddm_tab(calc_obj):
         vc_gov = min(vc1, vc2, vc3)
         phi_vc = phi_shear * vc_gov
         
-        st.markdown(f"- $\\beta$ (Ratio of long to short side of column) = **{beta_c:.2f}**")
-        st.markdown(f"- $\\alpha_s$ (Position factor: 40 Interior, 30 Edge, 20 Corner) = **{alpha_s}**")
-        st.markdown(f"- $\\phi$ (Shear reduction factor) = **{phi_shear}**")
+        st.markdown(f"- $\\beta$ (Column Aspect Ratio) = **{beta_c:.2f}**")
+        st.markdown(f"- $\\alpha_s$ (Position Factor) = **{alpha_s}**")
 
         st.markdown("**Equation (a):**")
         st.latex(r"V_{c1} = 0.33 \sqrt{f'_c} b_o d")
-        st.markdown(f"Result: $V_{{c1}} = 0.33 \sqrt{{{fc_ksc:.0f}}} \times {bo_cm:.1f} \times {d_shear_cm:.1f} = {vc1:,.0f}$ kg")
+        st.latex(rf"V_{{c1}} = 0.33 \sqrt{{{fc_ksc:.0f}}} \times {bo_cm:.1f} \times {d_shear_cm:.1f} = {vc1:,.0f} \text{{ kg}}")
         
         st.markdown("**Equation (b):**")
-        st.latex(r"V_{c2} = 0.17 \left(1 + \frac{2}{\beta}\right) \sqrt{f'_c} b_o d")
-        st.markdown(f"Result: $V_{{c2}} = 0.17 \left(1 + \frac{2}{{{beta_c:.2f}}}\right) \sqrt{{{fc_ksc:.0f}}} \times {bo_cm:.1f} \times {d_shear_cm:.1f} = {vc2:,.0f}$ kg")
+        st.latex(r"V_{c2} = 0.17 \left( 1 + \frac{2}{\beta} \right) \sqrt{f'_c} b_o d")
+        st.latex(rf"V_{{c2}} = 0.17 \left( 1 + \frac{{2}}{{{beta_c:.2f}}} \right) \sqrt{{{fc_ksc:.0f}}} \times {bo_cm:.1f} \times {d_shear_cm:.1f} = {vc2:,.0f} \text{{ kg}}")
         
         st.markdown("**Equation (c):**")
-        st.latex(r"V_{c3} = 0.083 \left(2 + \frac{\alpha_s d}{b_o}\right) \sqrt{f'_c} b_o d")
-        st.markdown(f"Result: $V_{{c3}} = 0.083 \left(2 + \frac{{{alpha_s} \times {d_shear_cm:.1f}}}{{{bo_cm:.1f}}}\right) \sqrt{{{fc_ksc:.0f}}} \times {bo_cm:.1f} \times {d_shear_cm:.1f} = {vc3:,.0f}$ kg")
+        st.latex(r"V_{c3} = 0.083 \left( 2 + \frac{\alpha_s d}{b_o} \right) \sqrt{f'_c} b_o d")
+        st.latex(rf"V_{{c3}} = 0.083 \left( 2 + \frac{{{alpha_s} \times {d_shear_cm:.1f}}}{{{bo_cm:.1f}}} \right) \sqrt{{{fc_ksc:.0f}}} \times {bo_cm:.1f} \times {d_shear_cm:.1f} = {vc3:,.0f} \text{{ kg}}")
         
         st.markdown("**Governing Capacity:**")
-        st.latex(rf"\phi V_c = \phi \times \min(V_{{c1}}, V_{{c2}}, V_{{c3}}) = {phi_shear} \times {vc_gov:,.0f} = \mathbf{{{phi_vc:,.0f} \text{{ kg}}}}")
+        st.latex(rf"\phi V_c = {phi_shear} \times \min(V_{{c1}}, V_{{c2}}, V_{{c3}}) = {phi_shear} \times {vc_gov:,.0f} = \mathbf{{{phi_vc:,.0f} \text{{ kg}}}}")
 
         st.divider()
         st.markdown("#### Demand vs Capacity Verification")
         vu_kg = wu * ((L1 * L2) - ((c1 + d_eff_m) * (c2 + d_eff_m)))
-        st.latex(r"V_u = W_u \left[ L_1 L_2 - (c_1 + d)(c_2 + d) \right]")
-        st.markdown(f"Demand: $V_u = {wu:,.0f} \times \left[ ({L1:.2f} \times {L2:.2f}) - ({c1+d_eff_m:.2f} \times {c2+d_eff_m:.2f}) \right] = \mathbf{{{vu_kg:,.0f} \text{{ kg}}}}$")
         
-        punch_status = "SAFE (Demand <= Capacity)" if vu_kg <= phi_vc else "FAIL (Increase slab thickness or add shear reinforcement)"
-        st.markdown(f"**Final Verdict:** $V_u \le \phi V_c \implies {vu_kg:,.0f} \le {phi_vc:,.0f}$ ➡️ **{punch_status}**")
+        st.latex(r"V_u = W_u \left[ L_1 L_2 - (c_1 + d)(c_2 + d) \right]")
+        st.latex(rf"V_u = {wu:,.0f} \times \left[ ({L1:.2f} \times {L2:.2f}) - ({c1+d_eff_m:.2f} \times {c2+d_eff_m:.2f}) \right] = {vu_kg:,.0f} \text{{ kg}}")
+        
+        punch_status = "SAFE (Demand <= Capacity)" if vu_kg <= phi_vc else "FAIL (Increase slab thickness or drop panel)"
+        st.markdown(f"**Final Verification:** $V_u \le \phi V_c \implies {vu_kg:,.0f} \le {phi_vc:,.0f}$ ➡️ **{punch_status}**")
