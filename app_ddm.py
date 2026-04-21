@@ -132,7 +132,7 @@ def render_ddm_tab(calc_obj):
         ms_width = L2 - cs_width
 
         def get_strip_width(loc):
-            return cs_width if 'column' in str(loc).lower() else ms_width
+            return cs_width if 'col' in str(loc).lower() else ms_width
 
         df_design = df_results.copy()
         df_design['Strip Width (m)'] = df_design['Location'].apply(get_strip_width)
@@ -204,28 +204,28 @@ def render_ddm_tab(calc_obj):
     # --- TAB 1: Limitations ---
     with tab_limit:
         st.markdown("#### ACI 318 Section 8.10.2: Dimensional Criteria for DDM")
-        st.latex(r"\text{Span Aspect Ratio} = \frac{\max(L_1, L_2)}{\min(L_1, L_2)} \le 2.0")
+        st.markdown(f"$$ \\text{{Span Aspect Ratio}} = \\frac{{\\max(L_1, L_2)}}{{\\min(L_1, L_2)}} \\le 2.0 $$")
         span_ratio_val = max(L1, L2) / min(L1, L2)
         st.markdown(f"**Result:** Ratio = {max(L1, L2):.2f} / {min(L1, L2):.2f} = **{span_ratio_val:.2f}**")
         
         st.divider()
-        st.latex(r"\text{Loading Ratio} = \frac{LL}{DL} \le 2.0")
+        st.markdown(f"$$ \\text{{Loading Ratio}} = \\frac{{LL}}{{DL}} \\le 2.0 $$")
         load_ratio_val = ll / dl if dl > 0 else 0
         st.markdown(f"**Result:** Ratio = {ll:.0f} / {dl:.0f} = **{load_ratio_val:.2f}**")
 
         st.divider()
-        st.latex(r"L_n = \max(L_1 - c_1, \ 0.65 L_1)")
+        st.markdown(f"$$ L_n = \\max(L_1 - c_1, \\ 0.65 L_1) $$")
         st.markdown(f"**Result:** Ln = max({L1:.2f} - {c1:.2f}, 0.65 \times {L1:.2f}) = **{ln:.2f}** m")
 
     # --- TAB 2: Loads & Moments ---
     with tab_load:
         st.markdown("#### ACI 318 Section 5.3.1: Load Combinations")
-        st.latex(r"W_u = 1.4 DL + 1.7 LL")
+        st.markdown(f"$$ W_u = 1.4 DL + 1.7 LL $$")
         st.markdown(f"**Result:** Wu = 1.4({dl:,.0f}) + 1.7({ll:,.0f}) = **{wu:,.0f}** kg/m²")
 
         st.divider()
         st.markdown("#### ACI 318 Section 8.10.3.2: Total Factored Static Moment")
-        st.latex(r"M_o = \frac{W_u \times L_2 \times L_n^2}{8}")
+        st.markdown(f"$$ M_o = \\frac{{W_u \\times L_2 \\times L_n^2}}{{8}} $$")
         st.markdown(f"**Result:** Mo = ({wu:,.0f} \times {L2:.2f} \times {ln:.2f}^2) / 8 = **{Mo:,.0f}** kg-m")
 
     # --- TAB 3: Flexural Design (ALL SECTIONS) ---
@@ -234,13 +234,13 @@ def render_ddm_tab(calc_obj):
         st.markdown("Calculations for **every strip** based on the equivalent rectangular concrete stress block. ($\phi = 0.90$)")
         
         st.markdown("**General Formulas:**")
-        st.latex(r"M_u = \text{Distribution Factor} \times M_o")
-        st.latex(r"R_n = \frac{M_u}{\phi \times b \times d^2}")
-        st.latex(r"\rho = \frac{0.85 f'_c}{f_y} \left( 1 - \sqrt{1 - \frac{2 R_n}{0.85 f'_c}} \right)")
+        st.markdown(f"$$ M_u = \\text{{Distribution Factor}} \\times M_o $$")
+        st.markdown(f"$$ R_n = \\frac{{M_u}}{{\\phi \\times b \\times d^2}} $$")
+        st.markdown(f"$$ \\rho = \\frac{{0.85 f'_c}}{{f_y}} \\left( 1 - \\sqrt{{1 - \\frac{{2 R_n}}{{0.85 f'_c}}}} \\right) $$")
         
         rho_min = 0.0020 if fy_ksc < 4000 else 0.0018
         st.markdown("**ACI 24.4.3.2 Minimum Shrinkage and Temperature Steel:**")
-        st.latex(rf"\rho_{{min}} = {rho_min} \quad \rightarrow \quad A_{{s,min}} = \rho_{{min}} \times b \times h_{{slab}}")
+        st.markdown(f"$$ \\rho_{{min}} = {rho_min} \\quad \\rightarrow \\quad A_{{s,min}} = \\rho_{{min}} \\times b \\times h_{{slab}} $$")
         st.divider()
         
         if not df_results.empty and 'Location' in df_results.columns:
@@ -289,34 +289,37 @@ def render_ddm_tab(calc_obj):
                 # --- EXPLICIT SOURCE OF b AND d ---
                 st.markdown("**📌 Parameter Sources:**")
                 
-                is_col_strip = 'column' in str(loc_name).lower()
+                # CHANGED: 'col' instead of 'column' to safely catch "Col Strip"
+                is_col_strip = 'col' in str(loc_name).lower()
+                
                 if is_col_strip:
                     st.markdown("- **Strip Width ($b$):** Based on **Column Strip** geometry")
-                    st.latex(rf"b = \frac{{\min(L_1, L_2)}}{{2}} = \frac{{\min({L1:.2f}, {L2:.2f})}}{{2}} = {b_width_m:.2f} \text{{ m}} = \mathbf{{{b_width_cm:.1f} \text{{ cm}}}}")
+                    # CHANGED: Switched to Markdown $$ to prevent f-string rendering errors with \frac and \min
+                    st.markdown(f"$$ b = \\frac{{\\min(L_1, L_2)}}{{2}} = \\frac{{\\min({L1:.2f}, {L2:.2f})}}{{2}} = {b_width_m:.2f} \\text{{ m}} = {b_width_cm:.1f} \\text{{ cm}} $$")
                 else:
                     st.markdown("- **Strip Width ($b$):** Based on **Middle Strip** geometry")
-                    st.latex(rf"b = L_2 - b_{{cs}} = {L2:.2f} - {cs_width:.2f} = {b_width_m:.2f} \text{{ m}} = \mathbf{{{b_width_cm:.1f} \text{{ cm}}}}")
+                    st.markdown(f"$$ b = L_2 - b_{{cs}} = {L2:.2f} - {cs_width:.2f} = {b_width_m:.2f} \\text{{ m}} = {b_width_cm:.1f} \\text{{ cm}} $$")
                     
                 st.markdown("- **Effective Depth ($d$):**")
-                st.latex(rf"d = h_{{slab}} - \text{{Cover}} - \frac{{d_b}}{{2}} = {h_slab_m*100:.1f} - {cc_m*100:.1f} - \frac{{{selected_rebar/10:.1f}}}{{2}} = \mathbf{{{d_eff_cm:.2f} \text{{ cm}}}}")
+                st.markdown(f"$$ d = h_{{slab}} - \\text{{Cover}} - \\frac{{d_b}}{{2}} = {h_slab_m*100:.1f} - {cc_m*100:.1f} - \\frac{{{selected_rebar/10:.1f}}}{{2}} = {d_eff_cm:.2f} \\text{{ cm}} $$")
                 st.write("") # Spacer
 
                 # --- PART 1: Required Steel ---
                 st.markdown("##### 1. Required Steel Calculation ($A_{s,req}$)")
-                st.latex(rf"M_u = {dist_factor:.1f}\% \times M_o = {dist_factor/100:.3f} \times {Mo:,.0f} = \mathbf{{{mu_val:,.0f} \text{{ kg-m}}}}")
-                st.latex(rf"R_n = \frac{{{mu_val:,.0f} \times 100}}{{{phi_flex} \times {b_width_cm:.1f} \times {d_eff_cm:.2f}^2}} = {rn_calc:.2f} \text{{ kg/cm}}^2")
-                st.latex(rf"\rho_{{calc}} = \frac{{0.85 \times {fc_ksc:.0f}}}{{{fy_ksc:.0f}}} \left( 1 - \sqrt{{1 - \frac{{2 \times {rn_calc:.2f}}}{{0.85 \times {fc_ksc:.0f}}}}} \right) = {rho_calc:.5f}")
-                st.latex(rf"A_{{s,calc}} = {rho_calc:.5f} \times {b_width_cm:.1f} \times {d_eff_cm:.2f} = {as_calc:.2f} \text{{ cm}}^2")
-                st.latex(rf"A_{{s,min}} = {rho_min} \times {b_width_cm:.1f} \times {h_slab_m*100.0:.1f} = {as_min:.2f} \text{{ cm}}^2")
-                st.latex(rf"A_{{s,req}} = \max(A_{{s,calc}}, A_{{s,min}}) = \mathbf{{{as_req_final:.2f} \text{{ cm}}^2}}")
+                st.markdown(f"$$ M_u = {dist_factor:.1f}\\% \\times M_o = {dist_factor/100:.3f} \\times {Mo:,.0f} = {mu_val:,.0f} \\text{{ kg-m}} $$")
+                st.markdown(f"$$ R_n = \\frac{{{mu_val:,.0f} \\times 100}}{{{phi_flex} \\times {b_width_cm:.1f} \\times {d_eff_cm:.2f}^2}} = {rn_calc:.2f} \\text{{ kg/cm}}^2 $$")
+                st.markdown(f"$$ \\rho_{{calc}} = \\frac{{0.85 \\times {fc_ksc:.0f}}}{{{fy_ksc:.0f}}} \\left( 1 - \\sqrt{{1 - \\frac{{2 \\times {rn_calc:.2f}}}{{0.85 \\times {fc_ksc:.0f}}}}} \\right) = {rho_calc:.5f} $$")
+                st.markdown(f"$$ A_{{s,calc}} = {rho_calc:.5f} \\times {b_width_cm:.1f} \\times {d_eff_cm:.2f} = {as_calc:.2f} \\text{{ cm}}^2 $$")
+                st.markdown(f"$$ A_{{s,min}} = {rho_min} \\times {b_width_cm:.1f} \\times {h_slab_m*100.0:.1f} = {as_min:.2f} \\text{{ cm}}^2 $$")
+                st.markdown(f"$$ A_{{s,req}} = \\max(A_{{s,calc}}, A_{{s,min}}) = {as_req_final:.2f} \\text{{ cm}}^2 $$")
 
                 st.write("") # Spacer
                 
                 # --- PART 2: Provided Steel ---
                 st.markdown("##### 2. Provided Steel Verification ($A_{s,prov}$)")
                 st.info(f"**Selected Reinforcement in Table:** DB{bar_size} @ {spacing_cm:.1f} cm")
-                st.latex(rf"A_{{bar}} = \frac{{\pi \times {bar_dia_cm:.2f}^2}}{{4}} = {a_bar:.3f} \text{{ cm}}^2")
-                st.latex(rf"A_{{s,prov}} = \frac{{A_{{bar}} \times b}}{{s}} = \frac{{{a_bar:.3f} \times {b_width_cm:.1f}}}{{{spacing_cm:.1f}}} = \mathbf{{{as_prov:.2f} \text{{ cm}}^2}}")
+                st.markdown(f"$$ A_{{bar}} = \\frac{{\\pi \\times {bar_dia_cm:.2f}^2}}{{4}} = {a_bar:.3f} \\text{{ cm}}^2 $$")
+                st.markdown(f"$$ A_{{s,prov}} = \\frac{{A_{{bar}} \\times b}}{{s}} = \\frac{{{a_bar:.3f} \\times {b_width_cm:.1f}}}{{{spacing_cm:.1f}}} = {as_prov:.2f} \\text{{ cm}}^2 $$")
                 
                 check_status = "✅ PASS" if as_prov >= as_req_final else "❌ FAIL"
                 st.success(f"**Conclusion:** $A_{{s,prov}} \ge A_{{s,req}} \implies {as_prov:.2f} \ge {as_req_final:.2f}$ ➡️ **{check_status}**")
@@ -330,7 +333,7 @@ def render_ddm_tab(calc_obj):
         d_shear_cm = d_eff_m * 100.0
         bo_cm = 2 * ((c1*100 + d_shear_cm) + (c2*100 + d_shear_cm))
         
-        st.latex(rf"b_o = 2 \times [({c1*100:.1f} + {d_shear_cm:.1f}) + ({c2*100:.1f} + {d_shear_cm:.1f})] = {bo_cm:.1f} \text{{ cm}}")
+        st.markdown(f"$$ b_o = 2 \\times [({c1*100:.1f} + {d_shear_cm:.1f}) + ({c2*100:.1f} + {d_shear_cm:.1f})] = {bo_cm:.1f} \\text{{ cm}} $$")
         
         st.divider()
         st.markdown("#### ACI 318 Table 22.6.5.2: Two-Way Shear Strength ($V_c$)")
@@ -349,26 +352,22 @@ def render_ddm_tab(calc_obj):
         st.markdown(f"- $\\alpha_s$ (Position Factor) = **{alpha_s}**")
 
         st.markdown("**Equation (a):**")
-        st.latex(r"V_{c1} = 0.33 \sqrt{f'_c} \times b_o \times d")
-        st.latex(rf"V_{{c1}} = 0.33 \sqrt{{{fc_ksc:.0f}}} \times {bo_cm:.1f} \times {d_shear_cm:.1f} = {vc1:,.0f} \text{{ kg}}")
+        st.markdown(f"$$ V_{{c1}} = 0.33 \\sqrt{{{fc_ksc:.0f}}} \\times {bo_cm:.1f} \\times {d_shear_cm:.1f} = {vc1:,.0f} \\text{{ kg}} $$")
         
         st.markdown("**Equation (b):**")
-        st.latex(r"V_{c2} = 0.17 \left( 1 + \frac{2}{\beta} \right) \sqrt{f'_c} \times b_o \times d")
-        st.latex(rf"V_{{c2}} = 0.17 \left( 1 + \frac{{2}}{{{beta_c:.2f}}} \right) \sqrt{{{fc_ksc:.0f}}} \times {bo_cm:.1f} \times {d_shear_cm:.1f} = {vc2:,.0f} \text{{ kg}}")
+        st.markdown(f"$$ V_{{c2}} = 0.17 \\left( 1 + \\frac{{2}}{{{beta_c:.2f}}} \\right) \\sqrt{{{fc_ksc:.0f}}} \\times {bo_cm:.1f} \\times {d_shear_cm:.1f} = {vc2:,.0f} \\text{{ kg}} $$")
         
         st.markdown("**Equation (c):**")
-        st.latex(r"V_{c3} = 0.083 \left( 2 + \frac{\alpha_s \times d}{b_o} \right) \sqrt{f'_c} \times b_o \times d")
-        st.latex(rf"V_{{c3}} = 0.083 \left( 2 + \frac{{{alpha_s} \times {d_shear_cm:.1f}}}{{{bo_cm:.1f}}} \right) \sqrt{{{fc_ksc:.0f}}} \times {bo_cm:.1f} \times {d_shear_cm:.1f} = {vc3:,.0f} \text{{ kg}}")
+        st.markdown(f"$$ V_{{c3}} = 0.083 \\left( 2 + \\frac{{{alpha_s} \\times {d_shear_cm:.1f}}}{{{bo_cm:.1f}}} \\right) \\sqrt{{{fc_ksc:.0f}}} \\times {bo_cm:.1f} \\times {d_shear_cm:.1f} = {vc3:,.0f} \\text{{ kg}} $$")
         
         st.markdown("**Governing Capacity:**")
-        st.latex(rf"\phi V_c = {phi_shear} \times \min(V_{{c1}}, V_{{c2}}, V_{{c3}}) = {phi_shear} \times {vc_gov:,.0f} = \mathbf{{{phi_vc:,.0f} \text{{ kg}}}}")
+        st.markdown(f"$$ \\phi V_c = {phi_shear} \\times \\min(V_{{c1}}, V_{{c2}}, V_{{c3}}) = {phi_shear} \\times {vc_gov:,.0f} = {phi_vc:,.0f} \\text{{ kg}} $$")
 
         st.divider()
         st.markdown("#### Demand vs Capacity Verification")
         vu_kg = wu * ((L1 * L2) - ((c1 + d_eff_m) * (c2 + d_eff_m)))
         
-        st.latex(r"V_u = W_u \times \left[ L_1 \times L_2 - (c_1 + d) \times (c_2 + d) \right]")
-        st.latex(rf"V_u = {wu:,.0f} \times \left[ ({L1:.2f} \times {L2:.2f}) - ({c1+d_eff_m:.2f} \times {c2+d_eff_m:.2f}) \right] = {vu_kg:,.0f} \text{{ kg}}")
+        st.markdown(f"$$ V_u = {wu:,.0f} \\times \\left[ ({L1:.2f} \\times {L2:.2f}) - ({c1+d_eff_m:.2f} \\times {c2+d_eff_m:.2f}) \\right] = {vu_kg:,.0f} \\text{{ kg}} $$")
         
         punch_status = "SAFE" if vu_kg <= phi_vc else "FAIL (Increase slab thickness)"
         st.markdown(f"**Final Verification:** $V_u \le \phi V_c \implies {vu_kg:,.0f} \le {phi_vc:,.0f}$ ➡️ **{punch_status}**")
