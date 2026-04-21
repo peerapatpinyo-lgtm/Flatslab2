@@ -291,11 +291,14 @@ def render_ddm_tab(calc_obj):
                 
                 is_col_strip = 'column' in str(loc_name).lower()
                 if is_col_strip:
-                    st.markdown(f"- **Strip Width ($b$):** Based on **Column Strip** geometry $\\rightarrow b = \\frac{{\\min(L_1, L_2)}}{{2}} = \\frac{{\\min({L1:.2f}, {L2:.2f})}}{{2}} = {b_width_m:.2f}$ m = **{b_width_cm:.1f}** cm.")
+                    st.markdown("- **Strip Width ($b$):** Based on **Column Strip** geometry")
+                    st.latex(rf"b = \frac{{\min(L_1, L_2)}}{{2}} = \frac{{\min({L1:.2f}, {L2:.2f})}}{{2}} = {b_width_m:.2f} \text{{ m}} = \mathbf{{{b_width_cm:.1f} \text{{ cm}}}}")
                 else:
-                    st.markdown(f"- **Strip Width ($b$):** Based on **Middle Strip** geometry $\\rightarrow b = L_2 - b_{{cs}} = {L2:.2f} - {cs_width:.2f} = {b_width_m:.2f}$ m = **{b_width_cm:.1f}** cm.")
+                    st.markdown("- **Strip Width ($b$):** Based on **Middle Strip** geometry")
+                    st.latex(rf"b = L_2 - b_{{cs}} = {L2:.2f} - {cs_width:.2f} = {b_width_m:.2f} \text{{ m}} = \mathbf{{{b_width_cm:.1f} \text{{ cm}}}}")
                     
-                st.markdown(f"- **Effective Depth ($d$):** $h_{{slab}} - \\text{{Cover}} - (d_b/2) = {h_slab_m*100:.1f} - {cc_m*100:.1f} - ({selected_rebar/10:.1f}/2) \\rightarrow d =$ **{d_eff_cm:.2f}** cm.")
+                st.markdown("- **Effective Depth ($d$):**")
+                st.latex(rf"d = h_{{slab}} - \text{{Cover}} - \frac{{d_b}}{{2}} = {h_slab_m*100:.1f} - {cc_m*100:.1f} - \frac{{{selected_rebar/10:.1f}}}{{2}} = \mathbf{{{d_eff_cm:.2f} \text{{ cm}}}}")
                 st.write("") # Spacer
 
                 # --- PART 1: Required Steel ---
