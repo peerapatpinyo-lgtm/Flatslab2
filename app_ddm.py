@@ -194,11 +194,12 @@ def render_ddm_tab(calc_obj):
     st.markdown("### Detailed Engineering Calculation Report")
     st.caption("Reference: ACI 318-19 Building Code Requirements for Structural Concrete")
 
-    tab_limit, tab_load, tab_flex, tab_shear = st.tabs([
+    tab_limit, tab_load, tab_dist, tab_flex, tab_shear = st.tabs([
         "1. Geometry Limits", 
         "2. Loads & Moments", 
-        "3. Flexural Detailing", 
-        "4. Punching Shear"
+        "3. Distribution Factors",
+        "4. Flexural Detailing", 
+        "5. Punching Shear"
     ])
 
     # --- TAB 1: Limitations ---
@@ -215,23 +216,49 @@ def render_ddm_tab(calc_obj):
 
         st.divider()
         st.markdown(f"$$ L_n = \\max(L_1 - c_1, \\ 0.65 L_1) $$")
-        st.markdown(f"**Result:** Ln = max({L1:.2f} - {c1:.2f}, 0.65 \times {L1:.2f}) = **{ln:.2f}** m")
+        st.markdown(f"**Result:** $L_n = \\max({L1:.2f} - {c1:.2f}, 0.65 \\times {L1:.2f}) =$ **{ln:.2f}** m")
 
     # --- TAB 2: Loads & Moments ---
     with tab_load:
         st.markdown("#### ACI 318 Section 5.3.1: Load Combinations")
         st.markdown(f"$$ W_u = 1.4 DL + 1.7 LL $$")
-        st.markdown(f"**Result:** Wu = 1.4({dl:,.0f}) + 1.7({ll:,.0f}) = **{wu:,.0f}** kg/m²")
+        st.markdown(f"**Result:** $W_u = 1.4({dl:,.0f}) + 1.7({ll:,.0f}) =$ **{wu:,.0f}** kg/m²")
 
         st.divider()
         st.markdown("#### ACI 318 Section 8.10.3.2: Total Factored Static Moment")
         st.markdown(f"$$ M_o = \\frac{{W_u \\times L_2 \\times L_n^2}}{{8}} $$")
-        st.markdown(f"**Result:** Mo = ({wu:,.0f} \times {L2:.2f} \times {ln:.2f}^2) / 8 = **{Mo:,.0f}** kg-m")
+        # FIXED: \\times used properly to prevent the \t string bug
+        st.markdown(f"**Result:** $M_o = \\frac{{{wu:,.0f} \\times {L2:.2f} \\times {ln:.2f}^2}}{{8}} =$ **{Mo:,.0f}** kg-m")
 
-    # --- TAB 3: Flexural Design (ALL SECTIONS) ---
+    # --- TAB 3: Distribution Factors (NEW TAB) ---
+    with tab_dist:
+        st.markdown("#### ACI 318 Section 8.10: Distribution of Factored Moments")
+        st.markdown("The Direct Design Method allocates the total static moment ($M_o$) based on empirical tables from the ACI code.")
+        
+        st.markdown("##### 1. Longitudinal Distribution (ACI 318 Section 8.10.4)")
+        st.markdown("Distribution of $M_o$ into Negative and Positive moments based on span position:")
+        dist_data = {
+            "Span Type": ["Interior Span", "Exterior Span (Flat Slab with Edge Beam)", "Exterior Span (Flat Slab without Edge Beam)"],
+            "Interior Negative Moment": ["0.65 $M_o$", "0.70 $M_o$", "0.70 $M_o$"],
+            "Positive Moment": ["0.35 $M_o$", "0.50 $M_o$", "0.52 $M_o$"],
+            "Exterior Negative Moment": ["N/A", "0.30 $M_o$", "0.26 $M_o$"]
+        }
+        st.table(pd.DataFrame(dist_data))
+
+        st.markdown("##### 2. Transverse Distribution (ACI 318 Section 8.10.5)")
+        st.markdown("Distribution of longitudinal moments into Column Strip (CS) and Middle Strip (MS):")
+        trans_data = {
+            "Moment Type": ["Interior Negative", "Exterior Negative (with Edge Beam)", "Exterior Negative (no Edge Beam)", "Positive"],
+            "Column Strip (CS) %": ["75%", "75% - 90% (depends on stiffness)", "100%", "60%"],
+            "Middle Strip (MS) %": ["25%", "25% - 10%", "0%", "40%"]
+        }
+        st.table(pd.DataFrame(trans_data))
+        st.info("*Note: The system backend (`calc_ddm.py`) automatically interpolates exact percentages dynamically based on actual span ratios ($L_2/L_1$) and torsional stiffness per ACI 318.*")
+
+    # --- TAB 4: Flexural Design (ALL SECTIONS) ---
     with tab_flex:
         st.markdown("#### ACI 318 Section 22.2: Flexural Reinforcement Required")
-        st.markdown("Calculations for **every strip** based on the equivalent rectangular concrete stress block. ($\phi = 0.90$)")
+        st.markdown("Calculations for **every strip** based on the equivalent rectangular concrete stress block. ($\\phi = 0.90$)")
         
         st.markdown("**General Formulas:**")
         st.markdown(f"$$ M_u = \\text{{Distribution Factor}} \\times M_o $$")
@@ -289,12 +316,10 @@ def render_ddm_tab(calc_obj):
                 # --- EXPLICIT SOURCE OF b AND d ---
                 st.markdown("**📌 Parameter Sources:**")
                 
-                # CHANGED: 'col' instead of 'column' to safely catch "Col Strip"
                 is_col_strip = 'col' in str(loc_name).lower()
                 
                 if is_col_strip:
                     st.markdown("- **Strip Width ($b$):** Based on **Column Strip** geometry")
-                    # CHANGED: Switched to Markdown $$ to prevent f-string rendering errors with \frac and \min
                     st.markdown(f"$$ b = \\frac{{\\min(L_1, L_2)}}{{2}} = \\frac{{\\min({L1:.2f}, {L2:.2f})}}{{2}} = {b_width_m:.2f} \\text{{ m}} = {b_width_cm:.1f} \\text{{ cm}} $$")
                 else:
                     st.markdown("- **Strip Width ($b$):** Based on **Middle Strip** geometry")
@@ -326,7 +351,7 @@ def render_ddm_tab(calc_obj):
                 
                 st.markdown("---")
 
-    # --- TAB 4: Punching Shear ---
+    # --- TAB 5: Punching Shear ---
     with tab_shear:
         st.markdown("#### ACI 318 Section 22.6.4: Critical Section for Two-Way Shear")
         
