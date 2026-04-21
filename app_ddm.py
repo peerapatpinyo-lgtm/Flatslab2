@@ -370,7 +370,11 @@ def render_ddm_tab(calc_obj):
 
 
     # --- TAB 5: Punching Shear (Updated with Unbalanced Moment Transfer) ---
+    # --- TAB 5: Shear Design (Two-Way and One-Way) ---
     with tab_shear:
+        # ==========================================
+        # --- PART 5.1: TWO-WAY SHEAR (PUNCHING) ---
+        # ==========================================
         st.markdown("#### ACI 318 Section 22.6: Two-Way Shear with Moment Transfer")
         
         # --- 1. Critical Section Geometry ---
@@ -472,4 +476,51 @@ def render_ddm_tab(calc_obj):
         st.markdown("#### Demand vs Capacity Verification (Stress Basis)")
         punch_status = "✅ SAFE" if vu_max <= phi_vc_stress else "❌ FAIL (Increase slab thickness / f'c)"
         
-        st.markdown(f"**Final Verification:** $v_{{u,max}} \le \phi v_c \implies {vu_max:.2f} \\text{{ ksc}} \le {phi_vc_stress:.2f} \\text{{ ksc}}$ ➡️ **{punch_status}**")
+        st.markdown(f"**Final Verification:** $v_{{u,max}} \\le \\phi v_c \\implies {vu_max:.2f} \\text{{ ksc}} \\le {phi_vc_stress:.2f} \\text{{ ksc}}$ ➡️ **{punch_status}**")
+
+
+        # ==========================================
+        # --- PART 5.2: ONE-WAY SHEAR (BEAM ACTION) ---
+        # ==========================================
+        st.divider()
+        st.markdown("#### ACI 318 Section 22.5: One-Way (Beam Action) Shear")
+        st.markdown("ตรวจสอบหน้าตัดวิกฤตที่ระยะ $d$ จากขอบเสา โดยคิดความกว้างพื้นเต็มช่วง ($b_w = L_2$)")
+        
+        # --- 1. Geometry & Critical Section ---
+        # ระยะห่างจากกึ่งกลางเสาถึงหน้าตัดวิกฤต = c1/2 + d
+        dist_crit_m = (c1 / 2.0) + d_eff_m
+        
+        # ความยาวของพื้นที่รับน้ำหนัก (Tributary Length) ที่ทำให้เกิดแรงเฉือน ณ หน้าตัดวิกฤต
+        L_trib_m = (L1 / 2.0) - dist_crit_m
+        if L_trib_m < 0:
+            L_trib_m = 0  # ป้องกันกรณีพื้นหนามากหรือช่วงสั้นมากจนหน้าตัดวิกฤตเลยกึ่งกลางช่วง
+            
+        b_w_m = L2
+        b_w_cm = b_w_m * 100.0
+        
+        st.markdown("**1. Demand Calculation ($V_{u,1way}$)**")
+        st.markdown(f"- ระยะหน้าตัดวิกฤตจากกึ่งกลางเสา = $c_1/2 + d = {c1/2:.2f} + {d_eff_m:.2f} = {dist_crit_m:.2f} \\text{{ m}}$")
+        st.markdown(f"- ระยะรับน้ำหนักเฉือน (Tributary Length) = $L_1/2 - ({dist_crit_m:.2f}) = {(L1/2):.2f} - {dist_crit_m:.2f} = {L_trib_m:.2f} \\text{{ m}}$")
+        
+        vu_1way_kg = wu * b_w_m * L_trib_m
+        st.markdown(f"$$ V_{{u,1way}} = w_u \\times L_2 \\times \\text{{Tributary Length}} $$")
+        st.markdown(f"$$ V_{{u,1way}} = {wu:,.0f} \\times {b_w_m:.2f} \\times {L_trib_m:.2f} = {vu_1way_kg:,.0f} \\text{{ kg}} $$")
+        
+        # --- 2. Capacity Calculation ---
+        st.markdown("**2. Capacity Calculation ($\\phi V_{c,1way}$)**")
+        st.info("💡 **Note:** ใช้สัมประสิทธิ์ MKS: $0.53$ (เทียบเท่า $0.17$ ในระบบ SI) และ $\\phi = 0.75$ สำหรับแรงเฉือนแบบทางเดียว")
+        
+        # Vc สำหรับ One-way shear = 0.53 * sqrt(fc') * bw * d
+        vc_1way_kg = 0.53 * math.sqrt(fc_ksc) * b_w_cm * d_shear_cm
+        phi_vc_1way = 0.75 * vc_1way_kg
+        
+        st.markdown(f"$$ V_{{c,1way}} = 0.53 \\sqrt{{{fc_ksc:.0f}}} \\times b_w \\times d $$")
+        st.markdown(f"$$ V_{{c,1way}} = 0.53 \\times {math.sqrt(fc_ksc):.2f} \\times {b_w_cm:.1f} \\times {d_shear_cm:.1f} = {vc_1way_kg:,.0f} \\text{{ kg}} $$")
+        st.markdown(f"$$ \\phi V_{{c,1way}} = 0.75 \\times {vc_1way_kg:,.0f} = {phi_vc_1way:,.0f} \\text{{ kg}} $$")
+        
+        # --- 3. Verification ---
+        st.markdown("**3. Demand vs Capacity Verification**")
+        oneway_status = "✅ SAFE" if vu_1way_kg <= phi_vc_1way else "❌ FAIL (Increase slab thickness / f'c)"
+        
+        st.markdown(f"**Final Verification:** $V_{{u,1way}} \\le \\phi V_{{c,1way}} \\implies {vu_1way_kg:,.0f} \\text{{ kg}} \\le {phi_vc_1way:,.0f} \\text{{ kg}}$ ➡️ **{oneway_status}**")
+   
