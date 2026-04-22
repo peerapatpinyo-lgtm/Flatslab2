@@ -317,20 +317,32 @@ def render_ddm_tab(calc_obj):
                 
                 st.markdown(f"#### 📍 Section: `{loc_name}`")
                 
+
                 # --- NEW: Moment Distribution Breakdown ---
                 st.markdown("**🔍 Moment Distribution Breakdown:**")
-                is_col_strip = 'col' in str(loc_name).lower()
+                is_col_strip = 'Col' in loc_name
                 
-                if "Negative" in loc_name:
-                    long_f = 0.65 if "Interior" in loc_name else (0.70 if has_edge_beam else 0.26)
-                else: # Positive
-                    long_f = 0.35 if "Interior" in loc_name else (0.50 if has_edge_beam else 0.52)
+                # 1. เช็คว่าเป็นช่วงภายใน (Interior Span) หรือช่วงภายนอก (Exterior Span)
+                is_interior_span = "Ext:" not in loc_name
                 
+                # 2. หาค่า Longitudinal Factor (long_f) ให้ตรงกับ Backend
+                if is_interior_span:
+                    long_f = 0.65 if "Neg" in loc_name else 0.35
+                else: # Exterior Span
+                    if "Int Neg" in loc_name:
+                        long_f = 0.70 # (ค่า default พื้นฐานอิงตาม Slab with/without edge beam)
+                    elif "Ext Neg" in loc_name:
+                        long_f = 0.30 if has_edge_beam else 0.26
+                    else: # Pos
+                        long_f = 0.50 if has_edge_beam else 0.52
+                
+                # ป้องกัน division by zero
                 trans_f = net_factor / long_f if long_f > 0 else 0
                 
                 st.markdown(f"- **Longitudinal Factor:** {long_f:.3f} (ACI 8.10.4)")
                 st.markdown(f"- **Transverse Factor:** {trans_f:.3f} (ACI 8.10.5 - to {'Column Strip' if is_col_strip else 'Middle Strip'})")
                 st.markdown(f"- **Net Multiplier:** ${long_f:.3f} \\times {trans_f:.3f} = {net_factor:.4f}$")
+
                 
                 # --- EXPLICIT SOURCE OF b AND d ---
                 st.markdown("**📌 Parameter Sources:**")
