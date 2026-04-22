@@ -179,16 +179,19 @@ with tab1:
             with d_col3: drop_w2 = st.number_input("Drop Width W2 (m)", value=float(f"{def_w2:.2f}"))
 
         # --- PROCESS DATA ---
+        # ⚠️ ต้องแน่ใจว่าไปเพิ่ม drop_w1 และ col_location ในพารามิเตอร์รับค่าของไฟล์ app_calc.py ด้วยนะครับ
         calc_obj = app_calc.prepare_calculation_data(
-            h_slab_cm, h_drop_cm, has_drop, c1_cm, c2_cm, drop_w2,
+            h_slab_cm, h_drop_cm, has_drop, c1_cm, c2_cm, drop_w1, drop_w2, # ✅ เพิ่ม drop_w1 ตรงนี้
+            col_location, # ✅ ส่ง col_location เข้าไปคำนวณโดยตรง
             L1_l, L1_r, L2_t, L2_b, fc, fy, dl, ll, auto_sw, lf_dl, lf_ll,
             joint_type, h_up, h_lo, far_end_up, far_end_lo, cant_params,
             edge_beam_params
         )
 
-        # 🌟 เพิ่ม 2 บรรทัดนี้ เพื่อแนบข้อมูลส่งข้าม Tab ไปให้ DDM ครับ
-        calc_obj['col_location_raw'] = col_location
+        # เนื่องจากส่ง col_location และ fy เข้าฟังก์ชันไปแล้ว บรรทัดข้างล่างนี้อาจจะไม่จำเป็นต้องใช้ (ขึ้นอยู่กับว่าใน app_calc.py เขียนดึงค่าไว้อย่างไร)
+        calc_obj['col_location_raw'] = col_location 
         calc_obj['fy_raw'] = fy
+        
 
         validator = app_calc.DesignCriteriaValidator(
             calc_obj['geom']['L1'], calc_obj['geom']['L2'], L1_l, L1_r, L2_t, L2_b,
