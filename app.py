@@ -186,6 +186,10 @@ with tab1:
             edge_beam_params
         )
 
+        # 🌟 เพิ่ม 2 บรรทัดนี้ เพื่อแนบข้อมูลส่งข้าม Tab ไปให้ DDM ครับ
+        calc_obj['col_location_raw'] = col_location
+        calc_obj['fy_raw'] = fy
+
         validator = app_calc.DesignCriteriaValidator(
             calc_obj['geom']['L1'], calc_obj['geom']['L2'], L1_l, L1_r, L2_t, L2_b,
             ll, (calc_obj['loads']['w_dead'] / Units.G), has_drop, cant_params,
