@@ -1,6 +1,7 @@
 # calc_ddm.py
 import pandas as pd
 import numpy as np
+import math
 
 def get_moment_coefficients(case_type, edge_condition="Slab with edge beam"):
     """
@@ -91,7 +92,6 @@ def calculate_ddm(inputs):
 
     # ==========================================
     # --- 3. DDM MOMENT CALCULATION ---
-    # (ต้องคำนวณก่อนเพื่อเอาโมเมนต์ลบไปใช้เช็ค Unbalanced Moment)
     # ==========================================
     ln = max(ln_actual, 0.65 * l1)
     if ln > ln_actual:
@@ -119,11 +119,15 @@ def calculate_ddm(inputs):
     cs_pos_pct = 0.60
     cs_int_neg_pct = 0.75
     
+    # 🚨 แก้บั๊ก: ปรับสูตร Interpolation สำหรับ Column Strip (Exterior Negative) ให้ถูกต้องตาม ACI
     if beta_t == 0:
         cs_ext_neg_pct = 1.00 
     else:
-        p_25 = 75 if l2_l1 <= 1.0 else 75 + 15 * (l2_l1 - 1.0)
-        cs_ext_neg_pct = (100 - (100 - p_25) * min(beta_t, 2.5) / 2.5) / 100.0
+        if l2_l1 <= 1.0:
+            p_25 = 100.0
+        else:
+            p_25 = 100.0 - 25.0 * (l2_l1 - 1.0)
+        cs_ext_neg_pct = (100.0 - (100.0 - p_25) * (min(beta_t, 2.5) / 2.5)) / 100.0
 
     details['cs_ext_pct'] = cs_ext_neg_pct * 100
 
@@ -143,7 +147,6 @@ def calculate_ddm(inputs):
     is_interior = (case_type == "Interior")
     alpha_s = 40 if is_interior else 30  # 40 for interior, 30 for edge
     
-    # Helper function: Calculate vc per ACI 318-19 (metric equivalent kg/cm2)
     def calc_vc_aci(f_c, bo_val, d_val, alpha_s_val, beta_c_val):
         sq_fc = np.sqrt(f_c)
         
@@ -161,7 +164,6 @@ def calculate_ddm(inputs):
     punch_steps = ""
     punch_pass = True
 
-    # --- Section 1: At distance d/2 from Column Face ---
     d1 = (h_drop if has_drop else h_slab) - 3.0 # cm
     
     if is_interior:
@@ -182,11 +184,9 @@ def calculate_ddm(inputs):
         bo1 = 2 * b1 + b2
         Ac = bo1 * d1
         
-        # หาจุดเซนทรอยด์ของกลุ่มรอยแตกและ Jc
         c_AB = (b1**2 * d1) / Ac
         Jc = (d1 * b1**3)/6 + (b1 * d1**3)/6 + 2*(d1*b1)*((b1/2) - c_AB)**2 + (d1*b2)*c_AB**2
         
-        # สัดส่วนการถ่ายเทโมเมนต์ผ่านแรงเฉือน
         gamma_f = 1 / (1 + (2/3)*np.sqrt(b1/b2))
         gamma_v = 1 - gamma_f
         
@@ -203,7 +203,6 @@ def calculate_ddm(inputs):
         punch_steps += rf"J_c = {Jc:,.0f} \text{{ cm}}^4, \gamma_v = {gamma_v:.2f} \\"
         punch_steps += rf"v_u = {vu_shear:.2f} + {vu_moment:.2f} = {vu_applied:.2f} \text{{ ksc}} \\"
 
-    # เช็คความต้านทานแรงเฉือนของคอนกรีต (Section 1)
     vc1 = calc_vc_aci(fc, bo1, d1, alpha_s, beta_c)
     phi_vc1_stress = 0.75 * vc1
     punch_steps += rf"\phi v_c = {phi_vc1_stress:.2f} \text{{ ksc}} \\"
@@ -212,10 +211,8 @@ def calculate_ddm(inputs):
         punch_msgs.append(f"🚨 ทะลุรอบหัวเสา: vu ({vu_applied:.2f} ksc) > φvc ({phi_vc1_stress:.2f} ksc)")
         punch_pass = False
 
-    # --- Section 2: At distance d/2 from Drop Panel Face (If present) ---
     if has_drop:
         d2 = h_slab - 3.0
-        # ACI minimum drop panel dimensions (L/3)
         w_drop1_cm, w_drop2_cm = (l1 / 3) * 100, (l2 / 3) * 100 
         
         if is_interior:
@@ -226,7 +223,7 @@ def calculate_ddm(inputs):
             area_out_2 = (l1 * l2 / 2) - ((w_drop1_cm + d2/2)/100 * (w_drop2_cm + d2)/100)
             
         Vu2 = wu * max(area_out_2, 0)
-        vc2 = calc_vc_aci(fc, bo2, d2, alpha_s, 1.0) # beta_c ≈ 1.0 for drop panel proportion
+        vc2 = calc_vc_aci(fc, bo2, d2, alpha_s, 1.0)
         phi_Vc2_force = 0.75 * vc2 * bo2 * d2
         
         punch_steps += rf"\textbf{{2. รอบ Drop Panel ($d_2={d2:.0f}$ cm, $b_{{o2}}={bo2:.0f}$ cm):}} \\"
@@ -247,6 +244,10 @@ def calculate_ddm(inputs):
     # ==========================================
     # --- 5. REBAR CALCULATION ---
     # ==========================================
+    
+    def round_down_spacing(s, step=2.5):
+        """ฟังก์ชันช่วยปัดเศษระยะเรียงเหล็กให้ลงตัว เช่น 12.5, 15, 17.5"""
+        return math.floor(s / step) * step
         
     def solve_rebar(moment_kgm, b_cm, h_cm, loc_name):
         if moment_kgm <= 0.1: return None 
@@ -260,11 +261,13 @@ def calculate_ddm(inputs):
 
         try:
             Rn = mu_kgcm / (phi * b_cm * (d_cm**2))
-            limit_rn = 0.35 * fc 
+            
+            # ปรับปรุง: ใช้ค่า Rn_max ที่รัดกุมขึ้น (ประมาณ 0.25fc สำหรับ tension-controlled)
+            limit_rn = 0.25 * fc 
             if Rn > limit_rn:
                 return {
                     "Location": loc_name, "Moment (kg-m)": round(moment_kgm, 2), "As Req (cm²)": 0,
-                    "Rebar Suggestion": "❌ Section Too Thin", "Status": "Fail", "d (cm)": f"{d_cm:.0f}"
+                    "Rebar Suggestion": "❌ Section Too Thin (Over-reinforced)", "Status": "Fail", "d (cm)": f"{d_cm:.0f}"
                 }
 
             term = 1 - (2 * Rn) / (0.85 * fc)
@@ -283,19 +286,23 @@ def calculate_ddm(inputs):
         as_temp = rho_min * b_cm * h_cm 
         as_final = max(as_calc, as_temp)
         
-        # คำนวณพื้นที่หน้าตัดเหล็ก (Area) จากขนาดเหล็กที่เลือก
         rebar_dia_cm = rebar_size / 10.0
         rebar_area = (np.pi * (rebar_dia_cm ** 2)) / 4.0
         
         n_bars = max(2, int(np.ceil(as_final / rebar_area))) 
-        spacing = min(b_cm / n_bars, min(2 * h_cm, 45))
-        n_bars = int(np.ceil(b_cm / spacing))
+        
+        # 💡 ปรับปรุง: ปัดเศษระยะ Spacing ให้เป็นระยะที่ทำงานได้จริง (ทีละ 2.5 cm)
+        raw_spacing = min(b_cm / n_bars, min(2 * h_cm, 45))
+        prac_spacing = round_down_spacing(raw_spacing, 2.5)
+        
+        # คำนวณจำนวนเหล็กใหม่ตามระยะที่ปัดเศษแล้ว
+        n_bars_final = int(np.ceil(b_cm / prac_spacing))
         
         status = "Min Steel" if as_calc < as_temp else "OK"
         
         return {
             "Location": loc_name, "Moment (kg-m)": round(moment_kgm, 2), "As Req (cm²)": round(as_final, 2),
-            "Rebar Suggestion": f"{n_bars}-DB{int(rebar_size)} @ {int(spacing)} cm", "Status": status, "d (cm)": f"{d_cm:.0f}"
+            "Rebar Suggestion": f"{n_bars_final}-DB{int(rebar_size)} @ {prac_spacing:g} cm", "Status": status, "d (cm)": f"{d_cm:.0f}"
         }
 
     width_cs_m = 0.5 * min(l1, l2)
