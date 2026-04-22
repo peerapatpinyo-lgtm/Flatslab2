@@ -19,94 +19,69 @@ def translate_warnings(msg):
         msg = msg.replace(th, en)
     return msg
 
+
+from calc_ddm import calculate_ddm
+
 def render_ddm_tab(calc_obj):
-    st.header("🏗️ Direct Design Method (DDM) - Professional Edition")
-    st.caption("Comprehensive reinforcement and two-way shear design per ACI 318-19.")
-    st.divider()
+    # -----------------------------------------------------
+    # 1. แปลงค่า (Data Transformation) ให้ตรงกับ Backend
+    # -----------------------------------------------------
+    # ตัดคำว่า " Column" ออกให้เหลือแค่ "Interior", "Edge", "Corner"
+    col_loc_raw = calc_obj.get('col_location_raw', 'Interior Column')
+    col_loc = col_loc_raw.split()[0] 
+    
+    # กำหนด case_type สำหรับการกระจายโมเมนต์ดัด
+    case_type = "Interior" if col_loc == "Interior" else "Exterior"
 
-    try:
-        # ==========================================================================
-        # STEP 1: EXTRACT INPUTS
-        # ==========================================================================
-        geom = calc_obj.get('geom', {})
-        orig_L1, orig_L2 = geom.get('L1', 6.0), geom.get('L2', 6.0)
-        orig_c1, orig_c2 = geom.get('c1', 0.5), geom.get('c2', 0.5)
+    # แปลงเหล็กเสริมจาก String เป็นตัวเลข (ksc)
+    fy_str = calc_obj.get('fy_raw', 'SD40')
+    if 'SD30' in fy_str: fy_val = 3000
+    elif 'SD50' in fy_str: fy_val = 5000
+    else: fy_val = 4000
+
+    # -----------------------------------------------------
+    # 2. จัดเตรียมแพ็กเกจข้อมูล (inputs Dictionary)
+    # -----------------------------------------------------
+    # ⚠️ หมายเหตุ: โครงสร้าง ['geom'], ['loads'] ด้านล่างนี้อ้างอิงจากมาตรฐานทั่วไป 
+    # หากคีย์ในไฟล์ app_calc.py ของคุณชื่อต่างออกไป สามารถปรับแก้ชื่อคีย์ได้เลยครับ
+    
+    inputs = {
+        'l1': calc_obj['geom']['L1'],
+        'l2': calc_obj['geom']['L2'],
+        'ln': calc_obj['geom']['Ln'], # หรือคำนวณสดถ้าใน calc_obj ไม่มี
+        'wu': calc_obj['loads']['wu'], # น้ำหนักบรรทุกประลัย (kg/m²)
         
-        col_setup1, col_setup2 = st.columns(2)
+        # ขนาดเสาต้องแปลงเป็น "เมตร"
+        'c1': calc_obj['geom'].get('c1_cm', 50) / 100.0, 
+        'c2': calc_obj['geom'].get('c2_cm', 50) / 100.0,
         
-        with col_setup1:
-            st.markdown("### 🎯 Step 1: Analysis Direction")
-            analysis_dir = st.radio(
-                "Select span direction to analyze:",
-                ["Direction 1 (Span = L1)", "Direction 2 (Span = L2)"],
-                horizontal=True,
-                label_visibility="collapsed"
-            )
-            
-            if "Direction 1" in analysis_dir:
-                L1, L2, c1, c2 = orig_L1, orig_L2, orig_c1, orig_c2
-                st.success(f"**Current:** Analyzing Span = {L1:.2f} m")
-            else:
-                L1, L2, c1, c2 = orig_L2, orig_L1, orig_c2, orig_c1
-                st.info(f"**Swapped:** Analyzing Span = {L1:.2f} m")
-
-        with col_setup2:
-            st.markdown("### ⚙️ Step 2: Global Rebar Setup")
-            col_r1, col_r2 = st.columns(2)
-            with col_r1:
-                selected_rebar = st.selectbox("Base Bar Size:", [10, 12, 16, 20, 25], index=1, format_func=lambda x: f"DB{x}")
-            with col_r2:
-                default_spacing = st.number_input("Base Spacing (cm):", 5.0, 50.0, 20.0, 2.5)
-
-        # Geometry & Clear Span
-        ln_actual = L1 - c1
-        ln = max(ln_actual, 0.65 * L1)
-        h_slab_m = geom.get('h_s', 0.20)
-        h_drop_m = geom.get('h_d', h_slab_m)
-        has_drop = h_drop_m > h_slab_m
+        # ความหนาใช้เป็น "เซนติเมตร"
+        'h_slab': calc_obj['geom']['h_slab_cm'],
+        'has_drop': calc_obj['geom']['has_drop'],
+        'h_drop': calc_obj['geom'].get('h_drop_cm', 0) if calc_obj['geom']['has_drop'] else calc_obj['geom']['h_slab_cm'],
         
-        # ACI 20.5.1.3: Concrete cover
-        cc_m = 0.020 
-        d_eff_m = h_slab_m - cc_m - (selected_rebar / 2000.0) 
+        # คุณสมบัติวัสดุ
+        'fc': calc_obj['mat']['fc'],
+        'fy': fy_val,
         
-        edge_beam = geom.get('edge_beam_params', {})
-        has_edge_beam = edge_beam.get('has_beam', False)
-        eb_width = edge_beam.get('width_cm', 0) / 100.0
-        eb_depth = edge_beam.get('depth_cm', 0) / 100.0
-        case_type = "Exterior" if has_edge_beam else "Interior"
+        # 🌟 ตัวแปรสำคัญสำหรับ Punching Shear (แยกเคส Corner / Edge)
+        'case_type': case_type,
+        'col_location': col_loc, 
         
-        # Materials
-        KSC_TO_PA = 98066.5
-        mat = calc_obj.get('mat', {})
-        fc_ksc = mat.get('fc_pa', 240 * KSC_TO_PA) / KSC_TO_PA
-        fy_ksc = mat.get('fy_pa', 4000 * KSC_TO_PA) / KSC_TO_PA
+        # คานขอบ (ขนาดแปลงเป็นเมตร)
+        'has_edge_beam': calc_obj['geom']['edge_beam']['has_beam'],
+        'eb_width': calc_obj['geom']['edge_beam']['width_cm'] / 100.0,
+        'eb_depth': calc_obj['geom']['edge_beam']['depth_cm'] / 100.0,
+        
+        'rebar_size': 12.0 # ขนาดเหล็กเริ่มต้น (mm)
+    }
 
-        # Loads
-        loads = calc_obj.get('loads', {})
-        G = 9.80665
-        wu = loads.get('wu_pa', 0) / G
-        dl = loads.get('w_dead', 0) / G
-        ll = (wu - 1.4 * dl) / 1.7 if wu > 0 else 300
-
-        ddm_inputs = {
-            'l1': L1, 'l2': L2, 'ln': ln, 'c1': c1, 'c2': c2,
-            'wu': wu, 'dl': dl, 'll': ll,
-            'h_slab': h_slab_m * 100, 'h_drop': h_drop_m * 100, 'has_drop': has_drop,
-            'fc': fc_ksc, 'fy': fy_ksc, 'case_type': case_type, 
-            'has_edge_beam': has_edge_beam, 'eb_width': eb_width, 'eb_depth': eb_depth,
-            'rebar_size': selected_rebar 
-        }
-
-    except Exception as e:
-        st.error(f"Missing Input Data: {e}")
-        return
-
-    st.divider()
-
-    # ==========================================================================
-    # STEP 3: CONSTRAINTS & FORCES
-    # ==========================================================================
-    df_results, Mo, warning_msgs, details = calc_ddm.calculate_ddm(ddm_inputs)
+    # -----------------------------------------------------
+    # 3. ส่งไปคำนวณและรับผลลัพธ์
+    # -----------------------------------------------------
+    df_res, Mo, msgs, details = calculate_ddm(inputs)
+    
+    # โค้ดส่วนแสดงผล UI (st.write, st.dataframe) ของคุณต่อจากนี้...
 
     st.markdown("### Step 3: Forces & Constraints")
     
