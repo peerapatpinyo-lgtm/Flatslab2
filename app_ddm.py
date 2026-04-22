@@ -22,64 +22,46 @@ def translate_warnings(msg):
 
 from calc_ddm import calculate_ddm
 
+
 def render_ddm_tab(calc_obj):
-    # -----------------------------------------------------
-    # 1. แปลงค่า (Data Transformation) ให้ตรงกับ Backend
-    # -----------------------------------------------------
-    # ตัดคำว่า " Column" ออกให้เหลือแค่ "Interior", "Edge", "Corner"
-    col_loc_raw = calc_obj.get('col_location_raw', 'Interior Column')
-    col_loc = col_loc_raw.split()[0] 
+    # 🌟 1. ดึงค่าและตัดคำให้เหลือแค่ "Interior", "Edge", "Corner"
+    raw_loc = calc_obj.get('col_location_raw', 'Interior Column')
+    col_loc = raw_loc.replace(" Column", "") 
     
-    # กำหนด case_type สำหรับการกระจายโมเมนต์ดัด
-    case_type = "Interior" if col_loc == "Interior" else "Exterior"
-
-    # แปลงเหล็กเสริมจาก String เป็นตัวเลข (ksc)
+    # กำหนดเหล็กเสริม
     fy_str = calc_obj.get('fy_raw', 'SD40')
-    if 'SD30' in fy_str: fy_val = 3000
-    elif 'SD50' in fy_str: fy_val = 5000
-    else: fy_val = 4000
+    fy_val = 3000 if 'SD30' in fy_str else (5000 if 'SD50' in fy_str else 4000)
 
-    # -----------------------------------------------------
-    # 2. จัดเตรียมแพ็กเกจข้อมูล (inputs Dictionary)
-    # -----------------------------------------------------
-    # ⚠️ หมายเหตุ: โครงสร้าง ['geom'], ['loads'] ด้านล่างนี้อ้างอิงจากมาตรฐานทั่วไป 
-    # หากคีย์ในไฟล์ app_calc.py ของคุณชื่อต่างออกไป สามารถปรับแก้ชื่อคีย์ได้เลยครับ
-    
+    # 🌟 2. แพ็กข้อมูลให้ครบก่อนส่งเข้า calc_ddm
     inputs = {
         'l1': calc_obj['geom']['L1'],
         'l2': calc_obj['geom']['L2'],
-        'ln': calc_obj['geom']['Ln'], # หรือคำนวณสดถ้าใน calc_obj ไม่มี
-        'wu': calc_obj['loads']['wu'], # น้ำหนักบรรทุกประลัย (kg/m²)
+        'wu': calc_obj['loads']['wu'],
         
-        # ขนาดเสาต้องแปลงเป็น "เมตร"
+        # ขนาดเสาเป็นเมตร
         'c1': calc_obj['geom'].get('c1_cm', 50) / 100.0, 
         'c2': calc_obj['geom'].get('c2_cm', 50) / 100.0,
         
-        # ความหนาใช้เป็น "เซนติเมตร"
         'h_slab': calc_obj['geom']['h_slab_cm'],
         'has_drop': calc_obj['geom']['has_drop'],
         'h_drop': calc_obj['geom'].get('h_drop_cm', 0) if calc_obj['geom']['has_drop'] else calc_obj['geom']['h_slab_cm'],
         
-        # คุณสมบัติวัสดุ
         'fc': calc_obj['mat']['fc'],
         'fy': fy_val,
         
-        # 🌟 ตัวแปรสำคัญสำหรับ Punching Shear (แยกเคส Corner / Edge)
-        'case_type': case_type,
+        # 🌟 ลิงก์ตรงนี้! ตัวแปรตำแหน่งเสาจะถูกส่งไปเช็ค b_o
         'col_location': col_loc, 
+        'case_type': "Interior" if col_loc == "Interior" else "Exterior",
         
-        # คานขอบ (ขนาดแปลงเป็นเมตร)
         'has_edge_beam': calc_obj['geom']['edge_beam']['has_beam'],
         'eb_width': calc_obj['geom']['edge_beam']['width_cm'] / 100.0,
         'eb_depth': calc_obj['geom']['edge_beam']['depth_cm'] / 100.0,
-        
-        'rebar_size': 12.0 # ขนาดเหล็กเริ่มต้น (mm)
     }
 
-    # -----------------------------------------------------
-    # 3. ส่งไปคำนวณและรับผลลัพธ์
-    # -----------------------------------------------------
+    # 3. เรียกคำนวณ
     df_res, Mo, msgs, details = calculate_ddm(inputs)
+    
+ 
     
     # โค้ดส่วนแสดงผล UI (st.write, st.dataframe) ของคุณต่อจากนี้...
 
