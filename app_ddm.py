@@ -355,8 +355,6 @@ def render_ddm_tab(calc_obj):
                 
                 st.markdown("---")
 
-
-    # --- TAB 5: Punching Shear (Updated with Unbalanced Moment Transfer) ---
     # --- TAB 5: Shear Design (Two-Way and One-Way) ---
     with tab_shear:
         # ==========================================
