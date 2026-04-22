@@ -139,9 +139,12 @@ class DesignCriteriaValidator:
 
         return status, reasons
 
+
+# แก้ไขช่วงรับพารามิเตอร์ของฟังก์ชัน
 def prepare_calculation_data(
     h_slab_cm, h_drop_cm, has_drop, 
-    c1_cm, c2_cm, drop_w2,
+    c1_cm, c2_cm, drop_w1, drop_w2,   # ✅ 1. เพิ่ม drop_w1 ตรงนี้
+    col_location,                     # ✅ 2. เพิ่ม col_location เข้ามา
     L1_l, L1_r, L2_t, L2_b,
     fc_ksc, fy_grade, 
     dl_kgm2, ll_kgm2,
@@ -149,14 +152,14 @@ def prepare_calculation_data(
     joint_type, h_up, h_lo,
     far_end_up, far_end_lo,
     cant_params,
-    edge_beam_params # <--- Added Argument here
+    edge_beam_params 
 ):
     # Geometry
     h_s = h_slab_cm * Units.CM_TO_M
     h_d = (h_slab_cm + h_drop_cm) * Units.CM_TO_M if has_drop else h_s
     c1 = c1_cm * Units.CM_TO_M
     c2 = c2_cm * Units.CM_TO_M
-    b_drop = drop_w2 if has_drop else 0.0
+    b_drop = drop_w2 if has_drop else 0.0  # (เก็บไว้เผื่อมีโค้ดเก่าอ้างอิงอยู่)
     L1 = L1_l + L1_r
     L2 = L2_t + L2_b
     Ln = L1 - c1
@@ -218,12 +221,17 @@ def prepare_calculation_data(
         "cantilever_effect": f"Counter-acting Moments: L={m_cant_left/1000:.1f} kN.m, R={m_cant_right/1000:.1f} kN.m"
     }
 
+    # ✅ 3. แก้ไขส่วนการ Return ข้อมูล
     return {
         "geom": {
             "L1": L1, "L2": L2, "Ln": Ln, "c1": c1, "c2": c2, 
             "h_s": h_s, "h_d": h_d, "b_drop": b_drop,
-            "edge_beam_params": edge_beam_params # <--- Included in return dict
+            "drop_w1": drop_w1, # <--- ส่งความกว้าง Drop Panel แกน 1
+            "drop_w2": drop_w2, # <--- ส่งความกว้าง Drop Panel แกน 2
+            "edge_beam_params": edge_beam_params 
         },
+        "col_location_raw": col_location, # <--- ส่งตำแหน่งเสาไปให้ DDM ใช้
+        "fy_raw": fy_grade,               # <--- ส่งข้อมูลเหล็กกลับไปด้วย
         "vertical_geom": {
             "h_up": calc_h_up, "h_lo": h_lo, "is_roof": is_roof,
             "far_end_up": far_end_up, "far_end_lo": far_end_lo
