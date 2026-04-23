@@ -21,20 +21,21 @@ def translate_warnings(msg):
 
 from calc_ddm import calculate_ddm
 
-
 def render_ddm_tab(calc_obj):
     # =========================================================================
     # 🌟 1. ดึงข้อมูลพื้นฐานอย่างปลอดภัย (กัน KeyError และค่าเป็น 0)
     # =========================================================================
     raw_loc = calc_obj.get('col_location_raw', 'Interior Column')
-    col_loc = raw_loc.replace(" Column", "") 
+    col_loc = str(raw_loc).replace(" Column", "") 
     
-    fy_str = calc_obj.get('fy_raw', 'SD40')
-    fy_val = 3000 if 'SD30' in fy_str else (5000 if 'SD50' in fy_str else 4000)
+    # ✅ แก้ไขแล้ว: ดึงตัวเลข fy มาใช้ได้เลย
+    fy_val = calc_obj.get('mat', {}).get('fy', 4000)
 
     loads_data = calc_obj.get('loads', {})
     dl = loads_data.get('dl', loads_data.get('DL', 0))
     ll = loads_data.get('ll', loads_data.get('LL', 0))
+    # ... โค้ดส่วนอื่นๆ คงเดิม ...
+
     wu = loads_data.get('wu', (1.4 * dl) + (1.7 * ll))
 
     geom_data = calc_obj.get('geom', {})
