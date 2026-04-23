@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import math
 import calc_ddm
+import viz_ddm
 
 def translate_warnings(msg):
     """Intercepts and translates Thai messages from the backend calc_ddm file."""
