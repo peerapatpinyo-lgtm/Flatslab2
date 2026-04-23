@@ -19,128 +19,104 @@ def translate_warnings(msg):
         msg = msg.replace(th, en)
     return msg
 
-
 from calc_ddm import calculate_ddm
 
 
 def render_ddm_tab(calc_obj):
-    # 🌟 1. ดึงค่าและตัดคำให้เหลือแค่ "Interior", "Edge", "Corner"
+    # =========================================================================
+    # 🌟 1. ดึงข้อมูลพื้นฐานอย่างปลอดภัย (กัน KeyError และค่าเป็น 0)
+    # =========================================================================
     raw_loc = calc_obj.get('col_location_raw', 'Interior Column')
     col_loc = raw_loc.replace(" Column", "") 
     
-    # กำหนดเหล็กเสริม
     fy_str = calc_obj.get('fy_raw', 'SD40')
     fy_val = 3000 if 'SD30' in fy_str else (5000 if 'SD50' in fy_str else 4000)
 
-
-    # 🌟 2. แพ็กข้อมูลให้ครบก่อนส่งเข้า calc_ddm
-
-    
-    # ดึงค่าโหลดอย่างปลอดภัย ป้องกัน KeyError
     loads_data = calc_obj.get('loads', {})
     dl = loads_data.get('dl', loads_data.get('DL', 0))
     ll = loads_data.get('ll', loads_data.get('LL', 0))
     wu = loads_data.get('wu', (1.4 * dl) + (1.7 * ll))
 
-    # ดึงข้อมูล geom อย่างปลอดภัย ป้องกัน KeyError
     geom_data = calc_obj.get('geom', {})
     
-    # จัดการความหนาพื้น: หา 'h_slab_cm' ก่อน ถ้าไม่มีให้หา 'h_s' (แล้วคูณ 100 แปลงเป็น cm) ถ้าหาไม่เจออีกให้ default 20 cm
+    L1 = geom_data.get('L1', 0)
+    L2 = geom_data.get('L2', 0)
+    c1_cm = geom_data.get('c1_cm', 50)
+    c2_cm = geom_data.get('c2_cm', 50)
+    
+    c1_m = c1_cm / 100.0
+    c2_m = c2_cm / 100.0
+    
+    # 🌟 คำนวณ Clear Span (ln) ตรงนี้เลย เพื่อส่งเข้า inputs ทันที
+    ln = max(L1 - c1_m, 0.65 * L1) if L1 > 0 else 0
+
     h_slab_cm = geom_data.get('h_slab_cm', geom_data.get('h_s', 0.20) * 100.0)
     has_drop = geom_data.get('has_drop', False)
     h_drop_cm = geom_data.get('h_drop_cm', h_slab_cm) if has_drop else h_slab_cm
 
-    # ดึงข้อมูล Edge Beam อย่างปลอดภัย
     eb_data = geom_data.get('edge_beam', {})
 
+    # =========================================================================
+    # 🌟 2. แพ็กข้อมูล inputs (รับรองว่า calculate_ddm หาเจอทุกตัวแปร)
+    # =========================================================================
     inputs = {
-        'l1': geom_data.get('L1', 0),
-        'l2': geom_data.get('L2', 0),
+        'l1': L1, 'L1': L1,
+        'l2': L2, 'L2': L2,
+        'ln': ln,                # ✅ ส่ง ln เข้าไปแล้ว
         'wu': wu,
-        
-        # ขนาดเสาเป็นเมตร
-        'c1': geom_data.get('c1_cm', 50) / 100.0, 
-        'c2': geom_data.get('c2_cm', 50) / 100.0,
-        
-        'h_slab': h_slab_cm,
+        'c1': c1_m, 
+        'c2': c2_m,
+        'c1_cm': c1_cm,
+        'c2_cm': c2_cm,
+        'h_slab': h_slab_cm,     # ✅ ส่ง h_slab เข้าไปแล้ว
+        'h_slab_cm': h_slab_cm,
         'has_drop': has_drop,
         'h_drop': h_drop_cm,
-        
         'fc': calc_obj.get('mat', {}).get('fc', 280),
         'fy': fy_val,
-        
-        # 🌟 ลิงก์ตรงนี้! ตัวแปรตำแหน่งเสาจะถูกส่งไปเช็ค b_o
-        'col_location': col_loc, 
+        'col_location': col_loc,
+        'col_loc': col_loc,
         'case_type': "Interior" if col_loc == "Interior" else "Exterior",
-        
         'has_edge_beam': eb_data.get('has_beam', False),
+        'edge_beam': eb_data,
         'eb_width': eb_data.get('width_cm', 0) / 100.0,
         'eb_depth': eb_data.get('depth_cm', 0) / 100.0,
     }
-    
 
-    # 3. เรียกคำนวณ
     # ==========================================================
-    # 🚨 DEBUG ZONE: ตรวจสอบข้อมูลก่อนเข้าฟังก์ชันคำนวณ
+    # 🚨 DEBUG ZONE (ใส่ # ไว้ให้ ถ้ามีปัญหาค่อยเอา # ออกเพื่อดูค่า)
     # ==========================================================
-    st.error("🚨 ส่วนตรวจสอบข้อมูล (ลบออกได้เมื่อแก้ปัญหาเสร็จ)")
-    col_d1, col_d2 = st.columns(2)
-    with col_d1:
-        st.write("📦 1. ข้อมูลที่ได้รับมาจาก app.py (calc_obj):")
-        st.json(calc_obj)
-    with col_d2:
-        st.write("⚙️ 2. ข้อมูลที่จะส่งไปคำนวณ (inputs):")
-        st.json(inputs)
+    # st.error("🚨 ตรวจสอบข้อมูล inputs ที่จะส่งไปคำนวณ")
+    # st.json(inputs)
     # ==========================================================
 
-    # 3. เรียกคำนวณ (บรรทัดเดิมของคุณ)
-
-    # 3. เรียกคำนวณ
+    # =========================================================================
+    # 🌟 3. เรียกคำนวณ 
+    # =========================================================================
     df_res, Mo, msgs, details = calculate_ddm(inputs)
     
     # =========================================================================
-    # 🛠️ MASTER VARIABLE BRIDGE (เคลียร์ปัญหาตัวแปร NameError ม้วนเดียวจบ)
-    # เชื่อมตัวแปรที่รับค่ามา ให้ตรงกับชื่อที่โค้ดส่วน Tab 4 และ Tab 5 เรียกใช้
+    # 🌟 4. MASTER VARIABLE BRIDGE (กระจายตัวแปรให้ UI ด้านล่างใช้)
     # =========================================================================
-    df_results = df_res     # โค้ดเดิมคุณเรียก df_results
-    df_design = df_res      # โค้ดเดิมคุณเรียก df_design ใน Tab 4
-    warning_msgs = msgs     # เชื่อมตัวแปรแจ้งเตือน
+    df_results = df_res     
+    df_design = df_res      
+    warning_msgs = msgs     
 
-    # แกะข้อมูลทั้งหมดออกมาเป็นตัวแปรเดี่ยวๆ เพื่อให้ Tab Flexure & Shear ดึงไปใช้ได้ทันที
-    geom_data = calc_obj.get('geom', {})
-    mat_data = calc_obj.get('mat', {})
-    
-
-    # --- ตัวแปร Geometry ---
-    L1 = geom_data.get('L1', 0)
-    L2 = geom_data.get('L2', 0)
-    c1 = geom_data.get('c1_cm', 50) / 100.0
-    c2 = geom_data.get('c2_cm', 50) / 100.0
-    
-    h_slab_m = geom_data.get('h_slab_cm', geom_data.get('h_s', 0.20) * 100.0) / 100.0
+    h_slab_m = h_slab_cm / 100.0
     cc_m = geom_data.get('cc_cm', geom_data.get('covering', 3.0)) / 100.0
     selected_rebar = geom_data.get('rebar', 12.0) 
     d_eff_m = h_slab_m - cc_m - ((selected_rebar / 1000.0) / 2.0)
     
-    cs_width = min(L1/2, L2/2) # ความกว้าง Column Strip (ใช้ใน Tab 4)
+    cs_width = min(L1/2, L2/2) 
     
-    # 🌟 เติมบรรทัดนี้ลงไปเพื่อคำนวณ Clear Span (ln) ให้โค้ดส่วนแสดงผลดึงไปใช้
-    ln = max(L1 - c1, 0.65 * L1) if L1 > 0 else 0
-    
-    
-    # --- ตัวแปร Material ---
-    fc_ksc = mat_data.get('fc', 280)
-    fy_ksc = inputs.get('fy', 4000)
-    
-    # --- ตัวแปรสภาพแวดล้อม (Edge Beam, Case Type) ---
-    eb_data = geom_data.get('edge_beam', {})
-    has_edge_beam = eb_data.get('has_beam', False)
-    
-    col_loc = geom_data.get('col_loc', "Interior") # กันเหนียวกรณีหาคีย์ไม่เจอ
-    case_type = "Interior" if col_loc == "Interior" else "Exterior"
-    # =========================================================================
+    fc_ksc = inputs['fc']
+    fy_ksc = inputs['fy']
+    has_edge_beam = inputs['has_edge_beam']
+    case_type = inputs['case_type']
 
-    # โค้ดส่วนแสดงผล UI
+    # =========================================================================
+    # 🌟 5. โค้ดส่วนแสดงผล UI (Step 3 ต่อด้วย Step 4 ของคุณ)
+    # =========================================================================
     st.markdown("### Step 3: Forces & Constraints")
     
     c1_col, c2_col, c3_col = st.columns(3)
@@ -150,11 +126,14 @@ def render_ddm_tab(calc_obj):
 
     if warning_msgs:
         for msg in warning_msgs: 
-            # ถ้าไม่มีฟังก์ชัน translate_warnings ให้ลบบรรทัดล่างทิ้งแล้วใช้ st.warning(msg) ได้เลย
             clean_msg = translate_warnings(msg) if 'translate_warnings' in globals() else msg
             st.warning(clean_msg) if " > " not in clean_msg else st.error(clean_msg)
 
     st.divider()
+
+    # **********************************************
+    # (วางโค้ดสร้าง Tabs และ DataFrame ต่อจากตรงนี้ได้เลยครับ)
+    # **********************************************
 
     # **********************************************
     # โค้ดส่วนนี้คือจุดที่คุณสร้าง edited_df หรือ Tab 1, 2, 3, 4, 5
