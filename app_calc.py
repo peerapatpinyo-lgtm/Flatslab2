@@ -7,6 +7,13 @@ class DesignCriteriaValidator:
                  fy_ksc, col_location, h_slab_cm, c1, c2, edge_beam_params=None):
         self.L1 = L1
         self.L2 = L2
+        
+        # เก็บค่า Span ทั้ง 4 ทิศทางเพื่อใช้เช็ค DDM
+        self.L1_l = L1_l
+        self.L1_r = L1_r
+        self.L2_t = L2_t
+        self.L2_b = L2_b
+        
         # ACI 318: Ln is clear span in long direction
         self.c_avg = (c1 + c2) / 2.0
         self.Ln_long = max(L1, L2) - self.c_avg 
@@ -119,18 +126,41 @@ class DesignCriteriaValidator:
     def check_ddm(self):
         status = True
         reasons = []
-        # Aspect Ratio
+        
+        # 1. Aspect Ratio
         long_side = max(self.L1, self.L2)
         short_side = min(self.L1, self.L2)
         ratio = long_side / short_side if short_side > 0 else 0
-        if ratio > 2.0:
+        
+        if short_side == 0 or ratio > 2.0:
             status = False
             reasons.append(f"❌ **Panel Ratio:** Long/Short ({ratio:.2f}) > 2.0")
         else:
             reasons.append(f"✅ **Panel Ratio:** {ratio:.2f} <= 2.0")
             
-        # Load Ratio
-        load_ratio = self.ll / self.dl if self.dl > 0 else 0
+        # 2. Successive Span Check (ความต่างของสแปนที่ติดกัน ต้อง <= 1/3 ของสแปนที่ยาวกว่า)
+        # แกน X (L1)
+        if self.L1_l > 0 and self.L1_r > 0:
+            max_x = max(self.L1_l, self.L1_r)
+            diff_x = abs(self.L1_l - self.L1_r)
+            if diff_x > (max_x / 3.0):
+                status = False
+                reasons.append(f"❌ **Span Diff (X-Axis):** ต่างกัน {diff_x:.2f}m ซึ่งเกิน 1/3 ของ {max_x:.2f}m")
+            else:
+                reasons.append("✅ **Span Diff (X-Axis):** ผ่านเกณฑ์ (ต่างกันไม่เกิน 1/3)")
+                
+        # แกน Y (L2)
+        if self.L2_t > 0 and self.L2_b > 0:
+            max_y = max(self.L2_t, self.L2_b)
+            diff_y = abs(self.L2_t - self.L2_b)
+            if diff_y > (max_y / 3.0):
+                status = False
+                reasons.append(f"❌ **Span Diff (Y-Axis):** ต่างกัน {diff_y:.2f}m ซึ่งเกิน 1/3 ของ {max_y:.2f}m")
+            else:
+                reasons.append("✅ **Span Diff (Y-Axis):** ผ่านเกณฑ์ (ต่างกันไม่เกิน 1/3)")
+
+        # 3. Load Ratio
+        load_ratio = self.ll / self.dl if self.dl > 0 else float('inf')
         if load_ratio > 2.0:
             status = False
             reasons.append(f"❌ **Load Ratio:** LL/DL ({load_ratio:.2f}) > 2.0")
@@ -140,11 +170,10 @@ class DesignCriteriaValidator:
         return status, reasons
 
 
-# แก้ไขช่วงรับพารามิเตอร์ของฟังก์ชัน
 def prepare_calculation_data(
     h_slab_cm, h_drop_cm, has_drop, 
-    c1_cm, c2_cm, drop_w1, drop_w2,   # ✅ 1. เพิ่ม drop_w1 ตรงนี้
-    col_location,                     # ✅ 2. เพิ่ม col_location เข้ามา
+    c1_cm, c2_cm, drop_w1, drop_w2,   
+    col_location,                     
     L1_l, L1_r, L2_t, L2_b,
     fc_ksc, fy_grade, 
     dl_kgm2, ll_kgm2,
@@ -159,9 +188,15 @@ def prepare_calculation_data(
     h_d = (h_slab_cm + h_drop_cm) * Units.CM_TO_M if has_drop else h_s
     c1 = c1_cm * Units.CM_TO_M
     c2 = c2_cm * Units.CM_TO_M
-    b_drop = drop_w2 if has_drop else 0.0  # (เก็บไว้เผื่อมีโค้ดเก่าอ้างอิงอยู่)
-    L1 = L1_l + L1_r
-    L2 = L2_t + L2_b
+    b_drop = drop_w2 if has_drop else 0.0  
+    
+    # แก้ไข L1 และ L2 ให้สอดคล้องกับหลักการ Equivalent Frame
+    # L1 คือความยาวสแปนในทิศทางที่จะวิเคราะห์
+    L1 = max(L1_l, L1_r) 
+    
+    # L2 คือความกว้าง Tributary ของเฟรม = (ระยะครึ่งสแปนบน + ระยะครึ่งสแปนล่าง)
+    L2 = (L2_t + L2_b) / 2.0 
+    
     Ln = L1 - c1
     
     # Roof Logic
@@ -195,7 +230,7 @@ def prepare_calculation_data(
     sum_K_col = K_col_up + K_col_lo
 
     # Cantilever Moment Calculation
-    strip_width = L2 
+    strip_width = L2  # ตรงนี้จะใช้ L2 ที่แก้แล้ว (ความกว้างที่ถูกต้อง)
     w_u_line = w_u_pa * strip_width 
     
     m_cant_left = 0.0
@@ -221,17 +256,17 @@ def prepare_calculation_data(
         "cantilever_effect": f"Counter-acting Moments: L={m_cant_left/1000:.1f} kN.m, R={m_cant_right/1000:.1f} kN.m"
     }
 
-    # ✅ 3. แก้ไขส่วนการ Return ข้อมูล
     return {
         "geom": {
             "L1": L1, "L2": L2, "Ln": Ln, "c1": c1, "c2": c2, 
+            "L1_l": L1_l, "L1_r": L1_r, "L2_t": L2_t, "L2_b": L2_b, # ส่งข้อมูลสแปนแยกเก็บไว้ 
             "h_s": h_s, "h_d": h_d, "b_drop": b_drop,
-            "drop_w1": drop_w1, # <--- ส่งความกว้าง Drop Panel แกน 1
-            "drop_w2": drop_w2, # <--- ส่งความกว้าง Drop Panel แกน 2
+            "drop_w1": drop_w1, 
+            "drop_w2": drop_w2, 
             "edge_beam_params": edge_beam_params 
         },
-        "col_location_raw": col_location, # <--- ส่งตำแหน่งเสาไปให้ DDM ใช้
-        "fy_raw": fy_grade,               # <--- ส่งข้อมูลเหล็กกลับไปด้วย
+        "col_location_raw": col_location,
+        "fy_raw": fy_grade,
         "vertical_geom": {
             "h_up": calc_h_up, "h_lo": h_lo, "is_roof": is_roof,
             "far_end_up": far_end_up, "far_end_lo": far_end_lo
