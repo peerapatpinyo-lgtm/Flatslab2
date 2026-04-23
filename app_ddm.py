@@ -101,7 +101,10 @@ def render_ddm_tab(calc_obj):
     # =========================================================================
     df_results = df_res     
     df_design = df_res      
-    warning_msgs = msgs     
+    warning_msgs = msgs 
+
+    c1 = inputs['c1']
+    c2 = inputs['c2']
 
     h_slab_m = h_slab_cm / 100.0
     cc_m = geom_data.get('cc_cm', geom_data.get('covering', 3.0)) / 100.0
