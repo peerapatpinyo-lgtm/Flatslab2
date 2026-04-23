@@ -1,4 +1,7 @@
-# เพิ่มฟังก์ชันนี้ต่อท้ายในไฟล์ viz_ddm.py
+# viz_ddm.py (ต้องมี 3 บรรทัดนี้อยู่บนสุดของไฟล์)
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import math
 
 def draw_rebar_plan_view(inputs, edited_df):
     """วาดรูปแปลน (Top View) แสดง Column Strip, Middle Strip และแนวการจัดเหล็ก"""
