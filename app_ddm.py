@@ -156,6 +156,7 @@ def render_ddm_tab(calc_obj):
         df_design = df_results.copy()
         df_design['Strip Width (m)'] = df_design['Location'].apply(get_strip_width)
         df_design['Bar Size (mm)'] = selected_rebar
+        default_spacing = 20.0
         df_design['Spacing (cm)'] = default_spacing
 
         # Normalize column names 
