@@ -342,33 +342,69 @@ def render_ddm_tab(calc_obj):
         # ==========================================
         # --- PART 5.1: TWO-WAY SHEAR (PUNCHING) ---
         # ==========================================
-        st.markdown("#### ACI 318 Section 22.6: Two-Way Shear with Moment Transfer")
+
+        st.markdown("#### ACI 318 Section 22.6: Two-Way Shear")
         
         # --- 1. Critical Section Geometry ---
         d_shear_cm = d_eff_m * 100.0
         c1_cm = c1 * 100.0
         c2_cm = c2 * 100.0
         
-        # สมมติฐานเป็นเสาต้นใน (Interior Column) สำหรับรูปทรง Critical Section
-        b1 = c1_cm + d_shear_cm  # ด้านขนานกับทิศทางโมเมนต์
-        b2 = c2_cm + d_shear_cm  # ด้านตั้งฉากกับทิศทางโมเมนต์
-        bo_cm = 2 * (b1 + b2)
+        # ดึงข้อมูล Drop Panel จาก calc_obj (ที่ถูกส่งมาจาก app_calc.py)
+        has_drop = calc_obj['geom'].get('has_drop', False)
+        drop_w1_cm = calc_obj['geom'].get('drop_w1', 0) * 100.0
+        drop_w2_cm = calc_obj['geom'].get('drop_w2', 0) * 100.0
+        
+        st.markdown(f"**1. Critical Section Properties ($b_o$, $A_c$, $J_c$) - {col_loc} Column**")
+
+        # คำนวณขอบเขตหน้าตัดวิกฤต (bo) อิงตามตำแหน่งเสา
+        if col_loc == "Corner":
+            b1 = c1_cm + (d_shear_cm / 2.0)
+            b2 = c2_cm + (d_shear_cm / 2.0)
+            bo_cm = b1 + b2
+            c_dist = (b1**2) / (2 * (b1 + b2)) if (b1 + b2) > 0 else b1 / 2.0
+            Jc = (d_shear_cm * (b1**3) / 12.0) + ((b1 * (d_shear_cm**3)) / 12.0) + (d_shear_cm * b1 * (b2**2) / 4.0)
+        elif col_loc == "Edge":
+            b1 = c1_cm + (d_shear_cm / 2.0)
+            b2 = c2_cm + d_shear_cm
+            bo_cm = (2 * b1) + b2
+            c_dist = (b1**2) / ((2 * b1) + b2) if ((2 * b1) + b2) > 0 else b1 / 2.0
+            Jc = (d_shear_cm * (b1**3) / 6.0) + ((b1 * (d_shear_cm**3)) / 6.0) + (d_shear_cm * b1 * (b2**2) / 2.0)
+        else: # Interior
+            b1 = c1_cm + d_shear_cm  
+            b2 = c2_cm + d_shear_cm  
+            bo_cm = 2 * (b1 + b2)
+            c_dist = b1 / 2.0
+            Jc = (d_shear_cm * (b1**3) / 6.0) + ((b1 * (d_shear_cm**3)) / 6.0) + (d_shear_cm * b1 * (b2**2) / 2.0)
+
         Ac = bo_cm * d_shear_cm
-        
-        st.markdown("**1. Critical Section Properties ($b_o$, $A_c$, $J_c$)**")
-        st.markdown(f"- $b_1 = {c1_cm:.1f} + {d_shear_cm:.1f} = {b1:.1f} \\text{{ cm}}$")
-        st.markdown(f"- $b_2 = {c2_cm:.1f} + {d_shear_cm:.1f} = {b2:.1f} \\text{{ cm}}$")
-        st.markdown(f"$$ b_o = 2 \\times ({b1:.1f} + {b2:.1f}) = {bo_cm:.1f} \\text{{ cm}} $$")
+
+        st.markdown(f"- $b_1$ (ทิศทาง $c_1$) = **{b1:.1f} cm**")
+        st.markdown(f"- $b_2$ (ทิศทาง $c_2$) = **{b2:.1f} cm**")
+        st.markdown(f"$$ b_o = {bo_cm:.1f} \\text{{ cm}} $$")
         st.markdown(f"$$ A_c = b_o \\times d = {bo_cm:.1f} \\times {d_shear_cm:.1f} = {Ac:,.1f} \\text{{ cm}}^2 $$")
-        
-        # คำนวณ Jc (Polar Moment of Inertia สำหรับ Interior Column)
-        Jc = (d_shear_cm * (b1**3) / 6.0) + ((b1 * (d_shear_cm**3)) / 6.0) + (d_shear_cm * b1 * (b2**2) / 2.0)
-        c_dist = b1 / 2.0
-        
-        st.markdown(f"$$ J_c = \\frac{{d b_1^3}}{{6}} + \\frac{{b_1 d^3}}{{6}} + \\frac{{d b_1 b_2^2}}{{2}} = {Jc:,.0f} \\text{{ cm}}^4 $$")
-        st.markdown(f"- ระยะจากจุดศูนย์ถ่วงถึงขอบหน้าตัดวิกฤต ($c$) = **{c_dist:.1f} cm**")
-        
+        st.markdown(f"$$ J_c \\approx {Jc:,.0f} \\text{{ cm}}^4 $$")
+        st.markdown(f"- ระยะศูนย์ถ่วงถึงขอบหน้าตัดวิกฤต ($c$) = **{c_dist:.1f} cm**")
+
+        # --- ส่วนขยาย: ตรวจสอบหน้าตัดวิกฤตรอบ Drop Panel (ถ้ามี) ---
+        if has_drop and drop_w1_cm > 0 and drop_w2_cm > 0:
+            st.divider()
+            st.markdown("**1.1 Critical Section outside Drop Panel**")
+            
+            # สมมติระยะ d นอก Drop Panel แบบคร่าวๆ (หัก Cover และเหล็ก)
+            d_slab_cm = (calc_obj['geom']['h_s'] * 100.0) - (cc_m * 100.0) - (selected_rebar / 20.0) 
+            
+            if col_loc == "Corner":
+                bo_drop = (drop_w1_cm + d_slab_cm/2.0) + (drop_w2_cm + d_slab_cm/2.0)
+            elif col_loc == "Edge":
+                bo_drop = 2*(drop_w1_cm + d_slab_cm/2.0) + (drop_w2_cm + d_slab_cm)
+            else:
+                bo_drop = 2 * ((drop_w1_cm + d_slab_cm) + (drop_w2_cm + d_slab_cm))
+                
+            st.info(f"💡 **Drop Panel Punching Perimeter ($b_{{o,drop}}$):** {bo_drop:.1f} cm (ใช้สำหรับตรวจสอบ Shear ความหนาพื้นปกติรอบนอก Drop Panel)")
+
         st.divider()
+        
         
         # --- 2. Demand Calculation (Vu and Munbal) ---
         st.markdown("**2. Shear and Unbalanced Moment Demand**")
