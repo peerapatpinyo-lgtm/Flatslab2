@@ -79,12 +79,26 @@ def render_ddm_tab(calc_obj):
     }
     
 
-
     # 3. เรียกคำนวณ
+
     df_res, Mo, msgs, details = calculate_ddm(inputs)
     
- 
+    # --- 🌟 เพิ่มการคำนวณ d_eff_m ตรงนี้เพื่อไม่ให้เกิด NameError ---
+    geom_data = calc_obj.get('geom', {})
     
+    # 1. ความหนาพื้น (h) แปลงเป็นเมตร
+    h_slab_m = geom_data.get('h_slab_cm', geom_data.get('h_s', 0.20) * 100.0) / 100.0
+    
+    # 2. ระยะหุ้มคอนกรีต (Covering) แปลงเป็นเมตร (Default 3 cm = 0.03 m)
+    cc_m = geom_data.get('cc_cm', geom_data.get('covering', 3.0)) / 100.0
+    
+    # 3. ขนาดเส้นผ่านศูนย์กลางเหล็ก (mm) แปลงเป็นเมตร (Default เหล็ก 12 mm = 0.012 m)
+    selected_rebar = geom_data.get('rebar', 12.0) 
+    
+    # 4. คำนวณ Effective Depth (d) ในหน่วยเมตร
+    d_eff_m = h_slab_m - cc_m - ((selected_rebar / 1000.0) / 2.0)
+    # --------------------------------------------------------
+
     # โค้ดส่วนแสดงผล UI (st.write, st.dataframe) ของคุณต่อจากนี้...
 
     st.markdown("### Step 3: Forces & Constraints")
@@ -93,6 +107,9 @@ def render_ddm_tab(calc_obj):
     c1_col.metric("Factored Load (Wu)", f"{wu:,.0f} kg/m²")
     c2_col.metric("Total Static Moment (Mo)", f"{Mo:,.0f} kg-m")
     c3_col.metric("Effective Depth (d)", f"{d_eff_m*100:.1f} cm")
+
+    # จับคู่ตัวแปรเผื่อไว้ ป้องกัน Error
+    warning_msgs = msgs
 
     if warning_msgs:
         for msg in warning_msgs: 
