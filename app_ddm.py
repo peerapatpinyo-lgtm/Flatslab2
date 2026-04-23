@@ -80,27 +80,47 @@ def render_ddm_tab(calc_obj):
     
 
     # 3. เรียกคำนวณ
-
+    # 3. เรียกคำนวณ
     df_res, Mo, msgs, details = calculate_ddm(inputs)
     
-    # --- 🌟 เพิ่มการคำนวณ d_eff_m ตรงนี้เพื่อไม่ให้เกิด NameError ---
+    # =========================================================================
+    # 🛠️ MASTER VARIABLE BRIDGE (เคลียร์ปัญหาตัวแปร NameError ม้วนเดียวจบ)
+    # เชื่อมตัวแปรที่รับค่ามา ให้ตรงกับชื่อที่โค้ดส่วน Tab 4 และ Tab 5 เรียกใช้
+    # =========================================================================
+    df_results = df_res     # โค้ดเดิมคุณเรียก df_results
+    df_design = df_res      # โค้ดเดิมคุณเรียก df_design ใน Tab 4
+    warning_msgs = msgs     # เชื่อมตัวแปรแจ้งเตือน
+
+    # แกะข้อมูลทั้งหมดออกมาเป็นตัวแปรเดี่ยวๆ เพื่อให้ Tab Flexure & Shear ดึงไปใช้ได้ทันที
     geom_data = calc_obj.get('geom', {})
+    mat_data = calc_obj.get('mat', {})
     
-    # 1. ความหนาพื้น (h) แปลงเป็นเมตร
+    # --- ตัวแปร Geometry ---
+    L1 = geom_data.get('L1', 0)
+    L2 = geom_data.get('L2', 0)
+    c1 = geom_data.get('c1_cm', 50) / 100.0
+    c2 = geom_data.get('c2_cm', 50) / 100.0
+    
     h_slab_m = geom_data.get('h_slab_cm', geom_data.get('h_s', 0.20) * 100.0) / 100.0
-    
-    # 2. ระยะหุ้มคอนกรีต (Covering) แปลงเป็นเมตร (Default 3 cm = 0.03 m)
     cc_m = geom_data.get('cc_cm', geom_data.get('covering', 3.0)) / 100.0
-    
-    # 3. ขนาดเส้นผ่านศูนย์กลางเหล็ก (mm) แปลงเป็นเมตร (Default เหล็ก 12 mm = 0.012 m)
     selected_rebar = geom_data.get('rebar', 12.0) 
-    
-    # 4. คำนวณ Effective Depth (d) ในหน่วยเมตร
     d_eff_m = h_slab_m - cc_m - ((selected_rebar / 1000.0) / 2.0)
-    # --------------------------------------------------------
+    
+    cs_width = min(L1/2, L2/2) # ความกว้าง Column Strip (ใช้ใน Tab 4)
+    
+    # --- ตัวแปร Material ---
+    fc_ksc = mat_data.get('fc', 280)
+    fy_ksc = inputs.get('fy', 4000)
+    
+    # --- ตัวแปรสภาพแวดล้อม (Edge Beam, Case Type) ---
+    eb_data = geom_data.get('edge_beam', {})
+    has_edge_beam = eb_data.get('has_beam', False)
+    
+    col_loc = geom_data.get('col_loc', "Interior") # กันเหนียวกรณีหาคีย์ไม่เจอ
+    case_type = "Interior" if col_loc == "Interior" else "Exterior"
+    # =========================================================================
 
-    # โค้ดส่วนแสดงผล UI (st.write, st.dataframe) ของคุณต่อจากนี้...
-
+    # โค้ดส่วนแสดงผล UI
     st.markdown("### Step 3: Forces & Constraints")
     
     c1_col, c2_col, c3_col = st.columns(3)
@@ -108,15 +128,18 @@ def render_ddm_tab(calc_obj):
     c2_col.metric("Total Static Moment (Mo)", f"{Mo:,.0f} kg-m")
     c3_col.metric("Effective Depth (d)", f"{d_eff_m*100:.1f} cm")
 
-    # จับคู่ตัวแปรเผื่อไว้ ป้องกัน Error
-    warning_msgs = msgs
-
     if warning_msgs:
         for msg in warning_msgs: 
-            clean_msg = translate_warnings(msg)
+            # ถ้าไม่มีฟังก์ชัน translate_warnings ให้ลบบรรทัดล่างทิ้งแล้วใช้ st.warning(msg) ได้เลย
+            clean_msg = translate_warnings(msg) if 'translate_warnings' in globals() else msg
             st.warning(clean_msg) if " > " not in clean_msg else st.error(clean_msg)
 
     st.divider()
+
+    # **********************************************
+    # โค้ดส่วนนี้คือจุดที่คุณสร้าง edited_df หรือ Tab 1, 2, 3, 4, 5
+    # (วางโค้ดของคุณต่อจากตรงนี้ได้เลย)
+    # **********************************************
 
     # ==========================================================================
     # STEP 4: INTERACTIVE DETAILING
