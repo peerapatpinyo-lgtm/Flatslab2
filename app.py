@@ -179,24 +179,55 @@ with tab1:
             with d_col3: drop_w2 = st.number_input("Drop Width W2 (m)", value=float(f"{def_w2:.2f}"))
 
         # --- PROCESS DATA ---
-        # ⚠️ ต้องแน่ใจว่าไปเพิ่ม drop_w1 และ col_location ในพารามิเตอร์รับค่าของไฟล์ app_calc.py ด้วยนะครับ
+        # 1. แปลงค่า fy จาก String (SD40) เป็น ตัวเลข (4000) ก่อนนำไปใช้
+        if 'SD30' in str(fy): fy_val = 3000
+        elif 'SD40' in str(fy): fy_val = 4000
+        else: fy_val = 5000
+
+        # 2. เรียกฟังก์ชันเตรียมข้อมูล (สมมติว่าในฟังก์ชันรับ fy เป็นตัวเลขไปเลยจะดีที่สุด)
         calc_obj = app_calc.prepare_calculation_data(
-            h_slab_cm, h_drop_cm, has_drop, c1_cm, c2_cm, drop_w1, drop_w2, # ✅ เพิ่ม drop_w1 ตรงนี้
-            col_location, # ✅ ส่ง col_location เข้าไปคำนวณโดยตรง
-            L1_l, L1_r, L2_t, L2_b, fc, fy, dl, ll, auto_sw, lf_dl, lf_ll,
+            h_slab_cm, h_drop_cm, has_drop, c1_cm, c2_cm, drop_w1, drop_w2,
+            col_location, 
+            L1_l, L1_r, L2_t, L2_b, fc, fy_val, dl, ll, auto_sw, lf_dl, lf_ll,
             joint_type, h_up, h_lo, far_end_up, far_end_lo, cant_params,
             edge_beam_params
         )
 
-        # เนื่องจากส่ง col_location และ fy เข้าฟังก์ชันไปแล้ว บรรทัดข้างล่างนี้อาจจะไม่จำเป็นต้องใช้ (ขึ้นอยู่กับว่าใน app_calc.py เขียนดึงค่าไว้อย่างไร)
-        calc_obj['col_location_raw'] = col_location 
-        calc_obj['fy_raw'] = fy
+        # ==========================================================
+        # 🛡️ SAFETY NET: บังคับยัดค่าที่หน้า UI รับมาลงใน calc_obj 
+        # เพื่อป้องกันปัญหา "app_ddm หาตัวแปรไม่เจอจนค่ากลายเป็น 0"
+        # ==========================================================
+        if 'geom' not in calc_obj: calc_obj['geom'] = {}
+        if 'loads' not in calc_obj: calc_obj['loads'] = {}
+        if 'mat' not in calc_obj: calc_obj['mat'] = {}
+
+        # ดึง L1, L2 (สมมติว่าดึงฝั่งที่มากที่สุดมาเป็น L) หรือใช้ค่าที่คุณประมวลผลแล้ว
+        calc_obj['geom']['L1'] = max(L1_l, L1_r) if 'L1' not in calc_obj['geom'] else calc_obj['geom']['L1']
+        calc_obj['geom']['L2'] = max(L2_t, L2_b) if 'L2' not in calc_obj['geom'] else calc_obj['geom']['L2']
         
+        calc_obj['geom']['c1_cm'] = c1_cm
+        calc_obj['geom']['c2_cm'] = c2_cm
+        calc_obj['geom']['h_slab_cm'] = h_slab_cm
+        calc_obj['geom']['col_loc'] = col_location
+        calc_obj['geom']['has_drop'] = has_drop
+        calc_obj['geom']['h_drop_cm'] = h_drop_cm
+        calc_obj['geom']['edge_beam'] = edge_beam_params
+
+        calc_obj['loads']['dl'] = dl
+        calc_obj['loads']['ll'] = ll
+        # คำนวณ Wu เผื่อไว้เลย ถ้า auto_sw=True ต้องเอา Self-weight มาบวก DL ด้วย (ใน app_calc น่าจะทำไว้แล้ว)
+        if 'wu' not in calc_obj['loads']:
+            sw = (h_slab_cm / 100.0) * Units.G if auto_sw else 0
+            calc_obj['loads']['wu'] = (lf_dl * (dl + sw)) + (lf_ll * ll)
+
+        calc_obj['mat']['fc'] = fc
+        calc_obj['mat']['fy'] = fy_val
+        # ==========================================================
 
         validator = app_calc.DesignCriteriaValidator(
             calc_obj['geom']['L1'], calc_obj['geom']['L2'], L1_l, L1_r, L2_t, L2_b,
-            ll, (calc_obj['loads']['w_dead'] / Units.G), has_drop, cant_params,
-            fy, col_location, h_slab_cm, (c1_cm/100), (c2_cm/100),
+            ll, dl, has_drop, cant_params,
+            fy_val, col_location, h_slab_cm, (c1_cm/100), (c2_cm/100),
             edge_beam_params
         )
         
