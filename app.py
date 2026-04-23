@@ -44,338 +44,363 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # TAB 1: INPUTS & VISUALIZATION
 # ==============================================================================
 with tab1:
-    col_input, col_viz = st.columns([1.2, 1.4])
+        col_input, col_viz = st.columns([1.2, 1.4])
 
-    # --------------------------------------------------------------------------
-    # LEFT COLUMN: INPUTS
-    # --------------------------------------------------------------------------
-    with col_input:
-        st.subheader("1. Materials & Loads")
-        c1_mat, c2_mat = st.columns(2)
-        with c1_mat: 
-            fc = st.selectbox("Concrete f'c (ksc)", [240, 280, 320, 350, 400], index=1)
-        with c2_mat: 
-            fy = st.selectbox("Steel Grade (fy)", ["SD30", "SD40", "SD50"], index=1)
+        # --------------------------------------------------------------------------
+        # LEFT COLUMN: INPUTS
+        # --------------------------------------------------------------------------
+        with col_input:
+            st.subheader("1. Materials & Loads")
+            c1_mat, c2_mat = st.columns(2)
+            with c1_mat: 
+                fc = st.selectbox("Concrete f'c (ksc)", [240, 280, 320, 350, 400], index=1)
+            with c2_mat: 
+                fy = st.selectbox("Steel Grade (fy)", ["SD30", "SD40", "SD50"], index=1)
 
-        lf_col1, lf_col2 = st.columns(2)
-        with lf_col1: 
-            lf_dl = st.number_input("DL Factor", value=1.4, step=0.1, format="%.2f")
-        with lf_col2: 
-            lf_ll = st.number_input("LL Factor", value=1.7, step=0.1, format="%.2f")
-        
-        auto_sw = st.checkbox("✅ Auto-calculate Self-weight", value=True)
-        dl = st.number_input("Superimposed Dead Load (SDL) [kg/m²]", value=150, step=10)
-        ll = st.number_input("Live Load (LL) [kg/m²]", value=300, step=50)
-
-        st.divider()
-
-        # --- Geometry ---
-        st.subheader("2. Geometry & Boundary Conditions")
-        
-        joint_type = st.radio("Column Joint Condition:", ("Intermediate Floor", "Roof Joint"), horizontal=True)
-        is_roof = (joint_type == "Roof Joint")
-        joint_code = "Roof" if is_roof else "Interm."
-        
-        st.markdown("##### 📍 Column Far End Conditions (Stiffness)")
-        f_col1, f_col2 = st.columns(2)
-        far_end_up = "Pinned"
-        if not is_roof:
-            with f_col1:
-                far_end_up_sel = st.selectbox("Upper Col Far End", ["Fixed (4EI/L)", "Pinned (3EI/L)"], index=1)
-                far_end_up = far_end_up_sel.split()[0]
-        else:
-             with f_col1: st.info("Upper Col: None (Roof)")
-
-        with f_col2:
-            far_end_lo_sel = st.selectbox("Lower Col Far End", ["Fixed (4EI/L)", "Pinned (3EI/L)"], index=1)
-            far_end_lo = far_end_lo_sel.split()[0]
-
-        # --- PLAN LAYOUT ---
-        st.markdown("##### 📏 Span Dimensions")
-        col_location = st.selectbox("Plan Location", ["Interior Column", "Edge Column", "Corner Column"])
-        
-        is_interior = (col_location == "Interior Column")
-        is_edge     = (col_location == "Edge Column")
-        is_corner   = (col_location == "Corner Column")
-        
-        # Row 1: L1
-        col_l1a, col_l1b = st.columns(2)
-        with col_l1a:
-            if is_interior:
-                L1_l = st.number_input("L1 - Left Span (m)", value=6.0, step=0.5, key=f"L1_L_{col_location}")
-            else:
-                st.markdown("**L1 - Left Span**")
-                st.info("🚫 0.00 m (Edge/Corner)")
-                L1_l = 0.0 
-        with col_l1b:
-            L1_r = st.number_input("L1 - Right Span (m)", value=6.0, step=0.5, key="L1_R_Common")
-
-        # Row 2: L2
-        col_l2a, col_l2b = st.columns(2)
-        with col_l2a:
-            L2_t = st.number_input("L2 - Top Half (m)", value=6.0, step=0.5, key="L2_T_Common")
-        with col_l2b:
-            if is_corner:
-                st.markdown("**L2 - Bottom Half**")
-                st.info("🚫 0.00 m (Corner)")
-                L2_b = 0.0
-            else:
-                L2_b = st.number_input("L2 - Bottom Half (m)", value=6.0, step=0.5, key=f"L2_B_{col_location}")
-
-        # --- EDGE BEAM ---
-        st.markdown("##### 🧱 Edge Condition")
-        edge_beam_params = {"has_beam": False, "width_cm": 0.0, "depth_cm": 0.0}
-        if not is_interior:
-            has_edge_beam = st.checkbox("Has Edge Beam?", value=True)
-            if has_edge_beam:
-                eb_c1, eb_c2 = st.columns(2)
-                with eb_c1: eb_w = st.number_input("Beam Width (cm)", value=30.0, step=5.0)
-                with eb_c2: eb_d = st.number_input("Beam Depth (cm)", value=50.0, step=5.0)
-                edge_beam_params = {"has_beam": True, "width_cm": eb_w, "depth_cm": eb_d}
-            else:
-                st.info("ℹ️ Unrestrained Edge (Flat Plate)")
-
-        # --- CANTILEVER ---
-        with st.expander("🏗️ Cantilever / Overhang", expanded=False):
-            cant_c1, cant_c2 = st.columns(2)
-            has_cant_left = False; L_cant_left = 0.0
-            has_cant_right = False; L_cant_right = 0.0
+            lf_col1, lf_col2 = st.columns(2)
+            with lf_col1: 
+                lf_dl = st.number_input("DL Factor", value=1.4, step=0.1, format="%.2f")
+            with lf_col2: 
+                lf_ll = st.number_input("LL Factor", value=1.7, step=0.1, format="%.2f")
             
-            with cant_c1:
-                cant_l_disabled = (L1_l > 0.01) 
-                has_cant_left = st.checkbox("Left Cantilever", value=False, disabled=cant_l_disabled) 
-                if has_cant_left: L_cant_left = st.number_input("Left Length (m)", value=1.5, step=0.1)
+            auto_sw = st.checkbox("✅ Auto-calculate Self-weight", value=True)
+            dl = st.number_input("Superimposed Dead Load (SDL) [kg/m²]", value=150, step=10)
+            ll = st.number_input("Live Load (LL) [kg/m²]", value=300, step=50)
+
+            st.divider()
+
+            # --- Geometry ---
+            st.subheader("2. Geometry & Boundary Conditions")
             
-            with cant_c2:
-                has_cant_right = st.checkbox("Right Cantilever", value=False)
-                if has_cant_right: L_cant_right = st.number_input("Right Length (m)", value=1.5, step=0.1)
+            joint_type = st.radio("Column Joint Condition:", ("Intermediate Floor", "Roof Joint"), horizontal=True)
+            is_roof = (joint_type == "Roof Joint")
+            joint_code = "Roof" if is_roof else "Interm."
             
-            cant_params = {"has_left": has_cant_left, "L_left": L_cant_left, "has_right": has_cant_right, "L_right": L_cant_right}
-
-        st.divider()
-
-        # --- 3. Member Sizes ---
-        st.subheader("3. Member Sizes")
-        h_slab_cm = st.number_input("Slab Thickness (cm)", value=20.0, step=1.0)
-        
-        col_sz1, col_sz2 = st.columns(2)
-        with col_sz1: c1_cm = st.number_input("Column c1 (Analysis Dir) [cm]", value=50.0)
-        with col_sz2: c2_cm = st.number_input("Column c2 (Transverse) [cm]", value=50.0)
-
-        h_up = 0.0
-        if not is_roof: h_up = st.number_input("Upper Storey Height (m)", value=3.0)
-        h_lo = st.number_input("Lower Storey Height (m)", value=3.0)
-
-        # Drop Panel
-        has_drop = st.checkbox("Include Drop Panel", value=False)
-        h_drop_cm, drop_w1, drop_w2 = 0.0, 0.0, 0.0
-        
-        if has_drop:
-            d_col1, d_col2, d_col3 = st.columns(3)
-            with d_col1: h_drop_cm = st.number_input("Drop Depth (cm)", value=10.0)
-            def_w1 = (L1_l + L1_r)/3.0 if is_interior else (L1_r/3.0) + (c1_cm/200.0)
-            def_w2 = (L2_t + L2_b)/3.0 if not is_corner else (L2_t/3.0) + (c2_cm/200.0)
-            with d_col2: drop_w1 = st.number_input("Drop Width W1 (m)", value=float(f"{def_w1:.2f}"))
-            with d_col3: drop_w2 = st.number_input("Drop Width W2 (m)", value=float(f"{def_w2:.2f}"))
-
-        # --- PROCESS DATA ---
-        # 1. แปลงค่า fy จาก String (SD40) เป็น ตัวเลข (4000) ก่อนนำไปใช้
-        if 'SD30' in str(fy): fy_val = 3000
-        elif 'SD40' in str(fy): fy_val = 4000
-        else: fy_val = 5000
-
-        # 2. เรียกฟังก์ชันเตรียมข้อมูล (สมมติว่าในฟังก์ชันรับ fy เป็นตัวเลขไปเลยจะดีที่สุด)
-        calc_obj = app_calc.prepare_calculation_data(
-            h_slab_cm, h_drop_cm, has_drop, c1_cm, c2_cm, drop_w1, drop_w2,
-            col_location, 
-            L1_l, L1_r, L2_t, L2_b, fc, fy_val, dl, ll, auto_sw, lf_dl, lf_ll,
-            joint_type, h_up, h_lo, far_end_up, far_end_lo, cant_params,
-            edge_beam_params
-        )
-
-        # ==========================================================
-        # 🛡️ SAFETY NET: บังคับยัดค่าที่หน้า UI รับมาลงใน calc_obj 
-        # เพื่อป้องกันปัญหา "app_ddm หาตัวแปรไม่เจอจนค่ากลายเป็น 0"
-        # ==========================================================
-        if 'geom' not in calc_obj: calc_obj['geom'] = {}
-        if 'loads' not in calc_obj: calc_obj['loads'] = {}
-        if 'mat' not in calc_obj: calc_obj['mat'] = {}
-
-        # ดึง L1, L2 (สมมติว่าดึงฝั่งที่มากที่สุดมาเป็น L) หรือใช้ค่าที่คุณประมวลผลแล้ว
-        calc_obj['geom']['L1'] = max(L1_l, L1_r) if 'L1' not in calc_obj['geom'] else calc_obj['geom']['L1']
-        calc_obj['geom']['L2'] = max(L2_t, L2_b) if 'L2' not in calc_obj['geom'] else calc_obj['geom']['L2']
-        
-        calc_obj['geom']['c1_cm'] = c1_cm
-        calc_obj['geom']['c2_cm'] = c2_cm
-        calc_obj['geom']['h_slab_cm'] = h_slab_cm
-        calc_obj['geom']['col_loc'] = col_location
-        calc_obj['geom']['has_drop'] = has_drop
-        calc_obj['geom']['h_drop_cm'] = h_drop_cm
-        calc_obj['geom']['edge_beam'] = edge_beam_params
-
-        calc_obj['loads']['dl'] = dl
-        calc_obj['loads']['ll'] = ll
-        # คำนวณ Wu เผื่อไว้เลย ถ้า auto_sw=True ต้องเอา Self-weight มาบวก DL ด้วย (ใน app_calc น่าจะทำไว้แล้ว)
-        if 'wu' not in calc_obj['loads']:
-            sw = (h_slab_cm / 100.0) * Units.G if auto_sw else 0
-            calc_obj['loads']['wu'] = (lf_dl * (dl + sw)) + (lf_ll * ll)
-
-        calc_obj['mat']['fc'] = fc
-        calc_obj['mat']['fy'] = fy_val
-        # ==========================================================
-
-        validator = app_calc.DesignCriteriaValidator(
-            calc_obj['geom']['L1'], calc_obj['geom']['L2'], L1_l, L1_r, L2_t, L2_b,
-            ll, dl, has_drop, cant_params,
-            fy_val, col_location, h_slab_cm, (c1_cm/100), (c2_cm/100),
-            edge_beam_params
-        )
-        
-        thk_res = validator.check_min_thickness_detailed()
-        ddm_ok, ddm_reasons = validator.check_ddm()
-
-    # --------------------------------------------------------------------------
-    # RIGHT COLUMN: VISUALIZATION & RESULTS
-    # --------------------------------------------------------------------------
-    with col_viz:
-        st.subheader(f"👁️ Visualization: {col_location}")
-        v_tab1, v_tab2 = st.tabs(["📐 Plan View", "🔍 True-Scale Section"])
-        
-        with v_tab1:
-            fig_plan = app_viz.draw_plan_view(
-                L1_l, L1_r, L2_t, L2_b, c1_cm, c2_cm, 
-                col_location, has_drop, drop_w1, drop_w2, cant_params, edge_beam_params
-            )
-            st.pyplot(fig_plan)
-        
-        with v_tab2:
-            fig_elev = app_viz.draw_elevation_real_scale(
-                h_up, h_lo, has_drop, h_drop_cm, drop_w1, c1_cm, h_slab_cm, 
-                is_roof, far_end_up, far_end_lo, cant_params, edge_beam_params
-            )
-            st.pyplot(fig_elev)
-            
-        # ----------------------------------------------------------------------
-        # DETAILED CALCULATIONS & CODE COMPLIANCE
-        # ----------------------------------------------------------------------
-        st.divider()
-        st.markdown("### 📋 Code Compliance & Calculations")
-        
-        # ======================================================================
-        # 🌟 เพิ่มส่วนตรวจสอบ DDM / EFM ตรงนี้ครับ 🌟
-        # ======================================================================
-        st.markdown("#### 🔍 Method Applicability Check (การเลือกวิธีคำนวณ)")
-        
-        # ดึงค่า L1, L2 ที่ประมวลผลแล้วจาก calc_obj มาใช้
-        actual_L1 = calc_obj['geom']['L1']
-        actual_L2 = calc_obj['geom']['L2']
-        ratio = actual_L2 / actual_L1 if actual_L1 > 0 else 0
-        
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-            if ddm_ok:
-                st.success(f"✅ **DDM (Direct Design Method)**\n\n**ผ่านเงื่อนไข ACI 318:**\n- สัดส่วน L2/L1 = {ratio:.2f}\n- น้ำหนักบรรทุกผ่านเกณฑ์")
+            st.markdown("##### 📍 Column Far End Conditions (Stiffness)")
+            f_col1, f_col2 = st.columns(2)
+            far_end_up = "Pinned"
+            if not is_roof:
+                with f_col1:
+                    far_end_up_sel = st.selectbox("Upper Col Far End", ["Fixed (4EI/L)", "Pinned (3EI/L)"], index=1)
+                    far_end_up = far_end_up_sel.split()[0]
             else:
-                st.error(f"❌ **DDM (Direct Design Method)**\n\n**ไม่ผ่านเงื่อนไข ACI 318:**")
-                for r in ddm_reasons:
-                    st.write(f"- {r}")
-                st.caption(f"*(อ้างอิง: L1 = {actual_L1:.2f} m, L2 = {actual_L2:.2f} m, Ratio = {ratio:.2f})*")
+                 with f_col1: st.info("Upper Col: None (Roof)")
+
+            with f_col2:
+                far_end_lo_sel = st.selectbox("Lower Col Far End", ["Fixed (4EI/L)", "Pinned (3EI/L)"], index=1)
+                far_end_lo = far_end_lo_sel.split()[0]
+
+            # --- PLAN LAYOUT ---
+            st.markdown("##### 📏 Span Dimensions")
+            col_location = st.selectbox("Plan Location", ["Interior Column", "Edge Column", "Corner Column"])
+            
+            is_interior = (col_location == "Interior Column")
+            is_edge     = (col_location == "Edge Column")
+            is_corner   = (col_location == "Corner Column")
+            
+            # Row 1: L1
+            col_l1a, col_l1b = st.columns(2)
+            with col_l1a:
+                if is_interior:
+                    L1_l = st.number_input("L1 - Left Span (m)", value=6.0, step=0.5, key=f"L1_L_{col_location}")
+                else:
+                    st.markdown("**L1 - Left Span**")
+                    st.info("🚫 0.00 m (Edge/Corner)")
+                    L1_l = 0.0 
+            with col_l1b:
+                L1_r = st.number_input("L1 - Right Span (m)", value=6.0, step=0.5, key="L1_R_Common")
+
+            # Row 2: L2
+            col_l2a, col_l2b = st.columns(2)
+            with col_l2a:
+                L2_t = st.number_input("L2 - Top Half (m)", value=6.0, step=0.5, key="L2_T_Common")
+            with col_l2b:
+                if is_corner:
+                    st.markdown("**L2 - Bottom Half**")
+                    st.info("🚫 0.00 m (Corner)")
+                    L2_b = 0.0
+                else:
+                    L2_b = st.number_input("L2 - Bottom Half (m)", value=6.0, step=0.5, key=f"L2_B_{col_location}")
+
+            # --- EDGE BEAM ---
+            st.markdown("##### 🧱 Edge Condition")
+            edge_beam_params = {"has_beam": False, "width_cm": 0.0, "depth_cm": 0.0}
+            if not is_interior:
+                has_edge_beam = st.checkbox("Has Edge Beam?", value=True)
+                if has_edge_beam:
+                    eb_c1, eb_c2 = st.columns(2)
+                    with eb_c1: eb_w = st.number_input("Beam Width (cm)", value=30.0, step=5.0)
+                    with eb_c2: eb_d = st.number_input("Beam Depth (cm)", value=50.0, step=5.0)
+                    edge_beam_params = {"has_beam": True, "width_cm": eb_w, "depth_cm": eb_d}
+                else:
+                    st.info("ℹ️ Unrestrained Edge (Flat Plate)")
+
+            # --- CANTILEVER ---
+            with st.expander("🏗️ Cantilever / Overhang", expanded=False):
+                cant_c1, cant_c2 = st.columns(2)
+                has_cant_left = False; L_cant_left = 0.0
+                has_cant_right = False; L_cant_right = 0.0
                 
-        with col_m2:
-            st.info("✅ **EFM (Equivalent Frame Method)**\n\nสามารถใช้วิธีนี้ได้เสมอ (ครอบคลุมและไม่มีข้อจำกัดด้านสัดส่วนเรขาคณิตหรือน้ำหนักบรรทุก)")
+                with cant_c1:
+                    cant_l_disabled = (L1_l > 0.01) 
+                    has_cant_left = st.checkbox("Left Cantilever", value=False, disabled=cant_l_disabled) 
+                    if has_cant_left: L_cant_left = st.number_input("Left Length (m)", value=1.5, step=0.1)
+                
+                with cant_c2:
+                    has_cant_right = st.checkbox("Right Cantilever", value=False)
+                    if has_cant_right: L_cant_right = st.number_input("Right Length (m)", value=1.5, step=0.1)
+                
+                cant_params = {"has_left": has_cant_left, "L_left": L_cant_left, "has_right": has_cant_right, "L_right": L_cant_right}
+
+            st.divider()
+
+            # --- 3. Member Sizes ---
+            st.subheader("3. Member Sizes")
+            h_slab_cm = st.number_input("Slab Thickness (cm)", value=20.0, step=1.0)
             
-        st.markdown("---")
-        # ======================================================================
-        
-        # 1. SLAB THICKNESS CALCULATION (DETAILED)
-        if thk_res['status']:
-            st.success(f"✅ **Slab Thickness OK** (Prov: {thk_res['actual_h']} cm >= Req: {thk_res['req_h']:.2f} cm)")
-        else:
-            st.error(f"❌ **Slab Thickness NOT OK** (Prov: {thk_res['actual_h']} cm < Req: {thk_res['req_h']:.2f} cm)")
+            col_sz1, col_sz2 = st.columns(2)
+            with col_sz1: c1_cm = st.number_input("Column c1 (Parallel to L1) [cm]", value=50.0)
+            with col_sz2: c2_cm = st.number_input("Column c2 (Parallel to L2) [cm]", value=50.0)
+
+            h_up = 0.0
+            if not is_roof: h_up = st.number_input("Upper Storey Height (m)", value=3.0)
+            h_lo = st.number_input("Lower Storey Height (m)", value=3.0)
+
+            # Drop Panel
+            has_drop = st.checkbox("Include Drop Panel", value=False)
+            h_drop_cm, drop_w1, drop_w2 = 0.0, 0.0, 0.0
             
-        with st.expander("📝 Show Thickness Calculation (Detailed)", expanded=True):
-            st.markdown(f"**Method:** ACI 318 Table 8.3.1.1")
-            st.markdown(f"**Condition Case:** {thk_res['case_name']}")
-            
-            Ln_disp = thk_res['Ln']
-            fy_disp = float(fy.replace('SD', '')) * 10 
+            if has_drop:
+                d_col1, d_col2, d_col3 = st.columns(3)
+                with d_col1: h_drop_cm = st.number_input("Drop Depth (cm)", value=10.0)
+                def_w1 = (L1_l + L1_r)/3.0 if is_interior else (L1_r/3.0) + (c1_cm/200.0)
+                def_w2 = (L2_t + L2_b)/3.0 if not is_corner else (L2_t/3.0) + (c2_cm/200.0)
+                with d_col2: drop_w1 = st.number_input("Drop Width W1 (m)", value=float(f"{def_w1:.2f}"))
+                with d_col3: drop_w2 = st.number_input("Drop Width W2 (m)", value=float(f"{def_w2:.2f}"))
+
+            st.divider()
+
+            # ==========================================================
+            # 🌟 🌟 🌟 เพิ่มส่วน Analysis Direction เข้าไปตรงนี้ 🌟 🌟 🌟
+            # ==========================================================
+            st.markdown("#### 🔄 Analysis Direction (ทิศทางการคำนวณ)")
+            analysis_dir = st.radio(
+                "เลือกแกนที่จะวิเคราะห์ (โปรแกรมจะสลับค่า L และขนาดเสาให้อัตโนมัติ):",
+                ["X-Axis (คำนวณตามแนว L1)", "Y-Axis (คำนวณตามแนว L2)"],
+                horizontal=True
+            )
+
+            if "X-Axis" in analysis_dir:
+                calc_L1_l, calc_L1_r = L1_l, L1_r
+                calc_L2_t, calc_L2_b = L2_t, L2_b
+                calc_c1, calc_c2 = c1_cm, c2_cm
+                calc_drop_w1, calc_drop_w2 = drop_w1, drop_w2
+            else:
+                # สลับแกน Y
+                calc_L1_l, calc_L1_r = L2_t, L2_b
+                calc_L2_t, calc_L2_b = L1_l, L1_r
+                calc_c1, calc_c2 = c2_cm, c1_cm
+                calc_drop_w1, calc_drop_w2 = drop_w2, drop_w1
+            # ==========================================================
+
+            # --- PROCESS DATA ---
+            # 1. แปลงค่า fy จาก String (SD40) เป็น ตัวเลข (4000) ก่อนนำไปใช้
             if 'SD30' in str(fy): fy_val = 3000
             elif 'SD40' in str(fy): fy_val = 4000
             else: fy_val = 5000
-            
-            st.latex(r"h_{min} = \frac{L_n (0.8 + \frac{f_y}{1400})}{N}")
-            
-            c1_cal, c2_cal = st.columns(2)
-            with c1_cal:
-                st.write(f"- **Clear Span ($L_n$):** {Ln_disp:.3f} m")
-                st.write(f"- **Steel ($f_y$):** {fy_val} ksc")
-            with c2_cal:
-                st.write(f"- **Minimum Req ($h_{{req}}$):** {thk_res['req_h']:.2f} cm")
-                st.write(f"- **Actual Slab ($h_{{slab}}$):** {h_slab_cm} cm")
 
-            st.markdown("**Calculation Substitution:**")
-            term_fy = 0.8 + (fy_val / 14000) 
-            
-            st.info(f"""
-            $$ h_{{req}} = {thk_res['req_h']:.2f} \\text{{ cm}} $$
-            
-            Checking: $ {h_slab_cm} \\ge {thk_res['req_h']:.2f} $
-            """)
+            # 2. เรียกฟังก์ชันเตรียมข้อมูล (ใช้ตัวแปร calc_ ที่สลับแกนแล้ว)
+            calc_obj = app_calc.prepare_calculation_data(
+                h_slab_cm, h_drop_cm, has_drop, calc_c1, calc_c2, calc_drop_w1, calc_drop_w2,
+                col_location, 
+                calc_L1_l, calc_L1_r, calc_L2_t, calc_L2_b, fc, fy_val, dl, ll, auto_sw, lf_dl, lf_ll,
+                joint_type, h_up, h_lo, far_end_up, far_end_lo, cant_params,
+                edge_beam_params
+            )
 
-        # 2. DROP PANEL CALCULATION (DETAILED)
-        if has_drop:
-            drop_res = validator.check_drop_panel_detailed(h_drop_cm, drop_w1, drop_w2)
-            st.markdown("#### 📉 Drop Panel Checks")
+            # ==========================================================
+            # 🛡️ SAFETY NET: บังคับยัดค่าที่หน้า UI รับมาลงใน calc_obj 
+            # ==========================================================
+            if 'geom' not in calc_obj: calc_obj['geom'] = {}
+            if 'loads' not in calc_obj: calc_obj['loads'] = {}
+            if 'mat' not in calc_obj: calc_obj['mat'] = {}
+
+            calc_obj['geom']['L1'] = max(calc_L1_l, calc_L1_r) if 'L1' not in calc_obj['geom'] else calc_obj['geom']['L1']
+            calc_obj['geom']['L2'] = max(calc_L2_t, calc_L2_b) if 'L2' not in calc_obj['geom'] else calc_obj['geom']['L2']
             
-            dp_c1, dp_c2, dp_c3 = st.columns(3)
-            def status_mark(passed): return "✅" if passed else "❌"
+            calc_obj['geom']['c1_cm'] = calc_c1
+            calc_obj['geom']['c2_cm'] = calc_c2
+            calc_obj['geom']['h_slab_cm'] = h_slab_cm
+            calc_obj['geom']['col_loc'] = col_location
+            calc_obj['geom']['has_drop'] = has_drop
+            calc_obj['geom']['h_drop_cm'] = h_drop_cm
+            calc_obj['geom']['edge_beam'] = edge_beam_params
+
+            calc_obj['loads']['dl'] = dl
+            calc_obj['loads']['ll'] = ll
+            if 'wu' not in calc_obj['loads']:
+                sw = (h_slab_cm / 100.0) * 2400 if auto_sw else 0 # แทน Units.G ด้วย 2400kg/m3 เผื่อไว้
+                calc_obj['loads']['wu'] = (lf_dl * (dl + sw)) + (lf_ll * ll)
+
+            calc_obj['mat']['fc'] = fc
+            calc_obj['mat']['fy'] = fy_val
+            # ==========================================================
+
+            # ใช้ตัวแปร calc_ ที่สลับแกนแล้วกับ Validator
+            validator = app_calc.DesignCriteriaValidator(
+                calc_obj['geom']['L1'], calc_obj['geom']['L2'], calc_L1_l, calc_L1_r, calc_L2_t, calc_L2_b,
+                ll, dl, has_drop, cant_params,
+                fy_val, col_location, h_slab_cm, (calc_c1/100), (calc_c2/100),
+                edge_beam_params
+            )
             
-            with dp_c1:
-                st.metric("Projection", f"{drop_res['act_proj']} cm", 
-                          f"Min: {drop_res['req_proj']:.2f} cm {status_mark(drop_res['chk_depth'])}")
-            with dp_c2:
-                st.metric("Width (W1)", f"{drop_res['act_w1']:.2f} m", 
-                          f"Min: {drop_res['req_total_w1']:.2f} m {status_mark(drop_res['chk_w1'])}")
-            with dp_c3:
-                st.metric("Width (W2)", f"{drop_res['act_w2']:.2f} m", 
-                          f"Min: {drop_res['req_total_w2']:.2f} m {status_mark(drop_res['chk_w2'])}")
+            thk_res = validator.check_min_thickness_detailed()
+            ddm_ok, ddm_reasons = validator.check_ddm()
+
+        # --------------------------------------------------------------------------
+        # RIGHT COLUMN: VISUALIZATION & RESULTS
+        # --------------------------------------------------------------------------
+        with col_viz:
+            st.subheader(f"👁️ Visualization: {col_location}")
+            v_tab1, v_tab2 = st.tabs(["📐 Plan View", "🔍 True-Scale Section"])
             
-            with st.expander("📝 Drop Panel Calculation Details (Full)", expanded=True):
-                st.markdown("##### 1. Depth Check (ความหนา)")
-                st.markdown("Requirement: Drop panel projection below slab must be at least $h_s/4$.")
+            with v_tab1:
+                # วาดรูปโดยใช้ตัวแปร calc_ เพื่อให้รูปหมุนตามแกนวิเคราะห์
+                fig_plan = app_viz.draw_plan_view(
+                    calc_L1_l, calc_L1_r, calc_L2_t, calc_L2_b, calc_c1, calc_c2, 
+                    col_location, has_drop, calc_drop_w1, calc_drop_w2, cant_params, edge_beam_params
+                )
+                st.pyplot(fig_plan)
+            
+            with v_tab2:
+                # Elevation ก็อ้างอิงจากตัวแปร calc_ เช่นกัน
+                fig_elev = app_viz.draw_elevation_real_scale(
+                    h_up, h_lo, has_drop, h_drop_cm, calc_drop_w1, calc_c1, h_slab_cm, 
+                    is_roof, far_end_up, far_end_lo, cant_params, edge_beam_params
+                )
+                st.pyplot(fig_elev)
                 
-                st.latex(r"\text{Req Depth } (d_{drop}) \ge \frac{h_{slab}}{4}")
-                
-                req_proj_val = h_slab_cm / 4.0
-                st.latex(r"d_{drop} \ge \frac{" + f"{h_slab_cm}" + r"}{4} = " + f"{req_proj_val:.2f}" + r" \text{ cm}")
-                
-                chk_sym = "\ge" if h_drop_cm >= req_proj_val else "<"
-                st.latex(f"\\text{{Provided }} {h_drop_cm} \\text{{ cm }} {chk_sym} {req_proj_val:.2f} \\text{{ cm}}")
-                
-                if h_drop_cm >= req_proj_val:
-                    st.success(f"✅ Depth Satisfied: {h_drop_cm} cm provided.")
+            # ----------------------------------------------------------------------
+            # DETAILED CALCULATIONS & CODE COMPLIANCE
+            # ----------------------------------------------------------------------
+            st.divider()
+            st.markdown("### 📋 Code Compliance & Calculations")
+            
+            # ======================================================================
+            # 🌟 ตรวจสอบ DDM / EFM
+            # ======================================================================
+            st.markdown("#### 🔍 Method Applicability Check (การเลือกวิธีคำนวณ)")
+            
+            actual_L1 = calc_obj['geom']['L1']
+            actual_L2 = calc_obj['geom']['L2']
+            ratio = actual_L2 / actual_L1 if actual_L1 > 0 else 0
+            
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                if ddm_ok:
+                    st.success(f"✅ **DDM (Direct Design Method)**\n\n**ผ่านเงื่อนไข ACI 318:**\n- สัดส่วน L2/L1 = {ratio:.2f}\n- น้ำหนักบรรทุกผ่านเกณฑ์")
                 else:
-                    st.error(f"❌ Depth Insufficient: Need at least {req_proj_val:.2f} cm.")
+                    st.error(f"❌ **DDM (Direct Design Method)**\n\n**ไม่ผ่านเงื่อนไข ACI 318:**")
+                    for r in ddm_reasons:
+                        st.write(f"- {r}")
+                    st.caption(f"*(อ้างอิง: L1 = {actual_L1:.2f} m, L2 = {actual_L2:.2f} m, Ratio = {ratio:.2f})*")
+                    
+            with col_m2:
+                st.info("✅ **EFM (Equivalent Frame Method)**\n\nสามารถใช้วิธีนี้ได้เสมอ (ครอบคลุมและไม่มีข้อจำกัดด้านสัดส่วนเรขาคณิตหรือน้ำหนักบรรทุก)")
+                
+            st.markdown("---")
+            # ======================================================================
+            
+            # 1. SLAB THICKNESS CALCULATION (DETAILED)
+            if thk_res['status']:
+                st.success(f"✅ **Slab Thickness OK** (Prov: {thk_res['actual_h']} cm >= Req: {thk_res['req_h']:.2f} cm)")
+            else:
+                st.error(f"❌ **Slab Thickness NOT OK** (Prov: {thk_res['actual_h']} cm < Req: {thk_res['req_h']:.2f} cm)")
+                
+            with st.expander("📝 Show Thickness Calculation (Detailed)", expanded=True):
+                st.markdown(f"**Method:** ACI 318 Table 8.3.1.1")
+                st.markdown(f"**Condition Case:** {thk_res['case_name']}")
+                
+                Ln_disp = thk_res['Ln']
+                fy_disp = float(fy.replace('SD', '')) * 10 
+                if 'SD30' in str(fy): fy_val = 3000
+                elif 'SD40' in str(fy): fy_val = 4000
+                else: fy_val = 5000
+                
+                st.latex(r"h_{min} = \frac{L_n (0.8 + \frac{f_y}{1400})}{N}")
+                
+                c1_cal, c2_cal = st.columns(2)
+                with c1_cal:
+                    st.write(f"- **Clear Span ($L_n$):** {Ln_disp:.3f} m")
+                    st.write(f"- **Steel ($f_y$):** {fy_val} ksc")
+                with c2_cal:
+                    st.write(f"- **Minimum Req ($h_{{req}}$):** {thk_res['req_h']:.2f} cm")
+                    st.write(f"- **Actual Slab ($h_{{slab}}$):** {h_slab_cm} cm")
 
-                st.markdown("---")
-                st.markdown("##### 2. Width Check (ความกว้าง)")
-                st.markdown("Requirement: Drop panel must extend $\ge L/6$ from center line in each direction (Total $\ge L/3$).")
+                st.markdown("**Calculation Substitution:**")
+                term_fy = 0.8 + (fy_val / 14000) 
                 
-                st.latex(r"\text{Req Width } (W) \ge \frac{L_{span}}{3}")
+                st.info(f"""
+                $$ h_{{req}} = {thk_res['req_h']:.2f} \\text{{ cm}} $$
                 
-                st.markdown("**Direction 1 (L1 Analysis):**")
-                req_w1 = drop_res['req_total_w1']
-                st.latex(r"W_{1,req} = \frac{L_1}{3} = " + f"{req_w1:.2f} \\text{{ m}}")
-                st.write(f"Provided $W_1$ = {drop_w1:.2f} m")
-                if drop_res['chk_w1']: st.success("✅ W1 OK") 
-                else: st.error("❌ W1 Too Narrow")
+                Checking: $ {h_slab_cm} \\ge {thk_res['req_h']:.2f} $
+                """)
+
+            # 2. DROP PANEL CALCULATION (DETAILED)
+            if has_drop:
+                # ใช้ calc_drop_w1, calc_drop_w2 เพื่อให้ตรวจสอบค่าตามทิศทางที่สลับแกนแล้ว
+                drop_res = validator.check_drop_panel_detailed(h_drop_cm, calc_drop_w1, calc_drop_w2)
+                st.markdown("#### 📉 Drop Panel Checks")
                 
-                st.markdown("**Direction 2 (L2 Transverse):**")
-                req_w2 = drop_res['req_total_w2']
-                st.latex(r"W_{2,req} = \frac{L_2}{3} = " + f"{req_w2:.2f} \\text{{ m}}")
-                st.write(f"Provided $W_2$ = {drop_w2:.2f} m")
-                if drop_res['chk_w2']: st.success("✅ W2 OK") 
-                else: st.error("❌ W2 Too Narrow")
+                dp_c1, dp_c2, dp_c3 = st.columns(3)
+                def status_mark(passed): return "✅" if passed else "❌"
+                
+                with dp_c1:
+                    st.metric("Projection", f"{drop_res['act_proj']} cm", 
+                              f"Min: {drop_res['req_proj']:.2f} cm {status_mark(drop_res['chk_depth'])}")
+                with dp_c2:
+                    st.metric("Width (W1)", f"{drop_res['act_w1']:.2f} m", 
+                              f"Min: {drop_res['req_total_w1']:.2f} m {status_mark(drop_res['chk_w1'])}")
+                with dp_c3:
+                    st.metric("Width (W2)", f"{drop_res['act_w2']:.2f} m", 
+                              f"Min: {drop_res['req_total_w2']:.2f} m {status_mark(drop_res['chk_w2'])}")
+                
+                with st.expander("📝 Drop Panel Calculation Details (Full)", expanded=True):
+                    st.markdown("##### 1. Depth Check (ความหนา)")
+                    st.markdown("Requirement: Drop panel projection below slab must be at least $h_s/4$.")
+                    
+                    st.latex(r"\text{Req Depth } (d_{drop}) \ge \frac{h_{slab}}{4}")
+                    
+                    req_proj_val = h_slab_cm / 4.0
+                    st.latex(r"d_{drop} \ge \frac{" + f"{h_slab_cm}" + r"}{4} = " + f"{req_proj_val:.2f}" + r" \text{ cm}")
+                    
+                    chk_sym = "\ge" if h_drop_cm >= req_proj_val else "<"
+                    st.latex(f"\\text{{Provided }} {h_drop_cm} \\text{{ cm }} {chk_sym} {req_proj_val:.2f} \\text{{ cm}}")
+                    
+                    if h_drop_cm >= req_proj_val:
+                        st.success(f"✅ Depth Satisfied: {h_drop_cm} cm provided.")
+                    else:
+                        st.error(f"❌ Depth Insufficient: Need at least {req_proj_val:.2f} cm.")
+
+                    st.markdown("---")
+                    st.markdown("##### 2. Width Check (ความกว้าง)")
+                    st.markdown("Requirement: Drop panel must extend $\ge L/6$ from center line in each direction (Total $\ge L/3$).")
+                    
+                    st.latex(r"\text{Req Width } (W) \ge \frac{L_{span}}{3}")
+                    
+                    st.markdown("**Direction 1 (L1 Analysis):**")
+                    req_w1 = drop_res['req_total_w1']
+                    st.latex(r"W_{1,req} = \frac{L_1}{3} = " + f"{req_w1:.2f} \\text{{ m}}")
+                    st.write(f"Provided $W_1$ = {calc_drop_w1:.2f} m")
+                    if drop_res['chk_w1']: st.success("✅ W1 OK") 
+                    else: st.error("❌ W1 Too Narrow")
+                    
+                    st.markdown("**Direction 2 (L2 Transverse):**")
+                    req_w2 = drop_res['req_total_w2']
+                    st.latex(r"W_{2,req} = \frac{L_2}{3} = " + f"{req_w2:.2f} \\text{{ m}}")
+                    st.write(f"Provided $W_2$ = {calc_drop_w2:.2f} m")
+                    if drop_res['chk_w2']: st.success("✅ W2 OK") 
+                    else: st.error("❌ W2 Too Narrow")
 
         # Sidebar Update
         with status_container:
