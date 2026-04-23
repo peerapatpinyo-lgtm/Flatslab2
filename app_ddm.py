@@ -620,27 +620,32 @@ def render_ddm_tab(calc_obj):
 
 
 # ใน app_ddm.py ภายใน Tab 6:
-    # --- TAB 6: Drawings & Details ---
     with tab_viz:
-        st.markdown("#### 🎨 Scaled Cross-Section & Reinforcement Details")
-        st.markdown("ภาพวาดหน้าตัดและขอบเขตหน้าตัดวิกฤต (Critical Section) อ้างอิงตามสัดส่วนจริง (Scaled) พร้อมแสดงข้อมูลเหล็กเสริมที่ออกแบบจริง")
+        st.markdown("#### 🎨 Detailed Engineering Drawings")
+        st.markdown("ภาพวาดเพื่อการจัดเหล็ก (Detailing) อ้างอิงตามสัดส่วนและข้อกำหนด ACI 318")
         
-        # ตรวจสอบว่าได้ import viz_ddm มาแล้วหรือไม่
         if 'viz_ddm' in sys.modules or 'viz_ddm' in globals():
+            
+            # --- แถวที่ 1: Top View (Plan) ---
+            st.markdown("##### 1. Reinforcement Plan View (Top View)")
+            fig_plan = viz_ddm.draw_rebar_plan_view(inputs, edited_df)
+            st.pyplot(fig_plan)
+            
+            st.divider()
+            
+            # --- แถวที่ 2: แบ่ง 2 คอลัมน์สำหรับ Section และ Punching ---
             col_viz1, col_viz2 = st.columns(2)
             
             with col_viz1:
-                st.markdown("**1. Scaled Detailed Cross-Section (cm)**")
-                # ✅ อัปเดต: เรียกใช้ฟังก์ชันใหม่ที่แสดงเหล็กเสริม
-                # ส่งค่า inputs (Geometry) และ edited_df (Rebar Schedule) เข้าไป
-                fig1 = viz_ddm.draw_slab_section_with_rebar(inputs, edited_df)
-                st.pyplot(fig1)
+                st.markdown("##### 2. Cross-Section Details")
+                fig_sec = viz_ddm.draw_slab_section_with_rebar(inputs, edited_df)
+                st.pyplot(fig_sec)
                 
             with col_viz2:
-                st.markdown(f"**2. Punching Perimeter (b_o) - {col_loc} Column**")
-                # ส่วนนี้คงเดิม
-                fig2 = viz_ddm.draw_punching_plan(col_loc, c1_cm, c2_cm, d_shear_cm)
-                st.pyplot(fig2)
+                st.markdown(f"##### 3. Punching Perimeter ({col_loc})")
+                fig_punch = viz_ddm.draw_punching_plan(col_loc, c1_cm, c2_cm, d_shear_cm)
+                st.pyplot(fig_punch)
+                
         else:
-            st.info("กรุณาตรวจสอบว่าได้ใส่ `import viz_ddm` ไว้ที่ด้านบนสุดของไฟล์ `app_ddm.py` แล้ว")
+            st.error("ไม่สามารถโหลดระบบวาดภาพได้ กรุณาตรวจสอบไฟล์ `viz_ddm.py`")
    
