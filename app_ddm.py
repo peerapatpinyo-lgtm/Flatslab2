@@ -619,26 +619,28 @@ def render_ddm_tab(calc_obj):
         st.markdown(f"**Final Verification:** $V_{{u,1way}} \\le \\phi V_{{c,1way}} \\implies {vu_1way_kg:,.0f} \\text{{ kg}} \\le {phi_vc_1way:,.0f} \\text{{ kg}}$ ➡️ **{oneway_status}**")
 
 
-# --- TAB 6: Drawings & Details ---
+# ใน app_ddm.py ภายใน Tab 6:
+    # --- TAB 6: Drawings & Details ---
     with tab_viz:
-        st.markdown("#### 🎨 Section & Punching Shear Perimeters")
-        st.markdown("ภาพวาดหน้าตัดและขอบเขตหน้าตัดวิกฤต (Critical Section) อ้างอิงตามสัดส่วนจริง (Scaled to dimensions)")
+        st.markdown("#### 🎨 Scaled Cross-Section & Reinforcement Details")
+        st.markdown("ภาพวาดหน้าตัดและขอบเขตหน้าตัดวิกฤต (Critical Section) อ้างอิงตามสัดส่วนจริง (Scaled) พร้อมแสดงข้อมูลเหล็กเสริมที่ออกแบบจริง")
         
         # ตรวจสอบว่าได้ import viz_ddm มาแล้วหรือไม่
         if 'viz_ddm' in sys.modules or 'viz_ddm' in globals():
             col_viz1, col_viz2 = st.columns(2)
             
             with col_viz1:
-                st.markdown("**Slab-Column Cross Section**")
-                # เรียกใช้ฟังก์ชันวาดหน้าตัด
-                fig1 = viz_ddm.draw_slab_section(geom_data, edited_df)
+                st.markdown("**1. Scaled Detailed Cross-Section (cm)**")
+                # ✅ อัปเดต: เรียกใช้ฟังก์ชันใหม่ที่แสดงเหล็กเสริม
+                # ส่งค่า inputs (Geometry) และ edited_df (Rebar Schedule) เข้าไป
+                fig1 = viz_ddm.draw_slab_section_with_rebar(inputs, edited_df)
                 st.pyplot(fig1)
                 
             with col_viz2:
-                st.markdown(f"**Punching Perimeter (b_o) - {col_loc} Column**")
-                # เรียกใช้ฟังก์ชันวาดแปลนทะลุ
+                st.markdown(f"**2. Punching Perimeter (b_o) - {col_loc} Column**")
+                # ส่วนนี้คงเดิม
                 fig2 = viz_ddm.draw_punching_plan(col_loc, c1_cm, c2_cm, d_shear_cm)
                 st.pyplot(fig2)
         else:
-            st.info("กรุณาตรวจสอบว่าได้สร้างไฟล์ `viz_ddm.py` และใส่ `import viz_ddm` ไว้ที่ด้านบนสุดของไฟล์ `app_ddm.py` แล้ว")
+            st.info("กรุณาตรวจสอบว่าได้ใส่ `import viz_ddm` ไว้ที่ด้านบนสุดของไฟล์ `app_ddm.py` แล้ว")
    
