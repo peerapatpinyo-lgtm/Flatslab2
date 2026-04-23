@@ -345,12 +345,60 @@ with tab1:
 with tab2:
     app_theory.display_theory(calc_obj)
 
+import copy
+
 with tab3:
     if ddm_ok:
-        app_ddm.render_ddm_tab(calc_obj) 
+        st.header("Direct Design Method (DDM) Analysis")
+        
+        # ==========================================================
+        # 🔄 ย้ายส่วนเลือกทิศทางมาไว้ที่นี่แบบมืออาชีพ!
+        # ==========================================================
+        st.markdown("### 🔄 Select Analysis Frame")
+        st.info("เลือกทิศทางของ Equivalent Frame ที่ต้องการคำนวณโมเมนต์และเหล็กเสริม")
+        
+        analysis_dir = st.radio(
+            "Analysis Direction:",
+            ["X-Axis Frame (วิเคราะห์ตามแนว L1 เดิม)", "Y-Axis Frame (วิเคราะห์ตามแนว L2 เดิม)"],
+            horizontal=True,
+            key="ddm_analysis_dir"
+        )
+        
+        st.divider()
+
+        # สร้างตัวโคลนของ calc_obj เพื่อไม่ให้กระทบ Physical Model ใน Tab อื่น
+        ddm_calc_obj = copy.deepcopy(calc_obj)
+        
+        # โลจิกสลับแกน: ถ้าเลือก Y-Axis ให้เอาค่าแกน Y มาสวมทับแกน X ของ DDM
+        if "Y-Axis" in analysis_dir:
+            # สลับความยาว Span
+            ddm_calc_obj['geom']['L1'] = calc_obj['geom']['L2']
+            ddm_calc_obj['geom']['L2'] = calc_obj['geom']['L1']
+            
+            # สลับขนาดเสา
+            ddm_calc_obj['geom']['c1_cm'] = calc_obj['geom']['c2_cm']
+            ddm_calc_obj['geom']['c2_cm'] = calc_obj['geom']['c1_cm']
+            
+            # ถ้ามี Drop Panel ต้องสลับความกว้าง Drop ด้วย
+            if ddm_calc_obj['geom'].get('has_drop'):
+                # ตรวจสอบว่าใน calc_obj มี key นี้หรือไม่ ถ้ามีก็สลับ
+                if 'drop_w1' in ddm_calc_obj['geom'] and 'drop_w2' in ddm_calc_obj['geom']:
+                    ddm_calc_obj['geom']['drop_w1'] = calc_obj['geom']['drop_w2']
+                    ddm_calc_obj['geom']['drop_w2'] = calc_obj['geom']['drop_w1']
+            
+            st.success("🔄 **Y-Axis Frame Active:** โปรแกรมได้สลับค่า L และขนาดหน้าตัดเสา c สำหรับการคำนวณในแนวขวางเรียบร้อยแล้ว")
+        else:
+            st.success("➡️ **X-Axis Frame Active:** คำนวณ Frame ตามแนวยาวปกติ")
+
+        # ==========================================================
+        # ส่ง Object ที่จัดการทิศทางเรียบร้อยแล้ว เข้าไป Render DDM
+        # ==========================================================
+        app_ddm.render_ddm_tab(ddm_calc_obj) 
+        
     else:
         st.error("❌ This structure DOES NOT meet DDM criteria.")
-        for r in ddm_reasons: st.write(f"- {r}")
+        for r in ddm_reasons: 
+            st.write(f"- {r}")
 
 with tab4:
     st.header("📐 Equivalent Frame Method (EFM)")
