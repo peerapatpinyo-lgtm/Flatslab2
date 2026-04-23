@@ -463,8 +463,10 @@ def render_ddm_tab(calc_obj):
             c_dist = b1 / 2.0
             Jc = (d_shear_cm * (b1**3) / 6.0) + ((b1 * (d_shear_cm**3)) / 6.0) + (d_shear_cm * b1 * (b2**2) / 2.0)
 
+        # สรุปผลลัพธ์
         Ac = bo_cm * d_shear_cm
 
+        st.markdown("---") # เพิ่มเส้นคั่นบางๆ ให้ดูแยกส่วนชัดเจน
         st.markdown(f"- $b_1$ (ทิศทาง $c_1$) = **{b1:.1f} cm**")
         st.markdown(f"- $b_2$ (ทิศทาง $c_2$) = **{b2:.1f} cm**")
         st.markdown(f"$$ b_o = {bo_cm:.1f} \\text{{ cm}} $$")
