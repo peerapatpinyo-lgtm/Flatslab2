@@ -34,38 +34,48 @@ def render_ddm_tab(calc_obj):
 
 
     # 🌟 2. แพ็กข้อมูลให้ครบก่อนส่งเข้า calc_ddm
+
     
     # ดึงค่าโหลดอย่างปลอดภัย ป้องกัน KeyError
     loads_data = calc_obj.get('loads', {})
-    dl = loads_data.get('dl', loads_data.get('DL', 0)) # เผื่อกรณีใช้ตัวพิมพ์ใหญ่หรือเล็ก
+    dl = loads_data.get('dl', loads_data.get('DL', 0))
     ll = loads_data.get('ll', loads_data.get('LL', 0))
-    
-    # ถ้าไม่มีการส่ง wu มา ให้คำนวณใหม่เป็น 1.4DL + 1.7LL
     wu = loads_data.get('wu', (1.4 * dl) + (1.7 * ll))
 
+    # ดึงข้อมูล geom อย่างปลอดภัย ป้องกัน KeyError
+    geom_data = calc_obj.get('geom', {})
+    
+    # จัดการความหนาพื้น: หา 'h_slab_cm' ก่อน ถ้าไม่มีให้หา 'h_s' (แล้วคูณ 100 แปลงเป็น cm) ถ้าหาไม่เจออีกให้ default 20 cm
+    h_slab_cm = geom_data.get('h_slab_cm', geom_data.get('h_s', 0.20) * 100.0)
+    has_drop = geom_data.get('has_drop', False)
+    h_drop_cm = geom_data.get('h_drop_cm', h_slab_cm) if has_drop else h_slab_cm
+
+    # ดึงข้อมูล Edge Beam อย่างปลอดภัย
+    eb_data = geom_data.get('edge_beam', {})
+
     inputs = {
-        'l1': calc_obj['geom']['L1'],
-        'l2': calc_obj['geom']['L2'],
-        'wu': wu,  # ใช้ค่า wu ที่เราจัดการอย่างปลอดภัยแล้ว
+        'l1': geom_data.get('L1', 0),
+        'l2': geom_data.get('L2', 0),
+        'wu': wu,
         
         # ขนาดเสาเป็นเมตร
-        'c1': calc_obj['geom'].get('c1_cm', 50) / 100.0, 
-        'c2': calc_obj['geom'].get('c2_cm', 50) / 100.0,
+        'c1': geom_data.get('c1_cm', 50) / 100.0, 
+        'c2': geom_data.get('c2_cm', 50) / 100.0,
         
-        'h_slab': calc_obj['geom']['h_slab_cm'],
-        'has_drop': calc_obj['geom']['has_drop'],
-        'h_drop': calc_obj['geom'].get('h_drop_cm', 0) if calc_obj['geom']['has_drop'] else calc_obj['geom']['h_slab_cm'],
+        'h_slab': h_slab_cm,
+        'has_drop': has_drop,
+        'h_drop': h_drop_cm,
         
-        'fc': calc_obj['mat']['fc'],
+        'fc': calc_obj.get('mat', {}).get('fc', 280),
         'fy': fy_val,
         
         # 🌟 ลิงก์ตรงนี้! ตัวแปรตำแหน่งเสาจะถูกส่งไปเช็ค b_o
         'col_location': col_loc, 
         'case_type': "Interior" if col_loc == "Interior" else "Exterior",
         
-        'has_edge_beam': calc_obj['geom']['edge_beam']['has_beam'],
-        'eb_width': calc_obj['geom']['edge_beam']['width_cm'] / 100.0,
-        'eb_depth': calc_obj['geom']['edge_beam']['depth_cm'] / 100.0,
+        'has_edge_beam': eb_data.get('has_beam', False),
+        'eb_width': eb_data.get('width_cm', 0) / 100.0,
+        'eb_depth': eb_data.get('depth_cm', 0) / 100.0,
     }
     
 
