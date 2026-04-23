@@ -95,6 +95,7 @@ def render_ddm_tab(calc_obj):
     geom_data = calc_obj.get('geom', {})
     mat_data = calc_obj.get('mat', {})
     
+
     # --- ตัวแปร Geometry ---
     L1 = geom_data.get('L1', 0)
     L2 = geom_data.get('L2', 0)
@@ -107,6 +108,10 @@ def render_ddm_tab(calc_obj):
     d_eff_m = h_slab_m - cc_m - ((selected_rebar / 1000.0) / 2.0)
     
     cs_width = min(L1/2, L2/2) # ความกว้าง Column Strip (ใช้ใน Tab 4)
+    
+    # 🌟 เติมบรรทัดนี้ลงไปเพื่อคำนวณ Clear Span (ln) ให้โค้ดส่วนแสดงผลดึงไปใช้
+    ln = max(L1 - c1, 0.65 * L1) if L1 > 0 else 0
+    
     
     # --- ตัวแปร Material ---
     fc_ksc = mat_data.get('fc', 280)
