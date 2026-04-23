@@ -218,7 +218,7 @@ def render_ddm_tab(calc_obj):
     st.markdown("### Detailed Engineering Calculation Report")
     st.caption("Reference: ACI 318-19 Building Code Requirements for Structural Concrete")
 
-    tab_limit, tab_load, tab_dist, tab_flex, tab_shear = st.tabs([
+    tab_limit, tab_load, tab_dist, tab_flex, tab_shear, tab_viz = st.tabs([
         "1. Geometry Limits", 
         "2. Loads & Moments", 
         "3. Distribution Factors",
