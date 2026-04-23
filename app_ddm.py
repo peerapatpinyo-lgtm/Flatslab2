@@ -423,23 +423,43 @@ def render_ddm_tab(calc_obj):
         
         st.markdown(f"**1. Critical Section Properties ($b_o$, $A_c$, $J_c$) - {col_loc} Column**")
 
-        # คำนวณขอบเขตหน้าตัดวิกฤต (bo) อิงตามตำแหน่งเสา
+        # คำนวณขอบเขตหน้าตัดวิกฤต (bo) อิงตามตำแหน่งเสา พร้อมแสดงสมการ
         if col_loc == "Corner":
             b1 = c1_cm + (d_shear_cm / 2.0)
             b2 = c2_cm + (d_shear_cm / 2.0)
             bo_cm = b1 + b2
+            
+            # แสดงสมการ Corner
+            st.markdown(f"$$b_1=c_1+\\frac{{d}}{{2}}={c1_cm:.2f}+\\frac{{{d_shear_cm:.2f}}}{{2}}={b1:.2f}\\text{{ cm}}$$")
+            st.markdown(f"$$b_2=c_2+\\frac{{d}}{{2}}={c2_cm:.2f}+\\frac{{{d_shear_cm:.2f}}}{{2}}={b2:.2f}\\text{{ cm}}$$")
+            st.markdown(f"$$b_o=b_1+b_2={b1:.2f}+{b2:.2f}={bo_cm:.2f}\\text{{ cm}}$$")
+
             c_dist = (b1**2) / (2 * (b1 + b2)) if (b1 + b2) > 0 else b1 / 2.0
             Jc = (d_shear_cm * (b1**3) / 12.0) + ((b1 * (d_shear_cm**3)) / 12.0) + (d_shear_cm * b1 * (b2**2) / 4.0)
+
         elif col_loc == "Edge":
             b1 = c1_cm + (d_shear_cm / 2.0)
             b2 = c2_cm + d_shear_cm
             bo_cm = (2 * b1) + b2
+            
+            # แสดงสมการ Edge
+            st.markdown(f"$$b_1=c_1+\\frac{{d}}{{2}}={c1_cm:.2f}+\\frac{{{d_shear_cm:.2f}}}{{2}}={b1:.2f}\\text{{ cm}}$$")
+            st.markdown(f"$$b_2=c_2+d={c2_cm:.2f}+{d_shear_cm:.2f}={b2:.2f}\\text{{ cm}}$$")
+            st.markdown(f"$$b_o=2b_1+b_2=2({b1:.2f})+{b2:.2f}={bo_cm:.2f}\\text{{ cm}}$$")
+
             c_dist = (b1**2) / ((2 * b1) + b2) if ((2 * b1) + b2) > 0 else b1 / 2.0
             Jc = (d_shear_cm * (b1**3) / 6.0) + ((b1 * (d_shear_cm**3)) / 6.0) + (d_shear_cm * b1 * (b2**2) / 2.0)
+
         else: # Interior
             b1 = c1_cm + d_shear_cm  
             b2 = c2_cm + d_shear_cm  
             bo_cm = 2 * (b1 + b2)
+            
+            # แสดงสมการ Interior
+            st.markdown(f"$$b_1=c_1+d={c1_cm:.2f}+{d_shear_cm:.2f}={b1:.2f}\\text{{ cm}}$$")
+            st.markdown(f"$$b_2=c_2+d={c2_cm:.2f}+{d_shear_cm:.2f}={b2:.2f}\\text{{ cm}}$$")
+            st.markdown(f"$$b_o=2(b_1+b_2)=2({b1:.2f}+{b2:.2f})={bo_cm:.2f}\\text{{ cm}}$$")
+
             c_dist = b1 / 2.0
             Jc = (d_shear_cm * (b1**3) / 6.0) + ((b1 * (d_shear_cm**3)) / 6.0) + (d_shear_cm * b1 * (b2**2) / 2.0)
 
