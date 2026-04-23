@@ -32,11 +32,21 @@ def render_ddm_tab(calc_obj):
     fy_str = calc_obj.get('fy_raw', 'SD40')
     fy_val = 3000 if 'SD30' in fy_str else (5000 if 'SD50' in fy_str else 4000)
 
+
     # 🌟 2. แพ็กข้อมูลให้ครบก่อนส่งเข้า calc_ddm
+    
+    # ดึงค่าโหลดอย่างปลอดภัย ป้องกัน KeyError
+    loads_data = calc_obj.get('loads', {})
+    dl = loads_data.get('dl', loads_data.get('DL', 0)) # เผื่อกรณีใช้ตัวพิมพ์ใหญ่หรือเล็ก
+    ll = loads_data.get('ll', loads_data.get('LL', 0))
+    
+    # ถ้าไม่มีการส่ง wu มา ให้คำนวณใหม่เป็น 1.4DL + 1.7LL
+    wu = loads_data.get('wu', (1.4 * dl) + (1.7 * ll))
+
     inputs = {
         'l1': calc_obj['geom']['L1'],
         'l2': calc_obj['geom']['L2'],
-        'wu': calc_obj['loads']['wu'],
+        'wu': wu,  # ใช้ค่า wu ที่เราจัดการอย่างปลอดภัยแล้ว
         
         # ขนาดเสาเป็นเมตร
         'c1': calc_obj['geom'].get('c1_cm', 50) / 100.0, 
@@ -57,6 +67,8 @@ def render_ddm_tab(calc_obj):
         'eb_width': calc_obj['geom']['edge_beam']['width_cm'] / 100.0,
         'eb_depth': calc_obj['geom']['edge_beam']['depth_cm'] / 100.0,
     }
+    
+
 
     # 3. เรียกคำนวณ
     df_res, Mo, msgs, details = calculate_ddm(inputs)
