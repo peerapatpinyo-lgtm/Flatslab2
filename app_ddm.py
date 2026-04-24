@@ -496,11 +496,27 @@ def render_ddm_tab(calc_obj):
 
         st.divider()
         
-        
         # --- 2. Demand Calculation (Vu and Munbal) ---
         st.markdown("**2. Shear and Unbalanced Moment Demand**")
-        vu_kg = wu * ((L1 * L2) - ((c1 + d_eff_m) * (c2 + d_eff_m)))
-        st.markdown(f"$$ V_u = {wu:,.0f} \\times \\left[ ({L1:.2f} \\times {L2:.2f}) - ({c1+d_eff_m:.2f} \\times {c2+d_eff_m:.2f}) \\right] = {vu_kg:,.0f} \\text{{ kg}} $$")
+        
+        # 🟢 ปรับปรุงใหม่: คำนวณพื้นที่รับน้ำหนัก (Tributary Area) และพื้นที่หักออก (Punched Area) ตามตำแหน่งเสา
+        if col_loc == "Corner":
+            trib_area = (L1 / 2.0) * (L2 / 2.0)
+            punched_area = (c1 + d_eff_m/2.0) * (c2 + d_eff_m/2.0)
+            st.markdown(f"- **Tributary Area (Corner):** $\\frac{{L_1}}{{2}} \\times \\frac{{L_2}}{{2}} = {trib_area:.2f} \\text{{ m}}^2$")
+        elif col_loc == "Edge":
+            trib_area = (L1 / 2.0) * L2
+            punched_area = (c1 + d_eff_m/2.0) * (c2 + d_eff_m)
+            st.markdown(f"- **Tributary Area (Edge):** $\\frac{{L_1}}{{2}} \\times L_2 = {trib_area:.2f} \\text{{ m}}^2$")
+        else: # Interior
+            trib_area = L1 * L2
+            punched_area = (c1 + d_eff_m) * (c2 + d_eff_m)
+            st.markdown(f"- **Tributary Area (Interior):** $L_1 \\times L_2 = {trib_area:.2f} \\text{{ m}}^2$")
+
+        vu_kg = wu * (trib_area - punched_area)
+        
+        st.markdown(f"$$ V_u = w_u \\times (A_{{trib}} - A_{{punched}}) $$")
+        st.markdown(f"$$ V_u = {wu:,.0f} \\times ({trib_area:.2f} - {punched_area:.4f}) = {vu_kg:,.0f} \\text{{ kg}} $$")
         
         # ดึงค่าโมเมนต์ลบที่หัวเสาเพื่อมาเป็น Unbalanced Moment
         mu_at_column = 0
