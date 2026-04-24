@@ -337,7 +337,7 @@ def render_ddm_tab(calc_obj):
                     
                     # สมการแทนค่าที่ชัดเจน
                     st.latex(r"\text{Total DL} = \text{SDL} + \text{Self-Weight}")
-                    st.latex(r"\text{Total DL} = " + f"{dl:.0f} + {slab_wt:.0f} = \mathbf{" + f"{total_dl:.0f}" + r" \text{ kg/m}^2}")
+                    st.latex(r"\text{Total DL} = " + f"{dl:.0f} + {slab_wt:.0f}" + r" = \mathbf{" + f"{total_dl:.0f}" + r"} \text{ kg/m}^2")
                     st.latex(r"\text{Ratio} = \frac{LL}{\text{Total DL}} = \frac{" + f"{ll:,.0f}" + r"}{" + f"{total_dl:,.0f}" + r"} = \mathbf{" + f"{load_ratio_val:.2f}" + r"}")
                     
                     if is_load_ok:
