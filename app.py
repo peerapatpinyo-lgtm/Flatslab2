@@ -177,7 +177,28 @@ with tab1:
             if 'geom' not in calc_obj: calc_obj['geom'] = {}
             if 'loads' not in calc_obj: calc_obj['loads'] = {}
             if 'mat' not in calc_obj: calc_obj['mat'] = {}
-            calc_obj['geom'].update({'L1': max(L1_l, L1_r), 'L2': max(L2_t, L2_b), 'c1_cm': c1_cm, 'c2_cm': c2_cm, 'h_slab_cm': h_slab_cm, 'col_loc': col_location, 'has_drop': has_drop, 'h_drop_cm': h_drop_cm, 'edge_beam': edge_beam_params})
+            
+            # ✅ คำนวณ L2 แบบ Equivalent Frame (เฉลี่ยระยะกึ่งกลางแผงบน-ล่าง)
+            L2_eff = (L2_t / 2.0) + (L2_b / 2.0)
+
+            # ✅ อัปเดตข้อมูลใส่ Dictionary
+            calc_obj['geom'].update({
+                'L1': max(L1_l, L1_r), 
+                'L2': L2_eff, 
+                'L2_t': L2_t, 
+                'L2_b': L2_b, 
+                'L1_l': L1_l, 
+                'L1_r': L1_r, 
+                'c1_cm': c1_cm, 
+                'c2_cm': c2_cm, 
+                'h_slab_cm': h_slab_cm, 
+                'col_loc': col_location, 
+                'has_drop': has_drop, 
+                'h_drop_cm': h_drop_cm, 
+                'drop_w1': drop_w1, 
+                'drop_w2': drop_w2,
+                'edge_beam': edge_beam_params
+            })
             
             sw = (h_slab_cm / 100.0) * 2400 if auto_sw else 0
             calc_obj['loads'].update({'dl': dl, 'll': ll, 'wu': (lf_dl * (dl + sw)) + (lf_ll * ll)})
@@ -245,7 +266,6 @@ with tab1:
                 elif 'SD40' in str(fy): fy_val = 4000
                 else: fy_val = 5000
                 
-                # แก้ไข: เพิ่มเลข 0 อีก 1 ตัวในสูตร LaTeX เพื่อให้ตรงกับ 14000
                 st.latex(r"h_{min} = \frac{L_n (0.8 + \frac{f_y}{14000})}{N}")
                 
                 c1_cal, c2_cal = st.columns(2)
@@ -267,7 +287,6 @@ with tab1:
 
             # 2. DROP PANEL CALCULATION 
             if has_drop:
-                # แก้ไข: เปลี่ยนชื่อตัวแปรที่ส่งเข้าฟังก์ชันให้ตรงกับที่ประกาศรับค่าไว้ (drop_w1, drop_w2)
                 drop_res = validator.check_drop_panel_detailed(h_drop_cm, drop_w1, drop_w2)
                 st.markdown("#### 📉 Drop Panel Checks")
                 
@@ -344,7 +363,7 @@ with tab3:
         st.header("Direct Design Method (DDM) Analysis")
         
         # ==========================================================
-        # 🔄 ย้ายส่วนเลือกทิศทางมาไว้ที่นี่แบบมืออาชีพ!
+        # 🔄 เลือกทิศทาง Frame Analysis
         # ==========================================================
         st.markdown("### 🔄 Select Analysis Frame")
         st.info("เลือกทิศทางของ Equivalent Frame ที่ต้องการคำนวณโมเมนต์และเหล็กเสริม")
@@ -363,9 +382,15 @@ with tab3:
         
         # โลจิกสลับแกน: ถ้าเลือก Y-Axis ให้เอาค่าแกน Y มาสวมทับแกน X ของ DDM
         if "Y-Axis" in analysis_dir:
-            # สลับความยาว Span
+            # สลับความยาว Span (Frame รวม)
             ddm_calc_obj['geom']['L1'] = calc_obj['geom']['L2']
             ddm_calc_obj['geom']['L2'] = calc_obj['geom']['L1']
+            
+            # ✅ สลับความยาวแผงย่อย เพื่อคำนวณ Column Strip ฝั่งบน/ล่าง (ที่กลายเป็นซ้าย/ขวา)
+            ddm_calc_obj['geom']['L2_t'] = calc_obj['geom']['L1_l']
+            ddm_calc_obj['geom']['L2_b'] = calc_obj['geom']['L1_r']
+            ddm_calc_obj['geom']['L1_l'] = calc_obj['geom']['L2_t']
+            ddm_calc_obj['geom']['L1_r'] = calc_obj['geom']['L2_b']
             
             # สลับขนาดเสา
             ddm_calc_obj['geom']['c1_cm'] = calc_obj['geom']['c2_cm']
