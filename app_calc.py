@@ -15,8 +15,11 @@ class DesignCriteriaValidator:
         self.L2_b = L2_b
         
         # ACI 318: Ln is clear span in long direction
-        self.c_avg = (c1 + c2) / 2.0
-        self.Ln_long = max(L1, L2) - self.c_avg 
+        # แก้ไข: ลบด้วยขนาดเสาในทิศทางของแกนที่ยาวที่สุด
+        if L1 >= L2:
+            self.Ln_long = L1 - c1
+        else:
+            self.Ln_long = L2 - c2
         
         self.ll = ll
         self.dl = dl
@@ -24,7 +27,14 @@ class DesignCriteriaValidator:
         self.cant = cant_data
         
         # Materials
-        self.fy_mpa = (300 if fy_ksc == "SD30" else (400 if fy_ksc == "SD40" else 500))
+        # แก้ไข: รับค่าเป็นตัวเลข (int) ให้ตรงกับที่ส่งมาจาก app.py
+        if fy_ksc == 3000:
+            self.fy_mpa = 300
+        elif fy_ksc == 4000:
+            self.fy_mpa = 400
+        else:
+            self.fy_mpa = 500
+            
         self.col_location = col_location 
         self.h_slab_cm = h_slab_cm
         
