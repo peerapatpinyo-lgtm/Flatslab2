@@ -1,12 +1,17 @@
 import streamlit as st
 import pandas as pd
 import math
-import calc_ddm
-import viz_ddm
 import sys
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import copy
+from calc_ddm import calculate_ddm
+
+# หากมีการแยกไฟล์ viz_ddm ไว้ โหลดเข้ามาด้วย
+try:
+    import viz_ddm
+except ImportError:
+    pass
 
 def translate_warnings(msg):
     """Intercepts and translates Thai messages from the backend calc_ddm file."""
@@ -22,8 +27,6 @@ def translate_warnings(msg):
     for th, en in translations.items():
         msg = msg.replace(th, en)
     return msg
-
-from calc_ddm import calculate_ddm
 
 def render_ddm_tab(calc_obj):
     # =========================================================================
@@ -91,13 +94,6 @@ def render_ddm_tab(calc_obj):
         'eb_width': eb_data.get('width_cm', 0) / 100.0,
         'eb_depth': eb_data.get('depth_cm', 0) / 100.0,
     }
-
-    # ==========================================================
-    # 🚨 DEBUG ZONE (ใส่ # ไว้ให้ ถ้ามีปัญหาค่อยเอา # ออกเพื่อดูค่า)
-    # ==========================================================
-    # st.error("🚨 ตรวจสอบข้อมูล inputs ที่จะส่งไปคำนวณ")
-    # st.json(inputs)
-    # ==========================================================
 
     # =========================================================================
     # 🌟 3. เรียกคำนวณ 
@@ -398,7 +394,7 @@ def render_ddm_tab(calc_obj):
                     st.divider()
                     st.latex(r"L_n = \max(\ " + f"{term1:.2f}" + r",\ \ " + f"{term2:.2f}" + r"\ )")
                     st.info(f"### 📏 Final Clear Span ($L_n$) = {ln:.2f} m")
-    
+
     # --- TAB 2: Loads & Moments ---
     with tab_load:
         st.markdown("#### ACI 318 Section 5.3.1: Load Combinations")
@@ -408,7 +404,7 @@ def render_ddm_tab(calc_obj):
         st.divider()
         st.markdown("#### ACI 318 Section 8.10.3.2: Total Factored Static Moment")
         st.markdown(f"$$ M_o = \\frac{{W_u \\times L_2 \\times L_n^2}}{{8}} $$")
-        # FIXED: \\times used properly to prevent the \t string bug
+        # FIXED: \times used properly to prevent the \t string bug
         st.markdown(f"**Result:** $M_o = \\frac{{{wu:,.0f} \\times {L2:.2f} \\times {ln:.2f}^2}}{{8}} =$ **{Mo:,.0f}** kg-m")
 
     # --- TAB 3: Distribution Factors (NEW TAB) ---
@@ -437,7 +433,6 @@ def render_ddm_tab(calc_obj):
         st.info("*Note: The system backend (`calc_ddm.py`) automatically interpolates exact percentages dynamically based on actual span ratios ($L_2/L_1$) and torsional stiffness per ACI 318.*")
 
     # --- TAB 4: Flexural Design (ALL SECTIONS) ---
-
     with tab_flex:
         st.markdown("#### ACI 318 Section 22.2: Flexural Reinforcement Required")
         st.markdown("Calculations for **every strip** based on the equivalent rectangular concrete stress block. ($\\phi = 0.90$)")
@@ -498,7 +493,6 @@ def render_ddm_tab(calc_obj):
                 
                 st.markdown(f"#### 📍 Section: `{loc_name}`")
                 
-
                 # --- NEW: Moment Distribution Breakdown ---
                 st.markdown("**🔍 Moment Distribution Breakdown:**")
                 is_col_strip = 'Col' in loc_name
@@ -524,7 +518,6 @@ def render_ddm_tab(calc_obj):
                 st.markdown(f"- **Transverse Factor:** {trans_f:.3f} (ACI 8.10.5 - to {'Column Strip' if is_col_strip else 'Middle Strip'})")
                 st.markdown(f"- **Net Multiplier:** ${long_f:.3f} \\times {trans_f:.3f} = {net_factor:.4f}$")
 
-                
                 # --- EXPLICIT SOURCE OF b AND d ---
                 st.markdown("**📌 Parameter Sources:**")
                 
@@ -789,8 +782,6 @@ def render_ddm_tab(calc_obj):
         
         st.markdown(f"**Final Verification:** $V_{{u,1way}} \\le \\phi V_{{c,1way}} \\implies {vu_1way_kg:,.0f} \\text{{ kg}} \\le {phi_vc_1way:,.0f} \\text{{ kg}}$ ➡️ **{oneway_status}**")
 
-
-# ใน app_ddm.py ภายใน Tab 6:
     with tab_viz:
         st.markdown("#### 🎨 Detailed Engineering Drawings")
         st.markdown("ภาพวาดเพื่อการจัดเหล็ก (Detailing) อ้างอิงตามสัดส่วนและข้อกำหนด ACI 318")
@@ -819,4 +810,3 @@ def render_ddm_tab(calc_obj):
                 
         else:
             st.error("ไม่สามารถโหลดระบบวาดภาพได้ กรุณาตรวจสอบไฟล์ `viz_ddm.py`")
-   
