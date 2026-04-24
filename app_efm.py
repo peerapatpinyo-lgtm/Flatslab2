@@ -69,28 +69,16 @@ def render_efm_tab(calc_obj):
         c1_stiff.metric("Slab ($K_s$)", fmt_sci(res.get('Ks', 0)))
         c2_stiff.metric("Column ($\Sigma K_c$)", fmt_sci(res.get('Sum_Kc', 0)))
         c3_stiff.metric("Torsion ($K_t$)", fmt_sci(res.get('Kt', 0)))
-        c4_stiff.metric("Equiv. Col ($K_{ec}$)", fmt_sci(res.get('Kec', 0)))
+        
+        Kec_val = res.get('Kec', 0)
+        Ks_val = res.get('Ks', 0)
+        c4_stiff.metric("Equiv. Col ($K_{ec}$)", fmt_sci(Kec_val))
 
         df_slab = res.get('df_slab', 0.5)
         df_col = res.get('df_col', 0.5)
 
-        st.latex(fr"DF_{{col}} = \frac{{K_{{ec}}}}{{K_{{ec}} + \Sigma K_s}} = {df_col:.4f}")
-        st.latex(fr"DF_{{slab}} = \frac{{\Sigma K_s}}{{K_{{ec}} + \Sigma K_s}} = {df_slab:.4f}")
-
-        with st.expander("📚 Detailed Stiffness Formulas (ACI 318 EFM)", expanded=False):
-            st.markdown(r"""
-            **1. Slab Stiffness ($K_s$):**
-            $$ K_s = \frac{4 E_{cs} I_s}{L_1} $$
-
-            **2. Column Stiffness ($\Sigma K_c$):**
-            $$ \Sigma K_c = \frac{4 E_{cc} I_{c,up}}{L_{up}} + \frac{4 E_{cc} I_{c,low}}{L_{low}} $$
-
-            **3. Torsional Member Stiffness ($K_t$):**
-            $$ K_t = \sum \frac{9 E_{cs} C}{L_2 \left(1 - \frac{c_2}{L_2}\right)^3} $$
-
-            **4. Equivalent Column Stiffness ($K_{ec}$):**
-            $$ K_{ec} = \frac{\Sigma K_c \cdot K_t}{\Sigma K_c + K_t} $$
-            """)
+        st.latex(fr"DF_{{col}} = \frac{{K_{{ec}}}}{{K_{{ec}} + \Sigma K_s}} = \frac{{{fmt_sci(Kec_val)}}}{{{fmt_sci(Kec_val)} + {fmt_sci(Ks_val)}}} = {df_col:.4f}")
+        st.latex(fr"DF_{{slab}} = \frac{{\Sigma K_s}}{{K_{{ec}} + \Sigma K_s}} = \frac{{{fmt_sci(Ks_val)}}}{{{fmt_sci(Kec_val)} + {fmt_sci(Ks_val)}}} = {df_slab:.4f}")
 
     # ------------------------------------------
     # TAB 2: Moment Distribution
@@ -108,26 +96,29 @@ def render_efm_tab(calc_obj):
         M_slab_dist = M_unbal * df_slab
         Mu_neg = max(FEM_L, FEM_R) - (M_slab_dist / 2)
 
-        st.latex(fr"FEM_{{Right}} = \frac{{w_u L_2 \times L_{{1,R}}^2}}{{12}} = {fmt_num(FEM_R, 0)} \text{{ kg-m}}")
+        st.latex(fr"FEM_{{Right}} = \frac{{w_u L_2 L_{{1,R}}^2}}{{12}} = \frac{{{fmt_num(wu_kgm2,0)} \times {L2:.2f} \times {L1_r:.2f}^2}}{{12}} = {fmt_num(FEM_R, 0)} \text{{ kg-m}}")
         if FEM_L > 0:
-            st.latex(fr"FEM_{{Left}} = \frac{{w_u L_2 \times L_{{1,L}}^2}}{{12}} = {fmt_num(FEM_L, 0)} \text{{ kg-m}}")
+            st.latex(fr"FEM_{{Left}} = \frac{{w_u L_2 L_{{1,L}}^2}}{{12}} = \frac{{{fmt_num(wu_kgm2,0)} \times {L2:.2f} \times {L1_l:.2f}^2}}{{12}} = {fmt_num(FEM_L, 0)} \text{{ kg-m}}")
         
-        st.latex(fr"M_{{u,neg}} = \max(FEM_{{L}}, FEM_{{R}}) - \frac{{M_{{slab}}}}{{2}} = {fmt_num(Mu_neg, 0)} \text{{ kg-m}}")
+        st.latex(fr"M_{{unbal}} = |FEM_{{Left}} - FEM_{{Right}}| = |{fmt_num(FEM_L, 0)} - {fmt_num(FEM_R, 0)}| = {fmt_num(M_unbal, 0)} \text{{ kg-m}}")
+        st.latex(fr"M_{{col}} = M_{{unbal}} \times DF_{{col}} = {fmt_num(M_unbal, 0)} \times {df_col:.4f} = {fmt_num(M_col, 0)} \text{{ kg-m}}")
+        st.latex(fr"M_{{slab}} = M_{{unbal}} \times DF_{{slab}} = {fmt_num(M_unbal, 0)} \times {df_slab:.4f} = {fmt_num(M_slab_dist, 0)} \text{{ kg-m}}")
+        st.latex(fr"M_{{u,neg}} = \max(FEM_{{L}}, FEM_{{R}}) - \frac{{M_{{slab}}}}{{2}} = {fmt_num(max(FEM_L, FEM_R), 0)} - \frac{{{fmt_num(M_slab_dist, 0)}}}{{2}} = {fmt_num(Mu_neg, 0)} \text{{ kg-m}}")
 
         st.markdown("---")
         st.markdown("**2. Positive Moments (Mid-Span)**")
-        st.caption("*Note: Positive moments are conservatively approximated using DDM coefficients based on joint location.*")
         
-        M0_max = (wu_line * max(L1_l, L1_r)**2) / 8
+        max_L1 = max(L1_l, L1_r)
+        M0_max = (wu_line * max_L1**2) / 8
         if "Edge" in col_type or "Corner" in col_type:
-            Mu_pos = 0.50 * M0_max # End span approximation
+            Mu_pos = 0.50 * M0_max
             coef_txt = "0.50"
         else:
-            Mu_pos = 0.35 * M0_max # Interior span approximation
+            Mu_pos = 0.35 * M0_max
             coef_txt = "0.35"
         
-        st.latex(fr"M_0 = \frac{{w_u L_2 L_{{1}}^2}}{{8}} = {fmt_num(M0_max, 0)} \text{{ kg-m}}")
-        st.latex(fr"M_{{u,pos}} \approx {coef_txt} M_0 = {fmt_num(Mu_pos, 0)} \text{{ kg-m}}")
+        st.latex(fr"M_0 = \frac{{w_u L_2 L_{{1}}^2}}{{8}} = \frac{{{fmt_num(wu_kgm2,0)} \times {L2:.2f} \times {max_L1:.2f}^2}}{{8}} = {fmt_num(M0_max, 0)} \text{{ kg-m}}")
+        st.latex(fr"M_{{u,pos}} \approx {coef_txt} M_0 = {coef_txt} \times {fmt_num(M0_max, 0)} = {fmt_num(Mu_pos, 0)} \text{{ kg-m}}")
 
     # ------------------------------------------
     # TAB 3: Flexural Design & Rebar Selection
@@ -147,9 +138,15 @@ def render_efm_tab(calc_obj):
             As_req = rho_des * b_cm * d_cm
             
             with st.expander(f"📝 Calculations: {strip_name}"):
-                st.latex(fr"R_n = \frac{{{fmt_num(Mu_kgcm,0)}}}{{0.9 \times {b_cm:.0f} \times {d_cm:.1f}^2}} = {fmt_num(Rn, 2)} \text{{ ksc}}")
-                st.latex(fr"\rho_{{req}} = {rho_req:.5f} \quad (\text{{Min }} \rho = {rho_min})")
-                st.latex(fr"A_{{s,req}} = \rho_{{des}} b d = {fmt_num(As_req, 2)} \text{{ cm}}^2")
+                st.latex(fr"R_n = \frac{{M_u}}{{\phi b d^2}} = \frac{{{fmt_num(Mu_kgcm,0)}}}{{0.9 \times {b_cm:.0f} \times {d_cm:.1f}^2}} = {fmt_num(Rn, 2)} \text{{ ksc}}")
+                st.latex(fr"\rho_{{req}} = \frac{{0.85 f'_c}}{{f_y}} \left( 1 - \sqrt{{1 - \frac{{2R_n}}{{0.85f'_c}}}} \right) = \frac{{0.85({fc})}}{{{fy}}} \left( 1 - \sqrt{{1 - \frac{{2({Rn:.2f})}}{{0.85({fc})}}}} \right) = {rho_req:.5f}")
+                
+                if rho_min > rho_req:
+                    st.latex(fr"\rho_{{des}} = \max(\rho_{{req}}, \rho_{{min}}) = \max({rho_req:.5f}, {rho_min}) = {rho_des:.5f}")
+                else:
+                    st.latex(fr"\rho_{{des}} = \rho_{{req}} = {rho_des:.5f}")
+                    
+                st.latex(fr"A_{{s,req}} = \rho_{{des}} b d = {rho_des:.5f} \times {b_cm:.0f} \times {d_cm:.1f} = {fmt_num(As_req, 2)} \text{{ cm}}^2")
             return As_req
 
         def user_rebar_selection(As_req, b_cm, key_prefix):
@@ -162,13 +159,12 @@ def render_efm_tab(calc_obj):
             As_per_bar = rebar_db[rb_size]
             As_prov = (100 / spacing) * As_per_bar * (b_cm / 100)
             
-            st.markdown(f"**$A_{{s,prov}}$:** {fmt_num(As_prov, 2)} cm² / {b_cm:.0f} cm strip")
+            st.latex(fr"A_{{s,prov}} = \left(\frac{{100}}{{s}}\right) A_{{b}} \left(\frac{{b}}{{100}}\right) = \left(\frac{{100}}{{{spacing}}}\right) \times {As_per_bar} \times \left(\frac{{{b_cm:.0f}}}{{100}}\right) = {fmt_num(As_prov, 2)} \text{{ cm}}^2")
             
-            # --- ACI 318 Checks ---
             if spacing > s_max:
                 st.error(f"❌ **FAIL:** Spacing exceeds ACI limit ($s_{{max}} = {s_max:.1f}$ cm)")
             elif As_prov >= As_req:
-                st.success("✅ **PASS**")
+                st.success("✅ **PASS:** Sufficient reinforcement")
             else:
                 st.error("❌ **FAIL:** Increase rebar size or decrease spacing.")
 
@@ -182,13 +178,11 @@ def render_efm_tab(calc_obj):
         with c_top1:
             st.markdown(f"#### 🟥 Column Strip ($M_u = {fmt_num(Mu_col_neg, 0)}$)")
             As_req_col_top = design_flexure_detailed(Mu_col_neg, b_col_cm, d_cm, fc, fy, "Col Strip - Top")
-            st.info(f"**$A_{{s,req}}$ = {fmt_num(As_req_col_top, 2)} cm²**")
             user_rebar_selection(As_req_col_top, b_col_cm, "col_top")
 
         with c_top2:
             st.markdown(f"#### 🟦 Middle Strip ($M_u = {fmt_num(Mu_mid_neg, 0)}$)")
             As_req_mid_top = design_flexure_detailed(Mu_mid_neg, b_mid_cm, d_cm, fc, fy, "Mid Strip - Top")
-            st.info(f"**$A_{{s,req}}$ = {fmt_num(As_req_mid_top, 2)} cm²**")
             user_rebar_selection(As_req_mid_top, b_mid_cm, "mid_top")
 
         st.markdown("---")
@@ -203,13 +197,11 @@ def render_efm_tab(calc_obj):
         with c_bot1:
             st.markdown(f"#### 🟥 Column Strip ($M_u = {fmt_num(Mu_col_pos, 0)}$)")
             As_req_col_bot = design_flexure_detailed(Mu_col_pos, b_col_cm, d_cm, fc, fy, "Col Strip - Bottom")
-            st.info(f"**$A_{{s,req}}$ = {fmt_num(As_req_col_bot, 2)} cm²**")
             user_rebar_selection(As_req_col_bot, b_col_cm, "col_bot")
 
         with c_bot2:
             st.markdown(f"#### 🟦 Middle Strip ($M_u = {fmt_num(Mu_mid_pos, 0)}$)")
             As_req_mid_bot = design_flexure_detailed(Mu_mid_pos, b_mid_cm, d_cm, fc, fy, "Mid Strip - Bottom")
-            st.info(f"**$A_{{s,req}}$ = {fmt_num(As_req_mid_bot, 2)} cm²**")
             user_rebar_selection(As_req_mid_bot, b_mid_cm, "mid_bot")
 
     # ------------------------------------------
@@ -224,16 +216,25 @@ def render_efm_tab(calc_obj):
             Ac = 2 * d_cm * (b1 + b2)
             c_AB = b1 / 2.0
             Jc = (d_cm * b1**3 / 6.0) + (b1 * d_cm**3 / 6.0) + (d_cm * b2 * (b1**2) / 2.0)
+            
+            Ac_str = fr"2d(b_1 + b_2) = 2({d_cm:.1f})({b1:.1f} + {b2:.1f})"
+            cAB_str = fr"\frac{{b_1}}{{2}} = \frac{{{b1:.1f}}}{{2}}"
         elif "Edge" in col_type:
             b1, b2 = c1_cm + (d_cm / 2.0), c2_cm + d_cm
             Ac = d_cm * (2*b1 + b2)
             c_AB = (b1**2) / (2*b1 + b2)
             Jc = (d_cm * b1**3 / 6.0) + (b1 * d_cm**3 / 6.0) + 2*d_cm*b1*((b1/2 - c_AB)**2) + d_cm*b2*(c_AB**2)
+            
+            Ac_str = fr"d(2b_1 + b_2) = {d_cm:.1f}(2({b1:.1f}) + {b2:.1f})"
+            cAB_str = fr"\frac{{b_1^2}}{{2b_1 + b_2}} = \frac{{{b1:.1f}^2}}{{2({b1:.1f}) + {b2:.1f}}}"
         else: # Corner
             b1, b2 = c1_cm + (d_cm / 2.0), c2_cm + (d_cm / 2.0)
             Ac = d_cm * (b1 + b2)
             c_AB = (b1**2) / (2*(b1 + b2))
             Jc = (d_cm * b1**3 / 12.0) + (b1 * d_cm**3 / 12.0) + d_cm*b1*((b1/2 - c_AB)**2) + d_cm*b2*(c_AB**2)
+            
+            Ac_str = fr"d(b_1 + b_2) = {d_cm:.1f}({b1:.1f} + {b2:.1f})"
+            cAB_str = fr"\frac{{b_1^2}}{{2(b_1 + b_2)}} = \frac{{{b1:.1f}^2}}{{2({b1:.1f} + {b2:.1f})}}"
 
         gamma_f = 1.0 / (1.0 + (2.0/3.0) * math.sqrt(b1 / b2)) if b2 > 0 else 1.0
         gamma_v = 1.0 - gamma_f
@@ -251,9 +252,19 @@ def render_efm_tab(calc_obj):
         phi_vc = 0.85 * 1.06 * math.sqrt(fc)
 
         with st.expander(r"📝 Detailed Punching Shear Calculations", expanded=True):
-            st.latex(fr"v_{{u(Shear)}} = \frac{{{fmt_num(Vu_kg,0)}}}{{{fmt_num(Ac,1)}}} = {fmt_num(vu_shear, 2)} \text{{ ksc}}")
-            st.latex(fr"v_{{u(Moment)}} = \frac{{{gamma_v:.3f} \times {fmt_num(M_col*100,0)} \times {c_AB:.2f}}}{{{fmt_num(Jc,1)}}} = {fmt_num(vu_moment, 2)} \text{{ ksc}}")
-            st.latex(fr"\mathbf{{v_{{u,total}}}} = {fmt_num(vu_total, 2)} \text{{ ksc}} \quad (\text{{Limit }} \phi v_c = {fmt_num(phi_vc, 2)} \text{{ ksc}})")
+            st.latex(fr"A_c = {Ac_str} = {fmt_num(Ac,1)} \text{{ cm}}^2")
+            st.latex(fr"c_{{AB}} = {cAB_str} = {fmt_num(c_AB,2)} \text{{ cm}}")
+            st.latex(fr"J_c = {fmt_num(Jc,1)} \text{{ cm}}^4")
+            
+            st.latex(fr"\gamma_f = \frac{{1}}{{1 + \frac{{2}}{{3}}\sqrt{{\frac{{b_1}}{{b_2}}}}}} = \frac{{1}}{{1 + \frac{{2}}{{3}}\sqrt{{\frac{{{b1:.1f}}}{{{b2:.1f}}}}}}} = {gamma_f:.3f}")
+            st.latex(fr"\gamma_v = 1 - \gamma_f = 1 - {gamma_f:.3f} = {gamma_v:.3f}")
+            
+            st.latex(fr"V_u = w_u (A_{{trib}} - A_{{crit}}) = {fmt_num(wu_kgm2,0)} \times ({trib_area:.2f} - {crit_area_m2:.4f}) = {fmt_num(Vu_kg,0)} \text{{ kg}}")
+            
+            st.latex(fr"v_{{u(Shear)}} = \frac{{V_u}}{{A_c}} = \frac{{{fmt_num(Vu_kg,0)}}}{{{fmt_num(Ac,1)}}} = {fmt_num(vu_shear, 2)} \text{{ ksc}}")
+            st.latex(fr"v_{{u(Moment)}} = \frac{{\gamma_v M_{{col}} c_{{AB}}}}{{J_c}} = \frac{{{gamma_v:.3f} \times ({fmt_num(M_col,0)} \times 100) \times {c_AB:.2f}}}{{{fmt_num(Jc,1)}}} = {fmt_num(vu_moment, 2)} \text{{ ksc}}")
+            st.latex(fr"\mathbf{{v_{{u,total}}}} = v_{{u(Shear)}} + v_{{u(Moment)}} = {fmt_num(vu_shear, 2)} + {fmt_num(vu_moment, 2)} = {fmt_num(vu_total, 2)} \text{{ ksc}}")
+            st.latex(fr"\phi v_c = 0.85 \times 1.06 \times \sqrt{{f'_c}} = 0.85 \times 1.06 \times \sqrt{{{fc}}} = {fmt_num(phi_vc, 2)} \text{{ ksc}}")
 
         if vu_total <= phi_vc:
             st.success(f"✅ **PASS:** Punching shear safe.")
