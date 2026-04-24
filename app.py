@@ -1,5 +1,6 @@
 # app.py
 import streamlit as st
+import copy
 
 # ------------------------------------------------------------------------------
 # SETUP & CONFIGURATION
@@ -178,10 +179,10 @@ with tab1:
             if 'loads' not in calc_obj: calc_obj['loads'] = {}
             if 'mat' not in calc_obj: calc_obj['mat'] = {}
             
-            # ✅ คำนวณ L2 แบบ Equivalent Frame (เฉลี่ยระยะกึ่งกลางแผงบน-ล่าง)
+            # คำนวณ L2 แบบ Equivalent Frame (เฉลี่ยระยะกึ่งกลางแผงบน-ล่าง)
             L2_eff = (L2_t / 2.0) + (L2_b / 2.0)
 
-            # ✅ อัปเดตข้อมูลใส่ Dictionary
+            # อัปเดตข้อมูลใส่ Dictionary
             calc_obj['geom'].update({
                 'L1': max(L1_l, L1_r), 
                 'L2': L2_eff, 
@@ -197,7 +198,8 @@ with tab1:
                 'h_drop_cm': h_drop_cm, 
                 'drop_w1': drop_w1, 
                 'drop_w2': drop_w2,
-                'edge_beam': edge_beam_params
+                'edge_beam': edge_beam_params,
+                'cant_params': cant_params # เซฟ cant_params ไว้ใน geom ด้วย
             })
             
             sw = (h_slab_cm / 100.0) * 2400 if auto_sw else 0
@@ -210,6 +212,9 @@ with tab1:
             )
             thk_res = validator.check_min_thickness_detailed()
             ddm_ok, ddm_reasons = validator.check_ddm()
+
+            # ✅ [FIX 1] บันทึก calc_obj ลง session_state เพื่อให้ Tab 4 ใช้งานได้
+            st.session_state['calc_obj'] = calc_obj
 
         # --------------------------------------------------------------------------
         # RIGHT COLUMN: VISUALIZATION 
@@ -356,8 +361,6 @@ with tab1:
 with tab2:
     app_theory.display_theory(calc_obj)
 
-import copy
-
 with tab3:
     if ddm_ok:
         st.header("Direct Design Method (DDM) Analysis")
@@ -386,7 +389,7 @@ with tab3:
             ddm_calc_obj['geom']['L1'] = calc_obj['geom']['L2']
             ddm_calc_obj['geom']['L2'] = calc_obj['geom']['L1']
             
-            # ✅ สลับความยาวแผงย่อย เพื่อคำนวณ Column Strip ฝั่งบน/ล่าง (ที่กลายเป็นซ้าย/ขวา)
+            # สลับความยาวแผงย่อย เพื่อคำนวณ Column Strip ฝั่งบน/ล่าง (ที่กลายเป็นซ้าย/ขวา)
             ddm_calc_obj['geom']['L2_t'] = calc_obj['geom']['L1_l']
             ddm_calc_obj['geom']['L2_b'] = calc_obj['geom']['L1_r']
             ddm_calc_obj['geom']['L1_l'] = calc_obj['geom']['L2_t']
@@ -402,7 +405,13 @@ with tab3:
                     ddm_calc_obj['geom']['drop_w1'] = calc_obj['geom']['drop_w2']
                     ddm_calc_obj['geom']['drop_w2'] = calc_obj['geom']['drop_w1']
             
-            st.success("🔄 **Y-Axis Frame Active:** โปรแกรมได้สลับค่า L และขนาดหน้าตัดเสา c สำหรับการคำนวณในแนวขวางเรียบร้อยแล้ว")
+            # ✅ [FIX 2] ล้างค่า Cantilever เพื่อไม่ให้เอาของแกน X ไปคำนวณในแกน Y
+            ddm_calc_obj['geom']['cant_params'] = {
+                "has_left": False, "L_left": 0.0, 
+                "has_right": False, "L_right": 0.0
+            }
+            
+            st.success("🔄 **Y-Axis Frame Active:** โปรแกรมได้สลับค่า L และขนาดหน้าตัดเสา c สำหรับการคำนวณในแนวขวางเรียบร้อยแล้ว (ไม่นำ Cantilever แกน X มาคิด)")
         else:
             st.success("➡️ **X-Axis Frame Active:** คำนวณ Frame ตามแนวยาวปกติ")
 
