@@ -163,19 +163,17 @@ with tab1:
                 with d_col2: drop_w1 = st.number_input("Drop Width W1 (m)", value=float(f"{def_w1:.2f}"))
                 with d_col3: drop_w2 = st.number_input("Drop Width W2 (m)", value=float(f"{def_w2:.2f}"))
 
-            # --- PROCESS DATA (เก็บข้อมูลตั้งต้นแบบไม่สลับแกน) ---
+            # --- PROCESS DATA ---
             if 'SD30' in str(fy): fy_val = 3000
             elif 'SD40' in str(fy): fy_val = 4000
             else: fy_val = 5000
 
-            # สร้าง Global Object ที่เก็บค่า Physical จริง
             calc_obj = app_calc.prepare_calculation_data(
                 h_slab_cm, h_drop_cm, has_drop, c1_cm, c2_cm, drop_w1, drop_w2,
                 col_location, L1_l, L1_r, L2_t, L2_b, fc, fy_val, dl, ll, auto_sw, lf_dl, lf_ll,
                 joint_type, h_up, h_lo, far_end_up, far_end_lo, cant_params, edge_beam_params
             )
 
-            # Safety Net
             if 'geom' not in calc_obj: calc_obj['geom'] = {}
             if 'loads' not in calc_obj: calc_obj['loads'] = {}
             if 'mat' not in calc_obj: calc_obj['mat'] = {}
@@ -193,7 +191,7 @@ with tab1:
             ddm_ok, ddm_reasons = validator.check_ddm()
 
         # --------------------------------------------------------------------------
-        # RIGHT COLUMN: VISUALIZATION (วาดรูปตาม Physical Model จริง)
+        # RIGHT COLUMN: VISUALIZATION 
         # --------------------------------------------------------------------------
         with col_viz:
             st.subheader(f"👁️ Visualization: {col_location} (Physical Plan)")
@@ -208,16 +206,10 @@ with tab1:
                 st.pyplot(fig_elev)
 
             st.divider()
-            # (ส่วนแจ้งเตือน Thickness & Code Compliance คงไว้ตามเดิมได้เลยครับ เพราะมันอิง Physical)
-            # ... (โค้ดแสดง thk_res และ drop_res) ...
             
             st.markdown("### 📋 Code Compliance & Calculations")
             
-            # ======================================================================
-            # 🌟 ตรวจสอบ DDM / EFM
-            # ======================================================================
-            st.markdown("#### 🔍 Method Applicability Check (การเลือกวิธีคำนวณ)")
-            
+            st.markdown("#### 🔍 Method Applicability Check")
             actual_L1 = calc_obj['geom']['L1']
             actual_L2 = calc_obj['geom']['L2']
             ratio = actual_L2 / actual_L1 if actual_L1 > 0 else 0
@@ -233,12 +225,11 @@ with tab1:
                     st.caption(f"*(อ้างอิง: L1 = {actual_L1:.2f} m, L2 = {actual_L2:.2f} m, Ratio = {ratio:.2f})*")
                     
             with col_m2:
-                st.info("✅ **EFM (Equivalent Frame Method)**\n\nสามารถใช้วิธีนี้ได้เสมอ (ครอบคลุมและไม่มีข้อจำกัดด้านสัดส่วนเรขาคณิตหรือน้ำหนักบรรทุก)")
+                st.info("✅ **EFM (Equivalent Frame Method)**\n\nสามารถใช้วิธีนี้ได้เสมอ")
                 
             st.markdown("---")
-            # ======================================================================
             
-            # 1. SLAB THICKNESS CALCULATION (DETAILED)
+            # 1. SLAB THICKNESS CALCULATION 
             if thk_res['status']:
                 st.success(f"✅ **Slab Thickness OK** (Prov: {thk_res['actual_h']} cm >= Req: {thk_res['req_h']:.2f} cm)")
             else:
@@ -254,7 +245,8 @@ with tab1:
                 elif 'SD40' in str(fy): fy_val = 4000
                 else: fy_val = 5000
                 
-                st.latex(r"h_{min} = \frac{L_n (0.8 + \frac{f_y}{1400})}{N}")
+                # แก้ไข: เพิ่มเลข 0 อีก 1 ตัวในสูตร LaTeX เพื่อให้ตรงกับ 14000
+                st.latex(r"h_{min} = \frac{L_n (0.8 + \frac{f_y}{14000})}{N}")
                 
                 c1_cal, c2_cal = st.columns(2)
                 with c1_cal:
@@ -273,10 +265,10 @@ with tab1:
                 Checking: $ {h_slab_cm} \\ge {thk_res['req_h']:.2f} $
                 """)
 
-            # 2. DROP PANEL CALCULATION (DETAILED)
+            # 2. DROP PANEL CALCULATION 
             if has_drop:
-                # ใช้ calc_drop_w1, calc_drop_w2 เพื่อให้ตรวจสอบค่าตามทิศทางที่สลับแกนแล้ว
-                drop_res = validator.check_drop_panel_detailed(h_drop_cm, calc_drop_w1, calc_drop_w2)
+                # แก้ไข: เปลี่ยนชื่อตัวแปรที่ส่งเข้าฟังก์ชันให้ตรงกับที่ประกาศรับค่าไว้ (drop_w1, drop_w2)
+                drop_res = validator.check_drop_panel_detailed(h_drop_cm, drop_w1, drop_w2)
                 st.markdown("#### 📉 Drop Panel Checks")
                 
                 dp_c1, dp_c2, dp_c3 = st.columns(3)
@@ -318,14 +310,14 @@ with tab1:
                     st.markdown("**Direction 1 (L1 Analysis):**")
                     req_w1 = drop_res['req_total_w1']
                     st.latex(r"W_{1,req} = \frac{L_1}{3} = " + f"{req_w1:.2f} \\text{{ m}}")
-                    st.write(f"Provided $W_1$ = {calc_drop_w1:.2f} m")
+                    st.write(f"Provided $W_1$ = {drop_w1:.2f} m")
                     if drop_res['chk_w1']: st.success("✅ W1 OK") 
                     else: st.error("❌ W1 Too Narrow")
                     
                     st.markdown("**Direction 2 (L2 Transverse):**")
                     req_w2 = drop_res['req_total_w2']
                     st.latex(r"W_{2,req} = \frac{L_2}{3} = " + f"{req_w2:.2f} \\text{{ m}}")
-                    st.write(f"Provided $W_2$ = {calc_drop_w2:.2f} m")
+                    st.write(f"Provided $W_2$ = {drop_w2:.2f} m")
                     if drop_res['chk_w2']: st.success("✅ W2 OK") 
                     else: st.error("❌ W2 Too Narrow")
 
@@ -381,7 +373,6 @@ with tab3:
             
             # ถ้ามี Drop Panel ต้องสลับความกว้าง Drop ด้วย
             if ddm_calc_obj['geom'].get('has_drop'):
-                # ตรวจสอบว่าใน calc_obj มี key นี้หรือไม่ ถ้ามีก็สลับ
                 if 'drop_w1' in ddm_calc_obj['geom'] and 'drop_w2' in ddm_calc_obj['geom']:
                     ddm_calc_obj['geom']['drop_w1'] = calc_obj['geom']['drop_w2']
                     ddm_calc_obj['geom']['drop_w2'] = calc_obj['geom']['drop_w1']
