@@ -1,87 +1,80 @@
-# calc_efm.py
 import math
 
 def calculate_efm(calc_obj):
     """
-    Equivalent Frame Method - Stiffness Calculation
-    Reference: ACI 318 & Wight/MacGregor Reinforced Concrete
+    Equivalent Frame Method (EFM) - Stiffness Calculation
+    อ้างอิงมาตรฐาน ACI 318 และหลักการของ Wight/MacGregor
     """
-    # 1. Init Data
-    col = calc_obj.get('col_size', {'c1': 50, 'c2': 50})
-    geom = calc_obj.get('geom', {})
-    bc = calc_obj.get('bc', {'h_up': 3.0, 'h_lo': 3.0})
-    mat = calc_obj.get('mat', {'fc': 240})
     
-    # Dimensions (m)
-    c1 = col['c1'] / 100.0 # Dimension in direction of analysis
-    c2 = col['c2'] / 100.0 # Transverse dimension
-    L1 = geom.get('L1_r', 6.0) # Span length
-    L2 = geom.get('L2', 6.0)   # Transverse width
-    h_s = geom.get('h_slab', 0.20)
+    # 1. ดึงข้อมูลเบื้องต้นจาก calc_obj
+    col = calc_obj.get('col_size', {'c1': 50, 'c2': 50})   # ขนาดเสา (cm)
+    geom = calc_obj.get('geom', {})                       # ขนาดทางกายภาพ
+    bc = calc_obj.get('bc', {'h_up': 3.0, 'h_lo': 3.0})   # ความสูงชั้น (m)
+    mat = calc_obj.get('mat', {'fc': 240})                # คุณสมบัติวัสดุ
     
-    # 2. Material Properties
-    # E_c = 15100 sqrt(fc) ksc -> convert to kPa for consistency
-    Ec_ksc = 15100 * (mat['fc']**0.5)
+    # แปลงหน่วย Dimensions เป็นเมตร (m)
+    c1 = col['c1'] / 100.0      # ขนาดเสาในทิศทางที่พิจารณา
+    c2 = col['c2'] / 100.0      # ขนาดเสาในทิศทางตั้งฉาก
+    L1 = geom.get('L1_r', 6.0)  # ความยาวช่วง (Span length)
+    L2 = geom.get('L2', 6.0)    # ความกว้างแผ่นพื้น (Transverse width)
+    h_s = geom.get('h_slab', 0.20) # ความหนาพื้น
+    
+    # 2. คุณสมบัติของวัสดุ (Material Properties)
+    # E_c = 15100 * sqrt(fc') ksc -> แปลงเป็น kPa (kN/m²)
+    # 1 ksc ≈ 98.0665 kPa
+    fc_prime = mat['fc']
+    Ec_ksc = 15100 * (fc_prime**0.5)
     Ec_kPa = Ec_ksc * 98.0665 
     
     # 3. Slab Stiffness (Ks)
-    # Gross Inertia
+    # คำนวณ Inertia ของพื้น (Gross Section)
     Is_gross = (L2 * (h_s**3)) / 12
-    # In rigorous EFM, we increase I inside the column joint. 
-    # But ACI allows using gross inertia for standard cases.
-    # Ks = 4EI/L (Far end fixed assumption for stiffness factor)
+    # Ks = 4EI/L (กรณีปลายอีกด้านถูกยึดแน่น/สมมาตร)
     Ks = (4 * Ec_kPa * Is_gross) / L1
     
     # 4. Column Stiffness (Kc)
-    # Inertia of Column
+    # Inertia ของเสา Ic = (width * depth^3) / 12
     Ic = (c2 * (c1**3)) / 12 
     
     h_up = bc.get('h_up', 3.0)
     h_lo = bc.get('h_lo', 3.0)
     
-    # Factor k for column
-    # If far end is fixed, k=4. If pinned, k=3.
-    # Usually in multistory, we assume fixed far ends (k=4)
+    # ค่า Factor k สำหรับเสา (Fixed far end = 4.0)
     k_col = 4.0 
     
+    # Stiffness ของเสาบนและเสาล่าง
     Kc_up = (k_col * Ec_kPa * Ic) / h_up if h_up > 0 else 0
     Kc_lo = (k_col * Ec_kPa * Ic) / h_lo if h_lo > 0 else 0
-    
     Sum_Kc = Kc_up + Kc_lo
     
     # 5. Torsional Member Stiffness (Kt) - ACI R8.11.5
-    # This is the "Effective" stiffness of the slab strip attached to column
-    # Formula: Kt = sum( 9 * Ecs * C / (L2 * (1 - c2/L2)^3) )
+    # คำนวณหาค่าคงที่การบิด (Torsion Constant, C)
+    # x = ด้านสั้น (ความหนาพื้น), y = ด้านยาว (ความลึกเสา c1)
+    x = min(h_s, c1)
+    y = max(h_s, c1)
     
-    # Torsion Constant C (for rectangular section x by y)
-    # x = shorter side (slab thickness h_s), y = longer side (c1)
-    x = h_s
-    y = c1
-    # Eq for C
+    # สูตรคำนวณค่า C สำหรับหน้าตัดสี่เหลี่ยมผืนผ้า
     C = (1 - 0.63 * (x/y)) * (x**3) * y / 3
     
+    # คำนวณ Kt (Stiffness ของส่วนรับแรงบิด)
     term1 = 9 * Ec_kPa * C
     term2 = L2 * ((1 - (c2/L2))**3)
-    if term2 == 0: term2 = 0.001
     
-    Kt_one_side = term1 / term2
+    if term2 <= 0: 
+        term2 = 0.0001 # ป้องกัน Division by zero
     
-    # Interior column has torsion arm on both sides? 
-    # Actually Kt represents the transverse strip. 
-    # For interior column, it acts on both sides of the column if we consider the full transverse beam.
-    # Standard practice: Kt is for the connection.
-    Kt = Kt_one_side * 2 # Assuming symmetric transverse span
+    # สำหรับเสาภายใน (Interior Column) คิดแรงบิดทั้งสองข้าง
+    Kt = (term1 / term2) * 2 
     
     # 6. Equivalent Column Stiffness (Kec)
-    # 1/Kec = 1/Sum_Kc + 1/Kt
+    # สูตรความสัมพันธ์แบบสปริงต่ออนุกรม: 1/Kec = 1/ΣKc + 1/Kt
     if Sum_Kc > 0 and Kt > 0:
         Kec = 1 / ((1/Sum_Kc) + (1/Kt))
     else:
-        Kec = 0
+        Kec = Sum_Kc # ถ้าไม่มีแรงบิด ให้ใช้ค่า Kc โดยตรง
         
-    # 7. Distribution Factors (DF) at the Joint
-    # DF_slab = Ks / (Ks + Kec)
-    # DF_col = Kec / (Ks + Kec)
+    # 7. Distribution Factors (DF) ที่จุดต่อ (Joint)
+    # ใช้สำหรับกระจาย Unbalanced Moment เข้าสู่พื้นและเสาเสมือน
     Sum_K_Joint = Ks + Kec
     if Sum_K_Joint > 0:
         df_slab = Ks / Sum_K_Joint
@@ -89,6 +82,7 @@ def calculate_efm(calc_obj):
     else:
         df_slab, df_col = 0, 0
         
+    # ส่งค่าผลลัพธ์กลับในรูปแบบ Dictionary
     return {
         'Ic': Ic,
         'Is': Is_gross,
