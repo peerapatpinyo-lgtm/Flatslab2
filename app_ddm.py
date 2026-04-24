@@ -396,15 +396,16 @@ def render_ddm_tab(calc_obj):
                     st.info(f"### 📏 Final Clear Span ($L_n$) = {ln:.2f} m")
 
     with tab_load:
-        st.markdown("#### ACI 318 Section 5.3.1: Load Combinations")
-        st.markdown(f"$$ W_u = 1.4 DL + 1.7 LL $$")
-        st.markdown(f"**Result:** $W_u = 1.4({dl:,.0f}) + 1.7({ll:,.0f}) =$ **{wu:,.0f}** kg/m²")
+        st.markdown("#### ACI 318 Section 5.3.1: Load Combinations")
+        st.markdown(f"$$ W_u = 1.4 DL + 1.7 LL $$")
+        st.markdown(f"**Result:** $W_u = 1.4({dl:,.0f}) + 1.7({ll:,.0f}) =$ **{wu:,.0f}** kg/m²")
 
-        st.divider()
-        st.markdown("#### ACI 318 Section 8.10.3.2: Total Factored Static Moment")
-        st.markdown(f"$$ M_o = \\frac{{W_u \\times L_2 \\times L_n^2}}{{8}} $$")
-        # FIXED: \times used properly to prevent the \t string bug
-        st.markdown(f"**Result:** $M_o = \\frac{{{wu:,.0f} \\times {L2:.2f} \\times {ln:.2f}^2}}{{8}} =$ **{Mo:,.0f}** kg-m")
+        st.divider()
+        st.markdown("#### ACI 318 Section 8.10.3.2: Total Factored Static Moment")
+        st.markdown(f"$$ M_o = \\frac{{W_u \\times L_2 \\times L_n^2}}{{8}} $$")
+    
+        # FIXED: \times used properly to prevent the \t string bug
+        st.markdown(f"**Result:** $M_o = \\frac{{{wu:,.0f} \\times {L2:.2f} \\times {ln:.2f}^2}}{{8}} =$ **{Mo:,.0f}** kg-m")
     
     # --- TAB 3: Distribution Factors (NEW TAB) ---
     
