@@ -1,128 +1,75 @@
 # draw_rebar.py
+import streamlit as st
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-import numpy as np
 
-def draw_rebar_plan(L1_m, L2_m, b_col_cm, bar_top_type, bar_bot_type):
-    """Generates a matplotlib figure for Typical Flat Slab Rebar Plan View."""
+def draw_drafting_details(L1_l, L1_r, L2, c1_cm, c2_cm, h_cm, top_col_sz, top_col_sp, bot_col_sz, bot_col_sp):
+    st.subheader("Typical Reinforcement Detailing (Analyzed Direction)")
+    st.markdown("รูปด้านล่างนี้จำลองการเสริมเหล็กในทิศทาง L1 โดยอ้างอิงจากขนาดและระยะแอด (Spacing) ที่คุณเลือกใน **Tab 3**")
     
-    L1_cm = L1_m * 100
-    L2_cm = L2_m * 100
+    # ตัวแปรสำหรับวาดรูป
+    draw_L1 = max(L1_l, L1_r) * 100 # แปลงเป็น cm
+    draw_L2 = L2 * 100 # แปลงเป็น cm
     
-    fig, ax = plt.figure(figsize=(10, 8)), plt.gca()
+    # ---------------------------------
+    # 1. วาด Plan View
+    # ---------------------------------
+    fig_plan, ax_plan = plt.subplots(figsize=(10, 6))
     
-    # Boundary and Geometry (simulate 2x2 bay to show strips)
-    ax.add_patch(patches.Rectangle((0, 0), L1_cm*2, L2_cm*2, facecolor='#f8f9fa', edgecolor='black', linewidth=1.5, hatch='//'))
+    # Slab Background (จำลองการวาด 1 ช่วงเสาหลัก)
+    ax_plan.add_patch(patches.Rectangle((0, 0), draw_L1*1.5, draw_L2, facecolor='#f0f2f6', edgecolor='black', lw=1.5))
     
-    # Grid lines and Columns centers
-    col_x = [0, L1_cm, L1_cm*2]
-    col_y = [0, L2_cm, L2_cm*2]
-    for x in col_x:
-        ax.axvline(x, color='gray', linestyle='--')
-    for y in col_y:
-        ax.axhline(y, color='gray', linestyle='--')
-        
-    # Highlighting Column Strip Analyzed Area (Central Joint)
-    ax.add_patch(patches.Rectangle((L1_cm/2, L2_cm/2), L1_cm, b_col_cm, facecolor='#ffcccc66', edgecolor='none'))
+    # Column
+    col_x, col_y = draw_L1*0.75, draw_L2/2
+    ax_plan.add_patch(patches.Rectangle((col_x - c1_cm/2, col_y - c2_cm/2), c1_cm, c2_cm, facecolor='#31333F'))
     
-    # columns (simplified points)
-    ax.scatter(col_x * 3, col_y * 3, color='black', marker='s', s=200, zorder=10)
-    
-    # --- Drawing Top Rebar (Support) - RED ---
-    # Typical ACI detail: top bars extend approx 0.3L into adjacent span
-    top_extend = L1_cm * 0.3
-    bars_y_neg = [L2_cm - b_col_cm/3, L2_cm + b_col_cm/3]
-    for y in bars_y_neg:
-        # Rebar line
-        ax.plot([L1_cm - top_extend, L1_cm + top_extend], [y, y], color='red', linewidth=2.5, solid_capstyle='round')
-        # Arrows indicating hooks/cutoffs
-        ax.arrow(L1_cm + top_extend, y, 5, 0, head_width=8, head_length=15, fc='red', ec='red')
-        ax.arrow(L1_cm - top_extend, y, -5, 0, head_width=8, head_length=15, fc='red', ec='red')
+    # Top Bar (สีแดง) - บริเวณหัวเสา Column Strip
+    top_ext = draw_L1 * 0.3 # ระยะยื่นเหล็กบนตามมาตรฐาน (0.3L)
+    ax_plan.plot([col_x - top_ext, col_x + top_ext], [col_y + c2_cm, col_y + c2_cm], color='#ff4b4b', lw=3, solid_capstyle='round')
+    ax_plan.text(col_x, col_y + c2_cm + 15, f"Top Bar (Col Strip): {top_col_sz} @ {top_col_sp} cm", color='#ff4b4b', ha='center', weight='bold')
 
-    # --- Drawing Bottom Rebar (Mid-Span) - BLUE ---
-    # Typical ACI detail: bottom bars usually full span or overlapping near column
-    bars_y_pos = [L2_cm*0.25, L2_cm*0.75, L2_cm*1.25, L2_cm*1.75]
-    for y in bars_y_pos:
-        ax.plot([L1_cm*0.05, L1_cm*1.95], [y, y], color='blue', linewidth=1.5, linestyle=':', dash_capstyle='round')
+    # Bottom Bar (สีน้ำเงิน) - บริเวณกลางช่วง
+    ax_plan.plot([draw_L1*0.1, draw_L1*1.4], [col_y - c2_cm - 30, col_y - c2_cm - 30], color='#1f77b4', lw=2, linestyle='--')
+    ax_plan.text(col_x, col_y - c2_cm - 20, f"Bottom Bar (Col Strip): {bot_col_sz} @ {bot_col_sp} cm", color='#1f77b4', ha='center', weight='bold')
 
-    # --- Annotations ---
-    # Legend simulates selected rebar
-    legend_top = f"Top Bar Detail: {bar_top_type} (Typical ACI Cutoff)"
-    legend_bot = f"Bottom Bar Detail: {bar_bot_type} (Typical Continuous)"
+    ax_plan.set_title("PLAN VIEW: FLAT SLAB REINFORCEMENT", fontsize=14, weight='bold')
+    ax_plan.set_aspect('equal')
+    ax_plan.axis('off')
     
-    ax.text(L1_cm*2 * 0.02, L2_cm*2 * 0.95, legend_top, color='red', weight='bold', fontsize=12)
-    ax.text(L1_cm*2 * 0.02, L2_cm*2 * 0.90, legend_bot, color='blue', weight='bold', fontsize=12)
-    
-    # Dimension Lines
-    ax.annotate('', xy=(0, -20), xytext=(L1_cm, -20), arrowprops=dict(arrowstyle='<->', color='gray'))
-    ax.text(L1_cm/2, -60, f"Bay L1: {L1_m:.2f} m", color='gray', ha='center')
-    
-    ax.annotate('', xy=(-20, 0), xytext=(-20, L2_cm), arrowprops=dict(arrowstyle='<->', color='gray'))
-    ax.text(-60, L2_cm/2, f"Bay L2:\n{L2_m:.2f} m", color='gray', va='center', rotation='vertical')
+    st.pyplot(fig_plan)
 
-    plt.title("TYPICAL FLAT SLAB REINFORCEMENT PLAN (Analyzed Direction)", fontsize=16, weight='bold')
-    plt.xlabel("L1 direction (cm)", fontsize=12)
-    plt.ylabel("L2 direction (cm)", fontsize=12)
-    plt.grid(color='#f0f0f0')
-    plt.axis('equal') # Maintain proper engineering scale
-    return fig
+    st.divider()
 
-def draw_rebar_section(h_cm, L1_m, c1_cm, bar_top_type, bar_bot_type):
-    """Generates a matplotlib figure for Typical Flat Slab Rebar Section View."""
+    # ---------------------------------
+    # 2. วาด Section View
+    # ---------------------------------
+    fig_sec, ax_sec = plt.subplots(figsize=(10, 4))
     
-    L_draw_cm = L1_m * 100 * 1.5 # Draw 1.5 bays for context
-    c1_cm_val = c1_cm
+    # Slab Cross Section
+    ax_sec.fill_between([0, draw_L1*1.5], [0, 0], [h_cm, h_cm], facecolor='#e9ecef', edgecolor='black', hatch='//')
     
-    fig, ax = plt.figure(figsize=(10, 5)), plt.gca()
+    # Column Section (หัวเสา)
+    ax_sec.fill_between([col_x - c1_cm/2, col_x + c1_cm/2], [-h_cm, -h_cm], [0, 0], facecolor='#adb5bd', edgecolor='black')
     
-    # Hatching for Concrete
-    ax.fill_between([0, L_draw_cm], [0, 0], [h_cm, h_cm], facecolor='#e9ecef', hatch='.', edgecolor='black', linewidth=2)
-    
-    # Columns stub (simulated centers)
-    col_xs = [L1_m*100 * 0.25, L1_m*100 * 1.25]
-    for x in col_xs:
-        ax.fill_between([x - c1_cm_val/2, x + c1_cm_val/2], [-h_cm/2, h_cm], [0, 2*h_cm], facecolor='#adb5bd', hatch='.', edgecolor='gray')
-    
-    # Cover settings
-    cover_top_cm = 2.5
-    cover_bot_cm = 2.5
-    d_top_rebar_cm = h_cm - cover_top_cm
-    d_bot_rebar_cm = cover_bot_cm
-    
-    # --- Drawing Top Rebar (Support Negative) - RED ---
-    top_extend = L1_m * 100 * 0.3 # 0.3L extend
-    for col_x in col_xs:
-        bar_start, bar_end = col_x - top_extend, col_x + top_extend
-        # Line with standard hooks at cutoffs for Flat Slab
-        ax.plot([bar_start, bar_end], [d_top_rebar_cm, d_top_rebar_cm], color='red', linewidth=3, solid_capstyle='round')
-        ax.plot([bar_start, bar_start], [d_top_rebar_cm, d_top_rebar_cm - h_cm/4], color='red', linewidth=3)
-        ax.plot([bar_end, bar_end], [d_top_rebar_cm, d_top_rebar_cm - h_cm/4], color='red', linewidth=3)
+    # Top Bar (สีแดง) ใน Section
+    d_top = h_cm - 3 # ระยะหุ้ม (Covering) สมมติ 3 cm
+    ax_sec.plot([col_x - top_ext, col_x + top_ext], [d_top, d_top], color='#ff4b4b', lw=3)
+    # งอขอเหล็กบน
+    ax_sec.plot([col_x - top_ext, col_x - top_ext], [d_top, d_top - h_cm/3], color='#ff4b4b', lw=3)
+    ax_sec.plot([col_x + top_ext, col_x + top_ext], [d_top, d_top - h_cm/3], color='#ff4b4b', lw=3)
+    ax_sec.text(col_x, d_top + 3, f"Top: {top_col_sz} @ {top_col_sp} cm", color='#ff4b4b', ha='center', weight='bold')
 
-    # --- Drawing Bottom Rebar (Continuous Positive) - BLUE ---
-    # Represented as continuous lines near bottom
-    ax.plot([0, L_draw_cm], [d_bot_rebar_cm, d_bot_rebar_cm], color='blue', linewidth=2, linestyle='-')
-    ax.plot([0, L_draw_cm], [d_bot_rebar_cm + h_cm/8, d_bot_rebar_cm + h_cm/8], color='blue', linewidth=2, linestyle='-', alpha=0.5)
+    # Bottom Bar (สีน้ำเงิน) ใน Section
+    d_bot = 3 # ระยะหุ้ม
+    ax_sec.plot([draw_L1*0.1, draw_L1*1.4], [d_bot, d_bot], color='#1f77b4', lw=3)
+    ax_sec.text(col_x, d_bot - 5, f"Bottom: {bot_col_sz} @ {bot_col_sp} cm", color='#1f77b4', ha='center', weight='bold')
 
-    # --- Annotation Callouts ---
-    # Top Rebar label callout
-    ax.annotate(f"TOP REBAR:\n{bar_top_type}", xy=(col_xs[1] + top_extend*0.8, d_top_rebar_cm), xytext=(col_xs[1] + top_extend*1.5, h_cm * 1.5),
-                arrowprops=dict(facecolor='red', shrink=0.05, width=1, headwidth=6), color='red', weight='bold')
-    
-    # Bottom Rebar label callout
-    ax.annotate(f"BOTTOM REBAR:\n{bar_bot_type}", xy=(L_draw_cm/2, d_bot_rebar_cm), xytext=(L_draw_cm/2, -h_cm * 1.0),
-                arrowprops=dict(facecolor='blue', shrink=0.05, width=1, headwidth=6), color='blue', ha='center', weight='bold')
+    # Dimension ความหนาพื้น
+    ax_sec.annotate('', xy=(draw_L1*1.45, 0), xytext=(draw_L1*1.45, h_cm), arrowprops=dict(arrowstyle='<->', color='black'))
+    ax_sec.text(draw_L1*1.47, h_cm/2, f"h = {h_cm:.0f} cm", va='center')
 
-    # Dimensions
-    plt.title("TYPICAL FLAT SLAB CROSS-SECTION DRAFT", fontsize=16, weight='bold')
-    ax.annotate('', xy=(-30, 0), xytext=(-30, h_cm), arrowprops=dict(arrowstyle='<->', color='gray'))
-    ax.text(-60, h_cm/2, f"h_slab:\n{h_cm:.1f} cm", color='gray', va='center')
-    
-    # Center lines annotation
-    for x in col_xs:
-        ax.axvline(x, color='gray', linestyle='-.')
-        ax.text(x, -h_cm*0.8, "CL Column", color='gray', rotation='vertical', va='top', ha='center')
+    ax_sec.set_title("CROSS-SECTION VIEW AT COLUMN", fontsize=14, weight='bold')
+    ax_sec.set_aspect('equal')
+    ax_sec.axis('off')
 
-    plt.grid(False)
-    plt.axis('equal')
-    ax.get_yaxis().set_visible(False) # Hide mathematical Y axis
-    return fig
+    st.pyplot(fig_sec)
