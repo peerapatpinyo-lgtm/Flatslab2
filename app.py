@@ -418,5 +418,10 @@ with tab3:
 
 with tab4:
     st.header("📐 Equivalent Frame Method (EFM)")
-    st.info("✅ EFM is valid.")
-    st.info("Module `app_efm` ready.")
+    
+    # ตรวจสอบว่ามีตัวแปร calc_obj หรือยัง (สมมติว่าคุณเก็บไว้ใน st.session_state)
+    if 'calc_obj' in st.session_state:
+        # --- บรรทัดสำคัญ: สั่งให้ดึงหน้าตาจาก app_efm มาแสดง ---
+        app_efm.render_efm_tab(st.session_state.calc_obj)
+    else:
+        st.warning("⚠️ ไม่พบข้อมูลการคำนวณ กรุณากรอกข้อมูลใน Tab ก่อนหน้า")
