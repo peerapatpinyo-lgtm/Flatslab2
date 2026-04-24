@@ -3,6 +3,8 @@ import streamlit as st
 import pandas as pd
 import math
 import calc_efm
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 def render_efm_tab(calc_obj):
     st.markdown("Detailed single joint analysis and design of flat slabs according to ACI 318 Equivalent Frame Method (EFM).")
@@ -55,11 +57,13 @@ def render_efm_tab(calc_obj):
     st.info(f"**📍 Joint Location:** `{col_type}` | **Effective depth $d$:** {d_cm:.1f} cm | **Max Spacing Limit:** {s_max:.1f} cm")
     st.markdown("---")
 
-    tab1, tab2, tab3, tab4 = st.tabs([
+    # ✅ เพิ่ม Tab 5 สำหรับวาดรูป
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "1️⃣ Stiffness & DF", 
         "2️⃣ Moment Distribution", 
         "3️⃣ Flexural Design (Rebar)", 
-        "4️⃣ Punching Shear"
+        "4️⃣ Punching Shear",
+        "5️⃣ Drafting Details" # NEW TAB
     ])
 
     # ------------------------------------------
@@ -87,7 +91,6 @@ def render_efm_tab(calc_obj):
         st.latex(fr"DF_{{slab}} = \frac{{\Sigma K_s}}{{K_{{ec}} + \Sigma K_s}} = \frac{{{fmt_sci(Ks_val)}}}{{{fmt_sci(Kec_val)} + {fmt_sci(Ks_val)}}} = {df_slab:.4f}")
 
         with st.expander("📝 Explicit Stiffness Calculations (Base Properties)", expanded=True):
-            # Base geometry for stiffness
             Ec = 15100 * math.sqrt(fc)
             L2_cm = L2 * 100
             L1_avg_m = ((L1_l + L1_r) / 2) if (L1_l > 0 and L1_r > 0) else max(L1_l, L1_r)
@@ -96,7 +99,6 @@ def render_efm_tab(calc_obj):
             Is = (L2_cm * (h_cm**3)) / 12
             Ic = (c2_cm * (c1_cm**3)) / 12
             
-            # Torsional constant (x is smaller dimension, y is larger dimension)
             x_t, y_t = min(h_cm, c1_cm), max(h_cm, c1_cm)
             C_val = (1 - 0.63 * (x_t / y_t)) * (x_t**3) * y_t / 3.0
             
@@ -209,6 +211,9 @@ def render_efm_tab(calc_obj):
                 st.success("✅ **PASS:** Sufficient reinforcement")
             else:
                 st.error("❌ **FAIL:** Increase rebar size or decrease spacing.")
+            
+            # ✅ Return ค่าขนาดและระยะแอดออกไปใช้ต่อใน Tab 5 วาดรูป
+            return rb_size, spacing
 
         st.subheader("1. Support Section (Top Reinforcement)")
         st.markdown("Negative moment distribution: Column Strip (75%), Middle Strip (25%)")
@@ -220,12 +225,12 @@ def render_efm_tab(calc_obj):
         with c_top1:
             st.markdown(f"#### 🟥 Column Strip ($M_u = {fmt_num(Mu_col_neg, 0)}$)")
             As_req_col_top = design_flexure_detailed(Mu_col_neg, b_col_cm, d_cm, fc, fy, "Col Strip - Top")
-            user_rebar_selection(As_req_col_top, b_col_cm, "col_top")
+            top_col_sz, top_col_sp = user_rebar_selection(As_req_col_top, b_col_cm, "col_top")
 
         with c_top2:
             st.markdown(f"#### 🟦 Middle Strip ($M_u = {fmt_num(Mu_mid_neg, 0)}$)")
             As_req_mid_top = design_flexure_detailed(Mu_mid_neg, b_mid_cm, d_cm, fc, fy, "Mid Strip - Top")
-            user_rebar_selection(As_req_mid_top, b_mid_cm, "mid_top")
+            top_mid_sz, top_mid_sp = user_rebar_selection(As_req_mid_top, b_mid_cm, "mid_top")
 
         st.markdown("---")
 
@@ -239,12 +244,12 @@ def render_efm_tab(calc_obj):
         with c_bot1:
             st.markdown(f"#### 🟥 Column Strip ($M_u = {fmt_num(Mu_col_pos, 0)}$)")
             As_req_col_bot = design_flexure_detailed(Mu_col_pos, b_col_cm, d_cm, fc, fy, "Col Strip - Bottom")
-            user_rebar_selection(As_req_col_bot, b_col_cm, "col_bot")
+            bot_col_sz, bot_col_sp = user_rebar_selection(As_req_col_bot, b_col_cm, "col_bot")
 
         with c_bot2:
             st.markdown(f"#### 🟦 Middle Strip ($M_u = {fmt_num(Mu_mid_pos, 0)}$)")
             As_req_mid_bot = design_flexure_detailed(Mu_mid_pos, b_mid_cm, d_cm, fc, fy, "Mid Strip - Bottom")
-            user_rebar_selection(As_req_mid_bot, b_mid_cm, "mid_bot")
+            bot_mid_sz, bot_mid_sp = user_rebar_selection(As_req_mid_bot, b_mid_cm, "mid_bot")
 
     # ------------------------------------------
     # TAB 4: Punching Shear & Unbalanced Moment
@@ -312,3 +317,77 @@ def render_efm_tab(calc_obj):
             st.success(f"✅ **PASS:** Punching shear safe.")
         else:
             st.error(f"❌ **FAIL:** Exceeds capacity. Thicken slab or add shear reinforcement.")
+
+    # ------------------------------------------
+    # ✅ TAB 5: Drafting Details (Plan & Section)
+    # ------------------------------------------
+    with tab5:
+        st.subheader("Typical Reinforcement Detailing (Analyzed Direction)")
+        st.markdown("รูปด้านล่างนี้จำลองการเสริมเหล็กในทิศทาง L1 โดยอ้างอิงจากขนาดและระยะแอด (Spacing) ที่คุณเลือกใน **Tab 3**")
+        
+        # ตัวแปรสำหรับวาดรูป
+        draw_L1 = max(L1_l, L1_r) * 100 # แปลงเป็น cm
+        draw_L2 = L2 * 100 # แปลงเป็น cm
+        
+        # ---------------------------------
+        # 1. วาด Plan View
+        # ---------------------------------
+        fig_plan, ax_plan = plt.subplots(figsize=(10, 6))
+        
+        # Slab Background (จำลองการวาด 1 ช่วงเสาหลัก)
+        ax_plan.add_patch(patches.Rectangle((0, 0), draw_L1*1.5, draw_L2, facecolor='#f0f2f6', edgecolor='black', lw=1.5))
+        
+        # Column
+        col_x, col_y = draw_L1*0.75, draw_L2/2
+        ax_plan.add_patch(patches.Rectangle((col_x - c1_cm/2, col_y - c2_cm/2), c1_cm, c2_cm, facecolor='#31333F'))
+        
+        # Top Bar (สีแดง) - บริเวณหัวเสา Column Strip
+        top_ext = draw_L1 * 0.3 # ระยะยื่นเหล็กบนตามมาตรฐาน (0.3L)
+        ax_plan.plot([col_x - top_ext, col_x + top_ext], [col_y + c2_cm, col_y + c2_cm], color='#ff4b4b', lw=3, solid_capstyle='round')
+        ax_plan.text(col_x, col_y + c2_cm + 15, f"Top Bar (Col Strip): {top_col_sz} @ {top_col_sp} cm", color='#ff4b4b', ha='center', weight='bold')
+
+        # Bottom Bar (สีน้ำเงิน) - บริเวณกลางช่วง
+        ax_plan.plot([draw_L1*0.1, draw_L1*1.4], [col_y - c2_cm - 30, col_y - c2_cm - 30], color='#1f77b4', lw=2, linestyle='--')
+        ax_plan.text(col_x, col_y - c2_cm - 20, f"Bottom Bar (Col Strip): {bot_col_sz} @ {bot_col_sp} cm", color='#1f77b4', ha='center', weight='bold')
+
+        ax_plan.set_title("PLAN VIEW: FLAT SLAB REINFORCEMENT", fontsize=14, weight='bold')
+        ax_plan.set_aspect('equal')
+        ax_plan.axis('off')
+        
+        st.pyplot(fig_plan)
+
+        st.divider()
+
+        # ---------------------------------
+        # 2. วาด Section View
+        # ---------------------------------
+        fig_sec, ax_sec = plt.subplots(figsize=(10, 4))
+        
+        # Slab Cross Section
+        ax_sec.fill_between([0, draw_L1*1.5], [0, 0], [h_cm, h_cm], facecolor='#e9ecef', edgecolor='black', hatch='//')
+        
+        # Column Section (หัวเสา)
+        ax_sec.fill_between([col_x - c1_cm/2, col_x + c1_cm/2], [-h_cm, -h_cm], [0, 0], facecolor='#adb5bd', edgecolor='black')
+        
+        # Top Bar (สีแดง) ใน Section
+        d_top = h_cm - 3 # ระยะหุ้ม (Covering) สมมติ 3 cm
+        ax_sec.plot([col_x - top_ext, col_x + top_ext], [d_top, d_top], color='#ff4b4b', lw=3)
+        # งอขอเหล็กบน
+        ax_sec.plot([col_x - top_ext, col_x - top_ext], [d_top, d_top - h_cm/3], color='#ff4b4b', lw=3)
+        ax_sec.plot([col_x + top_ext, col_x + top_ext], [d_top, d_top - h_cm/3], color='#ff4b4b', lw=3)
+        ax_sec.text(col_x, d_top + 3, f"Top: {top_col_sz} @ {top_col_sp} cm", color='#ff4b4b', ha='center', weight='bold')
+
+        # Bottom Bar (สีน้ำเงิน) ใน Section
+        d_bot = 3 # ระยะหุ้ม
+        ax_sec.plot([draw_L1*0.1, draw_L1*1.4], [d_bot, d_bot], color='#1f77b4', lw=3)
+        ax_sec.text(col_x, d_bot - 5, f"Bottom: {bot_col_sz} @ {bot_col_sp} cm", color='#1f77b4', ha='center', weight='bold')
+
+        # Dimension ความหนาพื้น
+        ax_sec.annotate('', xy=(draw_L1*1.45, 0), xytext=(draw_L1*1.45, h_cm), arrowprops=dict(arrowstyle='<->', color='black'))
+        ax_sec.text(draw_L1*1.47, h_cm/2, f"h = {h_cm:.0f} cm", va='center')
+
+        ax_sec.set_title("CROSS-SECTION VIEW AT COLUMN", fontsize=14, weight='bold')
+        ax_sec.set_aspect('equal')
+        ax_sec.axis('off')
+
+        st.pyplot(fig_sec)
