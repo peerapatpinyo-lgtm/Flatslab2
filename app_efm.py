@@ -38,12 +38,10 @@ def render_efm_tab(calc_obj):
     db_cm = 1.2
     d_cm = (h * 100) - cover_cm - (db_cm / 2)
 
-    # ผู้ใช้เลือกตำแหน่งเสา
-    col_type = st.radio(
-        "📍 เลือกตำแหน่งของจุดต่อ (Column Location):",
-        ["Interior (เสากลาง)", "Edge (เสาริม - โมเมนต์ตั้งฉากขอบ)", "Corner (เสามุม)"],
-        horizontal=True
-    )
+    # ✅ ดึงตำแหน่งเสามาจาก app.py โดยตรง
+    col_type = calc_obj['geom'].get('col_loc', 'Interior Column')
+    
+    st.info(f"**📍 ตำแหน่งของจุดต่อ (อ้างอิงจาก Input Tab):** `{col_type}`")
     st.markdown("---")
 
     # ==========================================
@@ -61,7 +59,7 @@ def render_efm_tab(calc_obj):
     # ------------------------------------------
     with tab1:
         st.subheader("Frame Stiffness & Distribution Factors")
-        st.markdown("ดึงค่าความแข็ง (Stiffness) จากโมดูล `calc_efm` เพื่อหาอัตราส่วนกระจายโมเมนต์ (DF)")
+        st.markdown("ดึงค่าความแข็ง (Stiffness) เพื่อหาอัตราส่วนกระจายโมเมนต์ (DF)")
         
         c1_stiff, c2_stiff, c3_stiff, c4_stiff = st.columns(4)
         c1_stiff.metric("Slab ($K_s$)", fmt_sci(res.get('Ks', 0)))
@@ -85,29 +83,30 @@ def render_efm_tab(calc_obj):
         FEM_L = (wu_line * (L1_l**2)) / 12 if L1_l > 0 else 0
         FEM_R = (wu_line * (L1_r**2)) / 12 if L1_r > 0 else 0
         
+        # ปรับเงื่อนไขให้รองรับคำว่า "Edge Column" และ "Corner Column"
         if "Edge" in col_type or "Corner" in col_type:
-            FEM_L = 0  # สมมติให้ขอบอยู่ด้านซ้าย
+            FEM_L = 0  # เสาริม/มุม สมมติให้ขอบหน้าต่างอยู่ด้านซ้าย L1_l = 0
             
         M_unbal = abs(FEM_L - FEM_R)
         M_col = M_unbal * df_col
         M_slab_dist = M_unbal * df_slab
-        Mu_neg = max(FEM_L, FEM_R) - (M_slab_dist / 2) # โมเมนต์ลบออกแบบในพื้น
+        Mu_neg = max(FEM_L, FEM_R) - (M_slab_dist / 2)
 
         st.markdown("**การคำนวณ Unbalanced Moment และการกระจายลงเสา**")
-        st.latex(fr"FEM_{{Right}} = \frac{{w_u L_2 \times L_{{1,R}}^2}}{{12}} = \frac{{{fmt_num(wu_kgm2,0)} \times {L2} \times {L1_r}^2}}{{12}} = {fmt_num(FEM_R, 0)} \text{{ kg-m}}")
+        st.latex(fr"FEM_{{Right}} = \frac{{w_u L_2 \times L_{{1,R}}^2}}{{12}} = \frac{{{fmt_num(wu_kgm2,0)} \times {L2:.2f} \times {L1_r:.2f}^2}}{{12}} = {fmt_num(FEM_R, 0)} \text{{ kg-m}}")
         if FEM_L > 0:
             st.latex(fr"FEM_{{Left}} = \frac{{w_u L_2 \times L_{{1,L}}^2}}{{12}} = {fmt_num(FEM_L, 0)} \text{{ kg-m}}")
         
         st.latex(fr"M_{{unbal}} = |FEM_{{Left}} - FEM_{{Right}}| = {fmt_num(M_unbal, 0)} \text{{ kg-m}}")
         st.latex(fr"M_{{col}} = M_{{unbal}} \times DF_{{col}} = {fmt_num(M_unbal,0)} \times {df_col:.3f} = {fmt_num(M_col, 0)} \text{{ kg-m}}")
-        st.info(f"💡 โมเมนต์ที่ถ่ายลงเสา ($M_{{col}}$) = **{fmt_num(M_col, 0)} kg-m** จะถูกส่งไปคำนวณ Punching Shear ใน Tab 4")
+        st.info(f"💡 โมเมนต์ที่ถ่ายลงเสา ($M_{{col}}$) = **{fmt_num(M_col, 0)} kg-m** จะถูกนำไปคิดร่วมกับแรงเฉือนทะลุใน Tab 4")
 
     # ------------------------------------------
     # TAB 3: Flexural Design (Transverse)
     # ------------------------------------------
     with tab3:
         st.subheader("Transverse Strip & Flexural Design")
-        st.markdown("แบ่งโมเมนต์ดัดลบ ($M_{u,neg}$) ลง Column Strip (75%) และ Middle Strip (25%) ตาม ACI 318")
+        st.markdown("แบ่งโมเมนต์ลบ ($M_{u,neg}$) ลง Column Strip (75%) และ Middle Strip (25%) ตาม ACI 318")
         
         pct_col_neg = 0.75
         Mu_col_neg = Mu_neg * pct_col_neg
@@ -119,7 +118,7 @@ def render_efm_tab(calc_obj):
         def design_flexure(Mu_kgm, b_cm, d_cm, fc, fy):
             phi = 0.9
             Mu_kgcm = Mu_kgm * 100
-            Rn = Mu_kgcm / (phi * b_cm * d_cm**2)
+            Rn = Mu_kgcm / (phi * b_cm * d_cm**2) if b_cm > 0 and d_cm > 0 else 0
             term = 1 - (2 * Rn) / (0.85 * fc)
             rho_req = (0.85 * fc / fy) * (1 - math.sqrt(term)) if term > 0 else 0
             rho_min = 0.0018 if fy >= 4000 else 0.0020
@@ -151,7 +150,7 @@ def render_efm_tab(calc_obj):
     with tab4:
         st.subheader("Punching Shear & Unbalanced Moment")
         
-        # จัดรูปทรงหน้าตัดวิกฤต
+        # จัดรูปทรงหน้าตัดวิกฤต โดยใช้คำค้นหาที่สอดคล้องกับค่าใน app.py
         if "Interior" in col_type:
             b1 = c1_cm + d_cm
             b2 = c2_cm + d_cm
@@ -172,7 +171,7 @@ def render_efm_tab(calc_obj):
             Jc = (d_cm * b1**3 / 12.0) + (b1 * d_cm**3 / 12.0) + d_cm*b1*((b1/2 - c_AB)**2) + d_cm*b2*(c_AB**2)
 
         # Fraction & Shear Forces
-        gamma_f = 1.0 / (1.0 + (2.0/3.0) * math.sqrt(b1 / b2))
+        gamma_f = 1.0 / (1.0 + (2.0/3.0) * math.sqrt(b1 / b2)) if b2 > 0 else 1.0
         gamma_v = 1.0 - gamma_f
         
         trib_area = max(L1_l, L1_r) * L2
@@ -183,12 +182,12 @@ def render_efm_tab(calc_obj):
         Vu_kg = wu_kgm2 * (trib_area - crit_area_m2)
 
         # Stresses
-        vu_shear = Vu_kg / Ac
+        vu_shear = Vu_kg / Ac if Ac > 0 else 0
         vu_moment = (gamma_v * M_col * 100 * c_AB) / Jc if Jc > 0 else 0
         vu_total = vu_shear + vu_moment
         phi_vc = 0.85 * 1.06 * math.sqrt(fc)
 
-        st.markdown("**1. Critical Section Properties (ตามประเภทเสา)**")
+        st.markdown("**1. Critical Section Properties (อิงตามประเภทเสา)**")
         c_prop1, c_prop2 = st.columns(2)
         with c_prop1:
             st.latex(fr"b_1 = {b1:.1f} \text{{ cm}}, \quad b_2 = {b2:.1f} \text{{ cm}}")
@@ -199,7 +198,8 @@ def render_efm_tab(calc_obj):
 
         st.divider()
         st.markdown("**2. Transfer Fractions**")
-        st.latex(fr"\gamma_f = \frac{{1}}{{1 + \frac{{2}}{{3}}\sqrt{{\frac{{{b1:.1f}}}{{{b2:.1f}}}}}}} = {gamma_f:.3f} \quad \rightarrow \quad \gamma_v = 1 - {gamma_f:.3f} = {gamma_v:.3f}")
+        st.latex(fr"\gamma_f = \frac{{1}}{{1 + \frac{{2}}{{3}}\sqrt{{\frac{{{b1:.1f}}}{{{b2:.1f}}}}}}} = {gamma_f:.3f}")
+        st.latex(fr"\gamma_v = 1 - {gamma_f:.3f} = {gamma_v:.3f}")
 
         st.divider()
         st.markdown("**3. Stress Check**")
