@@ -315,8 +315,9 @@ def render_efm_tab(calc_obj):
         else:
             st.error(f"❌ **FAIL:** Exceeds capacity. Thicken slab or add shear reinforcement.")
 
-    # ------------------------------------------
-    # ✅ TAB 5: Drafting Details (Plan & Section) - เรียกใช้ฟังก์ชันจากไฟล์ภายนอก
+
+# ------------------------------------------
+    # TAB 5: Drafting Details
     # ------------------------------------------
     with tab5:
         draw_rebar.draw_drafting_details(
@@ -329,5 +330,9 @@ def render_efm_tab(calc_obj):
             top_col_sz=top_col_sz, 
             top_col_sp=top_col_sp, 
             bot_col_sz=bot_col_sz, 
-            bot_col_sp=bot_col_sp
+            bot_col_sp=bot_col_sp,
+            top_mid_sz=top_mid_sz,    # ✅ เพิ่มเหล็กบน Middle Strip
+            top_mid_sp=top_mid_sp,    # ✅ เพิ่มระยะแอดบน Middle Strip
+            bot_mid_sz=bot_mid_sz,    # ✅ เพิ่มเหล็กล่าง Middle Strip
+            bot_mid_sp=bot_mid_sp     # ✅ เพิ่มระยะแอดล่าง Middle Strip
         )
