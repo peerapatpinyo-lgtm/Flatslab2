@@ -30,13 +30,12 @@ def render_ddm_tab(calc_obj):
     raw_loc = calc_obj.get('col_location_raw', 'Interior Column')
     col_loc = str(raw_loc).replace(" Column", "") 
     
-    # ✅ แก้ไขแล้ว: ดึงตัวเลข fy มาใช้ได้เลย
+    # ✅ ดึงตัวเลข fy มาใช้
     fy_val = calc_obj.get('mat', {}).get('fy', 4000)
 
     loads_data = calc_obj.get('loads', {})
     dl = loads_data.get('dl', loads_data.get('DL', 0))
     ll = loads_data.get('ll', loads_data.get('LL', 0))
-    # ... โค้ดส่วนอื่นๆ คงเดิม ...
 
     wu = loads_data.get('wu', (1.4 * dl) + (1.7 * ll))
 
@@ -44,6 +43,11 @@ def render_ddm_tab(calc_obj):
     
     L1 = geom_data.get('L1', 0)
     L2 = geom_data.get('L2', 0)
+    
+    # ✅ ดึงค่าแผงย่อย (ถ้าหาไม่เจอ ให้คืนค่า L2 ไว้กัน Error)
+    L2_t = geom_data.get('L2_t', L2)
+    L2_b = geom_data.get('L2_b', L2)
+    
     c1_cm = geom_data.get('c1_cm', 50)
     c2_cm = geom_data.get('c2_cm', 50)
     
@@ -113,15 +117,13 @@ def render_ddm_tab(calc_obj):
     selected_rebar = geom_data.get('rebar', 12.0) 
     d_eff_m = h_slab_m - cc_m - ((selected_rebar / 1000.0) / 2.0)
     
-    cs_width = min(L1/2, L2/2) 
-    
     fc_ksc = inputs['fc']
     fy_ksc = inputs['fy']
     has_edge_beam = inputs['has_edge_beam']
     case_type = inputs['case_type']
 
     # =========================================================================
-    # 🌟 5. โค้ดส่วนแสดงผล UI (Step 3 ต่อด้วย Step 4 ของคุณ)
+    # 🌟 5. โค้ดส่วนแสดงผล UI (Step 3 ต่อด้วย Step 4)
     # =========================================================================
     st.markdown("### Step 3: Forces & Constraints")
     
@@ -137,23 +139,23 @@ def render_ddm_tab(calc_obj):
 
     st.divider()
 
-    # **********************************************
-    # (วางโค้ดสร้าง Tabs และ DataFrame ต่อจากตรงนี้ได้เลยครับ)
-    # **********************************************
-
-    # **********************************************
-    # โค้ดส่วนนี้คือจุดที่คุณสร้าง edited_df หรือ Tab 1, 2, 3, 4, 5
-    # (วางโค้ดของคุณต่อจากตรงนี้ได้เลย)
-    # **********************************************
-
     # ==========================================================================
     # STEP 4: INTERACTIVE DETAILING
     # ==========================================================================
     st.markdown("### Step 4: Reinforcement Detailing & Compliance")
     
     if not df_results.empty and 'Location' in df_results.columns:
-        cs_width = min(L1, L2) / 2.0
-        ms_width = L2 - cs_width
+        
+        # ✅ หาความกว้าง Column Strip แบบแยกทีละฝั่งตาม ACI 318
+        # ฝั่งบน (หรือซ้าย) = 0.25 * min(L1, L2_top)
+        cs_top = 0.25 * min(L1, L2_t) if L2_t > 0 else 0
+        
+        # ฝั่งล่าง (หรือขวา) = 0.25 * min(L1, L2_bottom)
+        cs_bot = 0.25 * min(L1, L2_b) if L2_b > 0 else 0
+        
+        # รวมความกว้างแถบเสา และคำนวณแถบกลางที่เหลือ
+        cs_width = cs_top + cs_bot
+        ms_width = max(L2 - cs_width, 0)  # ใช้ max กันค่าติดลบไว้
 
         def get_strip_width(loc):
             return cs_width if 'col' in str(loc).lower() else ms_width
@@ -211,7 +213,7 @@ def render_ddm_tab(calc_obj):
             'As Req (cm2)': "{:.2f}", 'Prov. Area (cm2)': "{:.2f}", 'Max Spacing (cm)': "{:.1f}"
         })
         st.dataframe(styled_df, use_container_width=True, hide_index=True)
-
+        
     # ==========================================================================
     # STEP 5: COMPREHENSIVE CALCULATION NOTE (ACI 318)
     # ==========================================================================
