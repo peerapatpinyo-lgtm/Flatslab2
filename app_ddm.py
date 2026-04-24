@@ -395,7 +395,6 @@ def render_ddm_tab(calc_obj):
                     st.latex(r"L_n = \max(\ " + f"{term1:.2f}" + r",\ \ " + f"{term2:.2f}" + r"\ )")
                     st.info(f"### 📏 Final Clear Span ($L_n$) = {ln:.2f} m")
 
-    # --- TAB 2: Loads & Moments ---
     with tab_load:
     st.markdown("### 🏗️ ACI 318: Load Combinations & Static Moment")
     
@@ -436,9 +435,9 @@ def render_ddm_tab(calc_obj):
     # เพิ่มเติม: คำแนะนำทางวิศวกรรม
     if ln < 0.65 * L1: # ตัวอย่าง Rule of thumb
         st.warning("⚠️ **Note:** Clear span ($L_n$) is significantly shorter than $L_1$. Check column dimensions.")
-
     
     # --- TAB 3: Distribution Factors (NEW TAB) ---
+    
     with tab_dist:
         st.markdown("#### ACI 318 Section 8.10: Distribution of Factored Moments")
         st.markdown("The Direct Design Method allocates the total static moment ($M_o$) based on empirical tables from the ACI code.")
