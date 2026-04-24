@@ -232,19 +232,62 @@ def render_ddm_tab(calc_obj):
 
     # --- TAB 1: Limitations ---
     with tab_limit:
-        st.markdown("#### ACI 318 Section 8.10.2: Dimensional Criteria for DDM")
-        st.markdown(f"$$ \\text{{Span Aspect Ratio}} = \\frac{{\\max(L_1, L_2)}}{{\\min(L_1, L_2)}} \\le 2.0 $$")
-        span_ratio_val = max(L1, L2) / min(L1, L2)
-        st.markdown(f"**Result:** Ratio = {max(L1, L2):.2f} / {min(L1, L2):.2f} = **{span_ratio_val:.2f}**")
+        st.markdown("### 📐 ACI 318 Section 8.10.2: Dimensional & Load Criteria for DDM")
+        st.write("To strictly use the Direct Design Method (DDM), the following criteria must be satisfied. Otherwise, the Equivalent Frame Method (EFM) is required.")
+
+        # ==========================================
+        # 1. SPAN ASPECT RATIO
+        # ==========================================
+        st.markdown("#### A. Panel Aspect Ratio")
+        st.caption("The ratio of the longer span to the shorter span must not exceed 2.0.")
         
-        st.divider()
-        st.markdown(f"$$ \\text{{Loading Ratio}} = \\frac{{LL}}{{DL}} \\le 2.0 $$")
-        load_ratio_val = ll / dl if dl > 0 else 0
-        st.markdown(f"**Result:** Ratio = {ll:.0f} / {dl:.0f} = **{load_ratio_val:.2f}**")
+        l_long = max(L1, L2)
+        l_short = min(L1, L2) if min(L1, L2) > 0 else 1.0 # ป้องกันการหารด้วยศูนย์
+        span_ratio_val = l_long / l_short
+        
+        st.latex(r"\text{Aspect Ratio} = \frac{\max(L_1, L_2)}{\min(L_1, L_2)} \le 2.0")
+        st.latex(r"\text{Ratio} = \frac{" + f"{l_long:.2f}" + r"}{" + f"{l_short:.2f}" + r"} = " + f"{span_ratio_val:.2f}")
+        
+        if span_ratio_val <= 2.0:
+            st.success(f"✅ **PASS:** The aspect ratio is **{span_ratio_val:.2f}**, which is within acceptable limits (≤ 2.0).")
+        else:
+            st.error(f"❌ **FAIL:** The aspect ratio is **{span_ratio_val:.2f}**, which exceeds 2.0.")
 
         st.divider()
-        st.markdown(f"$$ L_n = \\max(L_1 - c_1, \\ 0.65 L_1) $$")
-        st.markdown(f"**Result:** $L_n = \\max({L1:.2f} - {c1:.2f}, 0.65 \\times {L1:.2f}) =$ **{ln:.2f}** m")
+
+        # ==========================================
+        # 2. LOADING RATIO
+        # ==========================================
+        st.markdown("#### B. Gravity Load Ratio")
+        st.caption("Unfactored Live Load (LL) must not exceed 2 times the Dead Load (DL).")
+        
+        load_ratio_val = ll / dl if dl > 0 else 0
+        
+        st.latex(r"\text{Loading Ratio} = \frac{LL}{DL} \le 2.0")
+        st.latex(r"\text{Ratio} = \frac{" + f"{ll:.0f}" + r"}{" + f"{dl:.0f}" + r"} = " + f"{load_ratio_val:.2f}")
+        
+        if load_ratio_val <= 2.0:
+            st.success(f"✅ **PASS:** The load ratio is **{load_ratio_val:.2f}**, which is acceptable (≤ 2.0).")
+        else:
+            st.error(f"❌ **FAIL:** The load ratio is **{load_ratio_val:.2f}**, which means Live Load exceeds 2 times the Dead Load.")
+
+        st.divider()
+
+        # ==========================================
+        # 3. CLEAR SPAN (Ln)
+        # ==========================================
+        st.markdown("#### C. Clear Span ($L_n$) Calculation")
+        st.caption("The effective clear span used for moment calculations is evaluated face-to-face of supports, but must not be less than 65% of the center-to-center span.")
+        
+        st.latex(r"L_n = \max(L_1 - c_1, \, 0.65 L_1)")
+        
+        # แสดงผลการแทนค่าสมการ
+        term1 = L1 - c1
+        term2 = 0.65 * L1
+        st.latex(r"L_n = \max(" + f"{L1:.2f} - {c1:.2f}" + r", \, 0.65 \times " + f"{L1:.2f}" + r")")
+        st.latex(r"L_n = \max(" + f"{term1:.2f}" + r", \, " + f"{term2:.2f}" + r") = " + f"{ln:.2f} \\text{{ m}}")
+        
+        st.info(f"💡 **Result:** The calculated clear span ($L_n$) is **{ln:.2f} m**.")
 
     # --- TAB 2: Loads & Moments ---
     with tab_load:
