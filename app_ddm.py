@@ -238,18 +238,25 @@ def render_ddm_tab(calc_obj):
         st.markdown("### 📐 ACI 318-19 Sec. 8.10.2: DDM Applicability Criteria")
         st.write("To ensure gravity loads safely distribute to supports using the Direct Design Method (DDM), the slab geometry must strictly conform to these criteria. Non-compliance **requires** the Equivalent Frame Method (EFM).")
 
-        # --- คำนวณสถานะล่วงหน้า ---
+        # ==========================================
+        # 🌟 PRE-CALCULATE VARIABLES (Fixed logic)
+        # ==========================================
+        # 1. Geometry 
         l_long = max(L1, L2)
         l_short = min(L1, L2) if min(L1, L2) > 0 else 1.0
         span_ratio_val = l_long / l_short
         is_ratio_ok = span_ratio_val <= 2.0
 
-        load_ratio_val = ll / dl if dl > 0 else 0
+        # 2. Total Dead Load (SDL + Slab Self-Weight)
+        slab_wt = h_slab_m * 2400.0  # kg/m2 (Slab Self-Weight)
+        total_dl = dl + slab_wt      # dl is assumed to be Superimposed DL
+        
+        load_ratio_val = ll / total_dl if total_dl > 0 else 0
         is_load_ok = load_ratio_val <= 2.0
 
         with st.container(border=True):
             # ==========================================
-            # 1 & 2. GENERAL CONSTRAINTS
+            # I. GENERAL CONSTRAINTS
             # ==========================================
             st.markdown("#### I. General Configuration")
             col_req1, col_req2 = st.columns(2)
@@ -261,7 +268,7 @@ def render_ddm_tab(calc_obj):
             st.divider()
 
             # ==========================================
-            # 3 & 4. CALCULATED CONSTRAINTS
+            # II. CALCULATED CONSTRAINTS
             # ==========================================
             st.markdown("#### II. Panel Geometry & Loading Checks")
             col_calc1, col_calc2 = st.columns(2)
@@ -271,32 +278,38 @@ def render_ddm_tab(calc_obj):
                     st.markdown("**3. Panel Aspect Ratio**")
                     st.caption(r"Limit: $L_{long} / L_{short} \le 2.0$")
                     
-                    # 🎨 วาดรูป Plan View พร้อม Hatching
-                    fig_plan, ax_plan = plt.subplots(figsize=(6, 3))
-                    ax_plan.add_patch(patches.Rectangle((1, 1), 4, 2.5, fill=True, facecolor='#f8fafc', edgecolor='#1e293b', lw=2))
+                    # 🎨 วาดรูป Plan View (Dynamic Scale ตามสัดส่วน L1, L2 จริง)
+                    fig_plan, ax_plan = plt.subplots(figsize=(6, 3.5))
+                    scale = 3.0 / l_long if l_long > 0 else 1.0
+                    viz_L1, viz_L2 = L1 * scale, L2 * scale
+                    x_c, y_c = 3.0, 1.75 # จุดศูนย์กลางแกน
+                    x0, y0 = x_c - viz_L1/2, y_c - viz_L2/2
                     
-                    # วาดเสา 4 ต้น (มีเส้น Hatch)
-                    for x in [1, 5]:
-                        for y in [1, 3.5]:
-                            ax_plan.add_patch(patches.Rectangle((x-0.15, y-0.15), 0.3, 0.3, fill=True, color='#334155', zorder=3))
-                            ax_plan.add_patch(patches.Rectangle((x-0.15, y-0.15), 0.3, 0.3, fill=False, edgecolor='#94a3b8', hatch='///', lw=0.5, zorder=4))
+                    # วาดพื้น
+                    ax_plan.add_patch(patches.Rectangle((x0, y0), viz_L1, viz_L2, fill=True, facecolor='#f8fafc', edgecolor='#1e293b', lw=2))
                     
-                    ax_plan.annotate('', xy=(1, 0.5), xytext=(5, 0.5), arrowprops=dict(arrowstyle='<->', lw=1.5, color='#1e293b'))
-                    ax_plan.text(3, 0.2, 'L1 (Analysis Dir.)', ha='center', fontsize=10, fontweight='bold', color='#1e293b')
+                    # วาดเสา
+                    col_w = 0.25
+                    for x in [x0, x0 + viz_L1]:
+                        for y in [y0, y0 + viz_L2]:
+                            ax_plan.add_patch(patches.Rectangle((x-col_w/2, y-col_w/2), col_w, col_w, fill=True, color='#334155', zorder=3))
+                            ax_plan.add_patch(patches.Rectangle((x-col_w/2, y-col_w/2), col_w, col_w, fill=False, edgecolor='#94a3b8', hatch='///', lw=0.5, zorder=4))
                     
-                    ax_plan.annotate('', xy=(0.5, 1), xytext=(0.5, 3.5), arrowprops=dict(arrowstyle='<->', lw=1.5, color='#1e293b'))
-                    ax_plan.text(0.2, 2.25, 'L2 (Transverse)', va='center', rotation=90, fontsize=10, fontweight='bold', color='#1e293b')
+                    # แกน L1 (Analysis Direction) - สีน้ำเงิน
+                    ax_plan.annotate('', xy=(x0, y0-0.3), xytext=(x0+viz_L1, y0-0.3), arrowprops=dict(arrowstyle='<->', color='#2563eb', lw=2))
+                    ax_plan.text(x_c, y0-0.5, f'L1 (Analysis Dir.) = {L1:.2f} m', ha='center', color='#2563eb', fontweight='bold', fontsize=9)
                     
-                    # เน้นสีเหลืองด้านที่สั้นกว่า
-                    if L1 >= L2:
-                         ax_plan.annotate('', xy=(1, 1), xytext=(1, 3.5), arrowprops=dict(arrowstyle='-', color='#ca8a04', lw=4, alpha=0.6, zorder=2))
-                    else:
-                         ax_plan.annotate('', xy=(1, 1), xytext=(5, 1), arrowprops=dict(arrowstyle='-', color='#ca8a04', lw=4, alpha=0.6, zorder=2))
-
-                    ax_plan.set_xlim(0, 6); ax_plan.set_ylim(0, 4.5); ax_plan.axis('off')
+                    # แกน L2 (Transverse Direction) - สีเขียว
+                    ax_plan.annotate('', xy=(x0-0.3, y0), xytext=(x0-0.3, y0+viz_L2), arrowprops=dict(arrowstyle='<->', color='#16a34a', lw=2))
+                    ax_plan.text(x0-0.45, y_c, f'L2 (Transverse) = {L2:.2f} m', va='center', rotation=90, color='#16a34a', fontweight='bold', fontsize=9)
+                    
+                    ax_plan.set_xlim(0, 6); ax_plan.set_ylim(0, 3.5); ax_plan.axis('off')
                     st.pyplot(fig_plan)
                     
-                    st.latex(r"\frac{L_{long}}{L_{short}} = \frac{" + f"{l_long:.2f}" + r"}{" + f"{l_short:.2f}" + r"} = " + f"{span_ratio_val:.2f}")
+                    # สมการแทนค่าที่ชัดเจน
+                    st.latex(r"L_{long} = \max(" + f"{L1:.2f}, {L2:.2f}" + r") = \mathbf{" + f"{l_long:.2f}" + r" \text{ m}}")
+                    st.latex(r"L_{short} = \min(" + f"{L1:.2f}, {L2:.2f}" + r") = \mathbf{" + f"{l_short:.2f}" + r" \text{ m}}")
+                    st.latex(r"\text{Ratio} = \frac{L_{long}}{L_{short}} = \frac{" + f"{l_long:.2f}" + r"}{" + f"{l_short:.2f}" + r"} = \mathbf{" + f"{span_ratio_val:.2f}" + r"}")
                     
                     if is_ratio_ok:
                         st.success(f"**PASS:** Aspect ratio ≤ 2.0 (Two-way action).")
@@ -306,25 +319,31 @@ def render_ddm_tab(calc_obj):
             with col_calc2:
                 with st.container(border=True):
                     st.markdown("**4. Gravity Load Ratio**")
-                    st.caption(r"Limit: Unfactored LL $\le 2 \times$ Unfactored DL")
+                    st.caption(r"Limit: Unfactored LL $\le 2 \times$ Unfactored Total DL")
                     
-                    # 🎨 วาดรูป Section แสดง Load สดๆ
-                    fig_load, ax_load = plt.subplots(figsize=(6, 3))
-                    ax_load.add_patch(patches.Rectangle((1, 1), 4, 0.3, fill=True, facecolor='#f1f5f9', edgecolor='#1e293b', lw=2))
+                    # 🎨 วาดรูป Section แสดง Load ที่แยกพื้นออกจาก SDL อย่างชัดเจน
+                    fig_load, ax_load = plt.subplots(figsize=(6, 3.5))
+                    
+                    # วาดความหนาแผงพื้น
+                    ax_load.add_patch(patches.Rectangle((1, 1), 4, 0.4, fill=True, facecolor='#cbd5e1', edgecolor='#1e293b', lw=2))
+                    ax_load.text(3, 1.2, f"Slab Self-Weight: {slab_wt:.0f} kg/m²", ha='center', va='center', fontsize=9, color='#334155', fontweight='bold')
                     
                     for x in [1.5, 2.5, 3.5, 4.5]:
-                        # DL Arrows (สีเทา)
-                        ax_load.annotate('', xy=(x, 1), xytext=(x, 0.5), arrowprops=dict(arrowstyle='<-', color='#94a3b8', lw=1.5))
-                        # LL Arrows (สีเหลืองเน้น)
-                        ax_load.annotate('', xy=(x, 1.3), xytext=(x, 1), arrowprops=dict(arrowstyle='-', color='#ca8a04', lw=5, alpha=0.8))
+                        # SDL Arrows (วางบนพื้น)
+                        ax_load.annotate('', xy=(x, 1.4), xytext=(x, 1.9), arrowprops=dict(arrowstyle='->', color='#64748b', lw=1.5))
+                        # LL Arrows (วางบน SDL)
+                        ax_load.annotate('', xy=(x, 1.9), xytext=(x, 2.5), arrowprops=dict(arrowstyle='->', color='#ca8a04', lw=3))
                     
-                    ax_load.text(3, 1.45, f"Live Load (LL): {ll:.0f} kg/m²", ha='center', fontsize=10, fontweight='bold', color='#ca8a04')
-                    ax_load.text(3, 0.3, f"Dead Load (DL): {dl:.0f} kg/m²", ha='center', fontsize=10, color='#64748b')
+                    ax_load.text(3, 2.7, f"Live Load (LL): {ll:.0f} kg/m²", ha='center', fontsize=10, fontweight='bold', color='#ca8a04')
+                    ax_load.text(3, 2.1, f"Superimposed DL (SDL): {dl:.0f} kg/m²", ha='center', fontsize=10, color='#64748b')
                     
-                    ax_load.set_xlim(0.5, 5.5); ax_load.set_ylim(0, 2); ax_load.axis('off')
+                    ax_load.set_xlim(0.5, 5.5); ax_load.set_ylim(0.5, 3.2); ax_load.axis('off')
                     st.pyplot(fig_load)
                     
-                    st.latex(r"\frac{LL}{DL} = \frac{" + f"{ll:,.0f}" + r"}{" + f"{dl:,.0f}" + r"} = " + f"{load_ratio_val:.2f}")
+                    # สมการแทนค่าที่ชัดเจน
+                    st.latex(r"\text{Total DL} = \text{SDL} + \text{Self-Weight}")
+                    st.latex(r"\text{Total DL} = " + f"{dl:.0f} + {slab_wt:.0f} = \mathbf{" + f"{total_dl:.0f}" + r" \text{ kg/m}^2}")
+                    st.latex(r"\text{Ratio} = \frac{LL}{\text{Total DL}} = \frac{" + f"{ll:,.0f}" + r"}{" + f"{total_dl:,.0f}" + r"} = \mathbf{" + f"{load_ratio_val:.2f}" + r"}")
                     
                     if is_load_ok:
                         st.success("**PASS:** Live Load ratio within DDM limits.")
@@ -334,34 +353,32 @@ def render_ddm_tab(calc_obj):
             st.divider()
 
             # ==========================================
-            # 5. CLEAR SPAN (Ln) - DETAILED Substitution
+            # III. CLEAR SPAN (Ln) - DETAILED Substitution
             # ==========================================
             st.markdown("#### III. Critical Span Definition: Effective Clear Span ($L_n$)")
             
             with st.container(border=True):
-                # 🎨 วาดรูป Section View แสดงระยะ Ln เน้นสีเหลือง
+                # 🎨 วาดรูป Section View
                 fig_sec, ax_sec = plt.subplots(figsize=(8, 2.5))
-                # วาดเสาพร้อม Hatch
                 for x in [1.5, 5.5]:
                     ax_sec.add_patch(patches.Rectangle((x, 0), 0.6, 2, fill=True, color='#475569', zorder=3))
                     ax_sec.add_patch(patches.Rectangle((x, 0), 0.6, 2, fill=False, edgecolor='#94a3b8', hatch='///', lw=0.5, zorder=4))
                 
-                # วาดพื้น
                 ax_sec.add_patch(patches.Rectangle((0.5, 2), 6.5, 0.4, fill=True, facecolor='#f8fafc', edgecolor='#1e293b', lw=2))
                 
-                # เส้น L1 (C-to-C)
+                # C-to-C
                 ax_sec.plot([1.8, 1.8], [2.5, 3.2], color='gray', ls='-', lw=1.5, zorder=1)
                 ax_sec.plot([5.8, 5.8], [2.5, 3.2], color='gray', ls='-', lw=1.5, zorder=1)
                 ax_sec.annotate('', xy=(1.8, 3), xytext=(5.8, 3), arrowprops=dict(arrowstyle='<->', color='#1e293b', lw=1.2))
-                ax_sec.text(3.8, 3.25, f'L1 (Centerline to Centerline) = {L1:.2f} m', ha='center', fontsize=10, fontweight='bold')
+                ax_sec.text(3.8, 3.25, f'L1 (Analysis Dir.) = {L1:.2f} m', ha='center', fontsize=10, fontweight='bold')
                 
-                # เส้น Ln (Face-to-Face) -> เน้นสีเหลือง
+                # Face-to-Face (Ln)
                 ax_sec.plot([2.1, 2.1], [0.5, 1.8], color='#ca8a04', ls=':', lw=2, zorder=2)
                 ax_sec.plot([5.5, 5.5], [0.5, 1.8], color='#ca8a04', ls=':', lw=2, zorder=2)
                 ax_sec.annotate('', xy=(2.1, 1.5), xytext=(5.5, 1.5), arrowprops=dict(arrowstyle='<->', color='#ca8a04', lw=2.5, zorder=5))
                 ax_sec.text(3.8, 1.65, 'Clear Span (Ln)', ha='center', color='#854d0e', fontweight='bold', fontsize=11)
                 
-                # ระยะ c1 (ความกว้างเสา) -> เน้นสีแดง
+                # c1
                 ax_sec.annotate('', xy=(1.5, 0.8), xytext=(2.1, 0.8), arrowprops=dict(arrowstyle='<->', color='#b91c1c', lw=1.5))
                 ax_sec.text(1.8, 1.0, f'c1={c1_cm:.0f}cm', ha='center', color='#b91c1c', fontweight='bold', fontsize=9)
                 
@@ -374,12 +391,11 @@ def render_ddm_tab(calc_obj):
                 term1 = L1 - c1
                 term2 = 0.65 * L1
                 
-                # กล่องแสดงการแทนค่าสมการ
                 with st.container(border=True):
                     st.latex(r"L_n = \max(\ L_1 - c_1,\ \ 0.65 L_1\ )")
                     st.divider()
-                    st.latex(r"\text{Condition 1: } L_1 - c_1 = " + f"{L1:.2f}" + r" - " + f"{c1:.2f}" + r" = \mathbf{" + f"{term1:.2f}" + r" \text{ m}}")
-                    st.latex(r"\text{Condition 2: } 0.65 \times L_1 = 0.65 \times " + f"{L1:.2f}" + r" = \mathbf{" + f"{term2:.2f}" + r" \text{ m}}")
+                    st.latex(r"\text{Cond 1: } L_1 - c_1 = " + f"{L1:.2f}" + r" - " + f"{c1:.2f}" + r" = \mathbf{" + f"{term1:.2f}" + r" \text{ m}}")
+                    st.latex(r"\text{Cond 2: } 0.65 \times L_1 = 0.65 \times " + f"{L1:.2f}" + r" = \mathbf{" + f"{term2:.2f}" + r" \text{ m}}")
                     st.divider()
                     st.latex(r"L_n = \max(\ " + f"{term1:.2f}" + r",\ \ " + f"{term2:.2f}" + r"\ )")
                     st.info(f"### 📏 Final Clear Span ($L_n$) = {ln:.2f} m")
