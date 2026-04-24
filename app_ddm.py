@@ -397,16 +397,47 @@ def render_ddm_tab(calc_obj):
 
     # --- TAB 2: Loads & Moments ---
     with tab_load:
-        st.markdown("#### ACI 318 Section 5.3.1: Load Combinations")
-        st.markdown(f"$$ W_u = 1.4 DL + 1.7 LL $$")
-        st.markdown(f"**Result:** $W_u = 1.4({dl:,.0f}) + 1.7({ll:,.0f}) =$ **{wu:,.0f}** kg/m²")
+    st.markdown("### 🏗️ ACI 318: Load Combinations & Static Moment")
+    
+    # --- ส่วนที่ 1: การคำนวณ Factored Load (W_u) ---
+    st.markdown("#### 1. Factored Load ($W_u$)")
+    # แสดงสูตรมาตรฐาน (ใช้ 1.4 และ 1.7 ตามความนิยมในไทย)
+    st.latex(r"W_u = 1.4 \times DL_{\text{total}} + 1.7 \times LL")
+    
+    # คำนวณค่า Wu (ตรวจสอบให้มั่นใจว่า total_dl รวม Self-weight แล้ว)
+    wu = (1.4 * total_dl) + (1.7 * ll)
+    
+    # แสดงการแทนค่าแบบ Step-by-Step
+    st.markdown(f"""
+    **Calculation:**
+    * $W_u = 1.4({total_dl:,.0f}) + 1.7({ll:,.0f})$
+    * $W_u = \mathbf{{{wu:,.0f}}}$ **kg/m²**
+    """)
 
-        st.divider()
-        st.markdown("#### ACI 318 Section 8.10.3.2: Total Factored Static Moment")
-        st.markdown(f"$$ M_o = \\frac{{W_u \\times L_2 \\times L_n^2}}{{8}} $$")
-        # FIXED: \times used properly to prevent the \t string bug
-        st.markdown(f"**Result:** $M_o = \\frac{{{wu:,.0f} \\times {L2:.2f} \\times {ln:.2f}^2}}{{8}} =$ **{Mo:,.0f}** kg-m")
+    st.divider()
 
+    # --- ส่วนที่ 2: การคำนวณ Total Factored Static Moment (M_o) ---
+    st.markdown("#### 2. Total Factored Static Moment ($M_o$)")
+    st.caption("Reference: ACI 318 Section 8.10.3.2")
+    
+    # แสดงสูตร Mo
+    st.latex(r"M_o = \frac{W_u \times L_2 \times L_n^2}{8}")
+    
+    # คำนวณค่า Mo
+    # ln คือ Clear span ในทิศทางที่พิจารณา, L2 คือ ความกว้างของ Design Strip
+    Mo = (wu * L2 * (ln**2)) / 8
+    
+    # แสดงการแทนค่าแบบละเอียด (ใช้ f-string ผสม raw string เพื่อความปลอดภัย)
+    # หมายเหตุ: {{ และ }} จะถูกแสดงเป็น { และ } ใน LaTeX
+    st.latex(rf"M_o = \frac{{{wu:,.0f} \times {L2:.2f} \times {ln:.2f}^2}}{{8}}")
+    
+    st.info(f"**Result:** $M_o = \mathbf{{{Mo:,.0f}}}$ **kg-m**")
+
+    # เพิ่มเติม: คำแนะนำทางวิศวกรรม
+    if ln < 0.65 * L1: # ตัวอย่าง Rule of thumb
+        st.warning("⚠️ **Note:** Clear span ($L_n$) is significantly shorter than $L_1$. Check column dimensions.")
+
+    
     # --- TAB 3: Distribution Factors (NEW TAB) ---
     with tab_dist:
         st.markdown("#### ACI 318 Section 8.10: Distribution of Factored Moments")
