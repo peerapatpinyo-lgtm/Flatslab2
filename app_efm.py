@@ -5,12 +5,11 @@ import math
 import calc_efm
 
 def render_efm_tab(calc_obj):
-    st.header("📐 Equivalent Frame Method (EFM) - Full Design")
-    st.markdown("การวิเคราะห์และออกแบบพื้นไร้คานด้วยวิธี Equivalent Frame ตามมาตรฐาน ACI 318")
+    st.header("📐 Equivalent Frame Method (EFM) - Detailed Design")
+    st.markdown("การวิเคราะห์และออกแบบอย่างละเอียดตามมาตรฐาน ACI 318 พร้อมแสดงขั้นตอนการแทนค่า")
     st.markdown("---")
     
     try:
-        # ดึงค่า Stiffness จาก module เดิมของคุณ
         res = calc_efm.calculate_efm(calc_obj)
     except Exception as e:
         st.error(f"❌ Error in Calculation: {e}")
@@ -18,210 +17,191 @@ def render_efm_tab(calc_obj):
 
     # --- ฟังก์ชันช่วยจัดฟอร์แมต ---
     def fmt_sci(val): return f"{val:.3e}"
-    def fmt_num(val): return f"{val:,.2f}"
+    def fmt_num(val, dec=2): return f"{val:,.{dec}f}"
 
-    # ดึงตัวแปรที่จำเป็นจาก calc_obj สำหรับกระบวนการออกแบบ
-    L1_l = calc_obj['geom']['L1_l']
-    L1_r = calc_obj['geom']['L1_r']
-    L2 = calc_obj['geom']['L2']
-    c1 = calc_obj['geom']['c1_cm'] / 100.0  # เมตร
-    c2 = calc_obj['geom']['c2_cm'] / 100.0  # เมตร
-    h = calc_obj['geom']['h_slab_cm'] / 100.0  # เมตร
+    # ดึงตัวแปร (สมมติโครงสร้างข้อมูลจาก calc_obj)
+    L1_l = calc_obj['geom'].get('L1_l', 6.0) # Span ซ้าย (m)
+    L1_r = calc_obj['geom'].get('L1_r', 6.0) # Span ขวา (m)
+    L2 = calc_obj['geom'].get('L2', 6.0)     # ความกว้าง Transverse (m)
+    c1 = calc_obj['geom']['c1_cm'] / 100.0   # เสาขนาน Span (m)
+    c2 = calc_obj['geom']['c2_cm'] / 100.0   # เสาตั้งฉาก Span (m)
+    h = calc_obj['geom']['h_slab_cm'] / 100.0# ความหนาพื้น (m)
     
-    # แปลงโหลดเป็น kg/m
     wu_kgm2 = calc_obj['loads']['wu']
     wu_line = wu_kgm2 * L2  # Load ต่อความยาว (kg/m)
     
-    # กำหนดคุณสมบัติวัสดุ
     fc = calc_obj['mat']['fc']  # ksc
     fy = calc_obj['mat']['fy']  # ksc
 
-    # =========================================================================
-    # 1️⃣ STIFFNESS & DISTRIBUTION FACTORS (สรุปผลจาก calc_efm)
-    # =========================================================================
-    st.subheader("1️⃣ Frame Stiffness & Distribution Factors")
-    c1_stiff, c2_stiff, c3_stiff, c4_stiff = st.columns(4)
-    c1_stiff.metric("Slab ($K_s$)", fmt_sci(res.get('Ks', 0)))
-    c2_stiff.metric("Column ($\Sigma K_c$)", fmt_sci(res.get('Sum_Kc', 0)))
-    c3_stiff.metric("Torsion ($K_t$)", fmt_sci(res.get('Kt', 0)))
-    c4_stiff.metric("Equiv. Col ($K_{ec}$)", fmt_sci(res.get('Kec', 0)))
-
-    df_slab = res.get('df_slab', 0.5)
-    df_col = res.get('df_col', 0.5)
-
-    df_data = pd.DataFrame({
-        "Member": ["Slab Strip (พื้น)", "Equivalent Column (เสาเสมือน)"],
-        "Stiffness (K)": [fmt_sci(res.get('Ks', 0)), fmt_sci(res.get('Kec', 0))],
-        "DF (Ratio)": [f"{df_slab:.4f}", f"{df_col:.4f}"],
-        "Percentage": [f"{df_slab*100:.1f}%", f"{df_col*100:.1f}%"]
-    })
-    st.table(df_data)
+    # ให้ผู้ใช้เลือกตำแหน่งของเสาเพื่อคำนวณ Punching Shear ให้ถูก Case
+    st.subheader("📍 Column Location (ตำแหน่งเสา)")
+    col_type = st.radio(
+        "เลือกประเภทของจุดต่อ (มีผลต่อหน้าตัดวิกฤตแรงเฉือนและ Unbalanced Moment):",
+        ["Interior (เสากลาง)", "Edge (เสาริม - โมเมนต์ตั้งฉากขอบ)", "Corner (เสามุม)"],
+        horizontal=True
+    )
 
     # =========================================================================
-    # 2️⃣ LONGITUDINAL MOMENT ANALYSIS (FEM & Distribution)
+    # 1️⃣ MOMENT ANALYSIS & DISTRIBUTION
     # =========================================================================
-    st.subheader("2️⃣ Longitudinal Moment Analysis")
-    st.markdown("การคำนวณ Fixed End Moment (FEM) และการกระจายโมเมนต์ (Moment Distribution) ที่รอยต่อเสา")
+    st.subheader("1️⃣ Fixed End Moment & Distribution (สมดุลจุดต่อ)")
     
     # คำนวณ FEM (kg-m)
     FEM_L = (wu_line * (L1_l**2)) / 12 if L1_l > 0 else 0
     FEM_R = (wu_line * (L1_r**2)) / 12 if L1_r > 0 else 0
     
-    # Unbalanced Moment ที่ Joint
+    if col_type == "Edge (เสาริม - โมเมนต์ตั้งฉากขอบ)":
+        FEM_L = 0 # สมมติเป็นขอบซ้าย
+    elif col_type == "Corner (เสามุม)":
+        FEM_L = 0
+        
     M_unbal = abs(FEM_L - FEM_R)
-    
-    # โมเมนต์ที่ถ่ายลงเสา และโมเมนต์ที่ปรับแก้ในพื้น
+    df_col = res.get('df_col', 0.5)
     M_col = M_unbal * df_col
-    M_dist_slab = M_unbal * df_slab
+
+    with st.expander("🔍 ดูสมการและการแทนค่า (Moment Distribution)", expanded=True):
+        st.write("**Fixed End Moment (FEM)**")
+        st.latex(fr"FEM_{{Right}} = \frac{{w_u L_2 \times L_{{1,R}}^2}}{{12}} = \frac{{{fmt_num(wu_kgm2,0)} \times {L2} \times {L1_r}^2}}{{12}} = {fmt_num(FEM_R, 0)} \text{{ kg-m}}")
+        if FEM_L > 0:
+            st.latex(fr"FEM_{{Left}} = \frac{{w_u L_2 \times L_{{1,L}}^2}}{{12}} = \frac{{{fmt_num(wu_kgm2,0)} \times {L2} \times {L1_l}^2}}{{12}} = {fmt_num(FEM_L, 0)} \text{{ kg-m}}")
+        
+        st.write("**Unbalanced Moment at Joint ($M_{unbal}$)**")
+        st.latex(fr"M_{{unbal}} = |FEM_{{Left}} - FEM_{{Right}}| = |{fmt_num(FEM_L,0)} - {fmt_num(FEM_R,0)}| = {fmt_num(M_unbal, 0)} \text{{ kg-m}}")
+        
+        st.write("**Moment Transferred to Column ($M_{sc}$)**")
+        st.latex(fr"M_{{sc}} = M_{{unbal}} \times DF_{{col}} = {fmt_num(M_unbal,0)} \times {df_col:.3f} = {fmt_num(M_col, 0)} \text{{ kg-m}}")
+
+    # =========================================================================
+    # 2️⃣ STRIP MOMENT DISTRIBUTION (ACI 318)
+    # =========================================================================
+    st.subheader("2️⃣ Transverse Strip Moment (การแบ่งโมเมนต์ลง Column/Middle Strip)")
     
-    # Design Moments (ตัวอย่างการประมาณค่า EFM แบบรวดเร็วที่หน้าตัดวิกฤต)
-    # ในการทำงานจริงต้องกระจายโมเมนต์ทั้ง Frame แต่เพื่อแสดงผลราย Joint:
-    Mu_neg_design = max(FEM_L, FEM_R) - M_dist_slab  # โมเมนต์ลบออกแบบ (ปรับลดแล้ว)
-    Mu_pos_design = (wu_line * (max(L1_l, L1_r)**2)) / 24  # โมเมนต์บวกกลางช่วง (โดยประมาณ)
-
-    col_fem1, col_fem2, col_fem3 = st.columns(3)
-    col_fem1.metric("Load per meter ($w_u \cdot L_2$)", f"{wu_line:,.0f} kg/m")
-    col_fem2.metric("Unbalanced Moment", f"{M_unbal:,.0f} kg-m")
-    col_fem3.metric("Moment to Column", f"{M_col:,.0f} kg-m", "Design for Punching & Col", delta_color="off")
-
-    with st.expander("🔍 ดูรายการคำนวณโมเมนต์ตามยาว (Longitudinal Moments)"):
-        st.latex(r"w_{u,line} = w_u \times L_2 = " + f"{wu_kgm2:,.0f} \\times {L2:.2f} = {wu_line:,.0f} \\text{{ kg/m}}")
-        st.latex(r"FEM = \frac{w_{u,line} L_1^2}{12}")
-        st.write(f"- **FEM Left Span:** {FEM_L:,.0f} kg-m")
-        st.write(f"- **FEM Right Span:** {FEM_R:,.0f} kg-m")
-        st.latex(r"M_{unbalance} = |FEM_L - FEM_R| = " + f"{M_unbal:,.0f} \\text{{ kg-m}}")
-        st.latex(r"M_{column} = M_{unbalance} \times DF_{col} = " + f"{M_col:,.0f} \\text{{ kg-m}}")
-
-    # =========================================================================
-    # 3️⃣ TRANSVERSE DISTRIBUTION (Column vs Middle Strip)
-    # =========================================================================
-    st.subheader("3️⃣ Transverse Strip Distribution (ACI 318)")
-    st.info("แบ่งโมเมนต์ที่ได้จากการวิเคราะห์ Frame ลงใน Column Strip และ Middle Strip")
-
-    # สัดส่วนตาม ACI (สำหรับ Flat Slab ไม่มีคานขอบ α1=0)
-    pct_col_neg = 0.75
+    Mu_neg = max(FEM_L, FEM_R) # โมเมนต์ลบออกแบบเบื้องต้นที่ Support
+    pct_col_neg = 0.75 # ACI Flat Slab (alpha_1 = 0) Support 
     pct_mid_neg = 0.25
-    pct_col_pos = 0.60
-    pct_mid_pos = 0.40
 
-    df_strip = pd.DataFrame({
-        "Location": ["Negative Moment (Support)", "Positive Moment (Midspan)"],
-        "Total $M_u$ (kg-m)": [fmt_num(Mu_neg_design), fmt_num(Mu_pos_design)],
-        "Column Strip %": [f"{pct_col_neg*100}%", f"{pct_col_pos*100}%"],
-        "Col Strip $M_u$": [fmt_num(Mu_neg_design * pct_col_neg), fmt_num(Mu_pos_design * pct_col_pos)],
-        "Middle Strip %": [f"{pct_mid_neg*100}%", f"{pct_mid_pos*100}%"],
-        "Mid Strip $M_u$": [fmt_num(Mu_neg_design * pct_mid_neg), fmt_num(Mu_pos_design * pct_mid_pos)]
-    })
-    st.table(df_strip)
+    Mu_col_neg = Mu_neg * pct_col_neg
+    Mu_mid_neg = Mu_neg * pct_mid_neg
+
+    with st.expander("🔍 ดูสมการและการแทนค่า (Strip Distribution)"):
+        st.write("อ้างอิง ACI 318: สำหรับ Flat Slab ($\alpha_1 = 0$) โมเมนต์ลบที่เสาจะลง Column Strip 75% และ Middle Strip 25%")
+        st.latex(fr"M_{{u,neg}} = {fmt_num(Mu_neg, 0)} \text{{ kg-m}}")
+        st.latex(fr"M_{{ColStrip}} = 0.75 \times {fmt_num(Mu_neg,0)} = {fmt_num(Mu_col_neg, 0)} \text{{ kg-m}}")
+        st.latex(fr"M_{{MidStrip}} = 0.25 \times {fmt_num(Mu_neg,0)} = {fmt_num(Mu_mid_neg, 0)} \text{{ kg-m}}")
 
     # =========================================================================
-    # 4️⃣ FLEXURAL REINFORCEMENT DESIGN
+    # 3️⃣ FLEXURAL DESIGN (การคำนวณเหล็กเสริม)
     # =========================================================================
-    st.subheader("4️⃣ Flexural Reinforcement Design")
+    st.subheader("3️⃣ Flexural Design (ออกแบบเหล็กเสริมรับโมเมนต์ดัด)")
     
-    # Helper Function สำหรับออกแบบเหล็ก
-    def calc_rebar(Mu_kgm, b_cm, d_cm, fc_ksc, fy_ksc):
+    cover_cm = 2.5
+    db_cm = 1.2
+    d_cm = (h * 100) - cover_cm - (db_cm / 2)
+    b_col_cm = (min(max(L1_l, L1_r), L2) / 2.0) * 100
+    b_mid_cm = (L2 * 100) - b_col_cm
+
+    def design_flexure(Mu_kgm, b_cm, d_cm, fc, fy, name):
         phi = 0.9
         Mu_kgcm = Mu_kgm * 100
         Rn = Mu_kgcm / (phi * b_cm * d_cm**2)
-        # ตรวจสอบสูตร p
-        term = 1 - (2 * Rn) / (0.85 * fc_ksc)
-        if term < 0: return "Over-reinforced", 0, 0
+        term = 1 - (2 * Rn) / (0.85 * fc)
+        rho_req = (0.85 * fc / fy) * (1 - math.sqrt(term)) if term > 0 else 0
+        rho_min = 0.0018 if fy >= 4000 else 0.0020
+        rho_des = max(rho_req, rho_min)
+        As_req = rho_des * b_cm * d_cm
+
+        st.markdown(f"**การคำนวณ {name} (กว้าง $b$ = {b_cm:.0f} cm, ลึกประสิทธิผล $d$ = {d_cm:.1f} cm)**")
+        st.latex(fr"R_n = \frac{{M_u}}{{\phi b d^2}} = \frac{{{fmt_num(Mu_kgcm,0)}}}{{0.9 \times {b_cm:.0f} \times {d_cm:.1f}^2}} = {fmt_num(Rn, 2)} \text{{ ksc}}")
         
-        rho = (0.85 * fc_ksc / fy_ksc) * (1 - math.sqrt(term))
-        rho_min = 0.0018  # ACI Shrinkage & Temp min for Grade 60 (หรือปรับตามเกรด)
-        if fy_ksc < 4000: rho_min = 0.0020
+        st.latex(fr"\rho_{{req}} = \frac{{0.85 f'_c}}{{f_y}} \left[ 1 - \sqrt{{1 - \frac{{2 R_n}}{{0.85 f'_c}}}} \right] = \frac{{0.85({fc})}}{{{fy}}} \left[ 1 - \sqrt{{1 - \frac{{2({Rn:.2f})}}{{0.85({fc})}}}} \right] = {rho_req:.5f}")
         
-        rho_design = max(rho, rho_min)
-        As_req = rho_design * b_cm * d_cm
-        return rho_design, As_req, Rn
+        st.latex(fr"A_{{s,req}} = \max(\rho_{{req}}, \rho_{{min}}) \times b \times d = \max({rho_req:.5f}, {rho_min}) \times {b_cm:.0f} \times {d_cm:.1f} = {fmt_num(As_req, 2)} \text{{ cm}}^2")
+        return As_req
 
-    # คำนวณ d (effective depth)
-    cover_cm = 2.5
-    db_cm = 1.2  # สมมติเหล็ก DB12
-    d_cm = (h * 100) - cover_cm - (db_cm / 2)
-    
-    # ความกว้าง Strip (คิดที่ L2/2 ต่อฝั่ง หรือ L2/4)
-    # Column strip width = min(L1, L2)/2 
-    width_col_m = min(max(L1_l, L1_r), L2) / 2.0
-    width_mid_m = L2 - width_col_m
-    
-    b_col_cm = width_col_m * 100
-    b_mid_cm = width_mid_m * 100
-
-    Mu_col_neg = Mu_neg_design * pct_col_neg
-    _, As_col_neg, _ = calc_rebar(Mu_col_neg, b_col_cm, d_cm, fc, fy)
-
-    Mu_mid_neg = Mu_neg_design * pct_mid_neg
-    _, As_mid_neg, _ = calc_rebar(Mu_mid_neg, b_mid_cm, d_cm, fc, fy)
-
-    col_reb1, col_reb2 = st.columns(2)
-    with col_reb1:
-        st.markdown("#### 🟥 Column Strip Design")
-        st.write(f"**Width ($b$):** {b_col_cm:.0f} cm")
-        st.write(f"**Eff. Depth ($d$):** {d_cm:.1f} cm")
-        st.metric("Req. As (Support Negative)", f"{As_col_neg:.2f} cm²", f"~ {As_col_neg/(b_col_cm/100):.2f} cm²/m")
-        # กะระยะแอดเหล็กสมมติ DB12
-        spacing = (1.13 * b_col_cm) / As_col_neg if As_col_neg > 0 else 0
-        st.caption(f"💡 Suggestion: DB12 @ {min(spacing, 30):.0f} cm")
-
-    with col_reb2:
-        st.markdown("#### 🟦 Middle Strip Design")
-        st.write(f"**Width ($b$):** {b_mid_cm:.0f} cm")
-        st.write(f"**Eff. Depth ($d$):** {d_cm:.1f} cm")
-        st.metric("Req. As (Support Negative)", f"{As_mid_neg:.2f} cm²", f"~ {As_mid_neg/(b_mid_cm/100):.2f} cm²/m")
-        spacing_m = (1.13 * b_mid_cm) / As_mid_neg if As_mid_neg > 0 else 0
-        st.caption(f"💡 Suggestion: DB12 @ {min(spacing_m, 30):.0f} cm")
+    with st.expander("🔍 ดูสมการและการแทนค่า (Flexure)", expanded=True):
+        As_col = design_flexure(Mu_col_neg, b_col_cm, d_cm, fc, fy, "Column Strip Negative")
+        st.divider()
+        As_mid = design_flexure(Mu_mid_neg, b_mid_cm, d_cm, fc, fy, "Middle Strip Negative")
 
     # =========================================================================
-    # 5️⃣ UNBALANCED MOMENT TRANSFER & PUNCHING SHEAR
+    # 4️⃣ PUNCHING SHEAR & UNBALANCED MOMENT (ทุก Case)
     # =========================================================================
-    st.subheader("5️⃣ Shear & Unbalanced Moment Transfer (Critical Check)")
-    st.markdown("ACI 318 กำหนดให้ถ่ายเทโมเมนต์ดัดที่ไม่สมดุล ($M_{unbalance}$) เข้าเสาผ่าน **Flexure ($\gamma_f$)** และ **Eccentric Shear ($\gamma_v$)**")
+    st.subheader("4️⃣ Punching Shear & Unbalanced Moment Transfer")
+    st.markdown("ตรวจสอบหน่วยแรงเฉือนทะลุร่วมกับโมเมนต์ดัดที่ไม่สมดุลตามหน้าตัดวิกฤตของเสาแต่ละประเภท")
 
-    # คำนวณ Fraction
-    c1_d = (c1 * 100) + d_cm
-    c2_d = (c2 * 100) + d_cm
-    gamma_f = 1.0 / (1.0 + (2.0/3.0) * math.sqrt(c1_d / c2_d))
+    # การจัดรูปทรงหน้าตัดวิกฤต (Critical Section Geometry)
+    c1_cm, c2_cm = c1*100, c2*100
+    
+    if "Interior" in col_type:
+        b1 = c1_cm + d_cm
+        b2 = c2_cm + d_cm
+        Ac = 2 * d_cm * (b1 + b2)
+        c_AB = b1 / 2.0
+        Jc = (d_cm * b1**3 / 6.0) + (b1 * d_cm**3 / 6.0) + (d_cm * b2 * (b1**2) / 2.0)
+        # สมการสำหรับโชว์
+        Ac_eq = fr"A_c = 2d(b_1 + b_2) = 2({d_cm:.1f})({b1:.1f} + {b2:.1f}) = {fmt_num(Ac,1)} \text{{ cm}}^2"
+        Jc_eq = fr"J_c = \frac{{d b_1^3}}{{6}} + \frac{{b_1 d^3}}{{6}} + \frac{{d b_2 b_1^2}}{{2}} = {fmt_num(Jc,1)} \text{{ cm}}^4"
+        
+    elif "Edge" in col_type:
+        b1 = c1_cm + (d_cm / 2.0)
+        b2 = c2_cm + d_cm
+        Ac = d_cm * (2*b1 + b2)
+        c_AB = (b1**2) / (2*b1 + b2) # ระยะจากขอบเสาด้านนอกถึง Centroid
+        # Moment of Inertia ของเสาริม
+        Jc = (d_cm * b1**3 / 6.0) + (b1 * d_cm**3 / 6.0) + 2*d_cm*b1*((b1/2 - c_AB)**2) + d_cm*b2*(c_AB**2)
+        Ac_eq = fr"A_c = d(2b_1 + b_2) = {d_cm:.1f}(2({b1:.1f}) + {b2:.1f}) = {fmt_num(Ac,1)} \text{{ cm}}^2"
+        Jc_eq = fr"J_c = \text{{(complex edge eq.)}} = {fmt_num(Jc,1)} \text{{ cm}}^4"
+        
+    else: # Corner
+        b1 = c1_cm + (d_cm / 2.0)
+        b2 = c2_cm + (d_cm / 2.0)
+        Ac = d_cm * (b1 + b2)
+        c_AB = (b1**2) / (2*(b1 + b2))
+        Jc = (d_cm * b1**3 / 12.0) + (b1 * d_cm**3 / 12.0) + d_cm*b1*((b1/2 - c_AB)**2) + d_cm*b2*(c_AB**2)
+        Ac_eq = fr"A_c = d(b_1 + b_2) = {d_cm:.1f}({b1:.1f} + {b2:.1f}) = {fmt_num(Ac,1)} \text{{ cm}}^2"
+        Jc_eq = fr"J_c = \text{{(complex corner eq.)}} = {fmt_num(Jc,1)} \text{{ cm}}^4"
+
+    # สัดส่วนการถ่ายโมเมนต์
+    gamma_f = 1.0 / (1.0 + (2.0/3.0) * math.sqrt(b1 / b2))
     gamma_v = 1.0 - gamma_f
 
-    M_flexure = M_col * gamma_f
-    M_shear = M_col * gamma_v
+    # แรงเฉือนโดยตรง (Vu) - ประมาณการจาก Tributary Area ลบ Critical Area
+    trib_area = max(L1_l, L1_r) * L2
+    if "Edge" in col_type: trib_area /= 2
+    if "Corner" in col_type: trib_area /= 4
+    
+    crit_area_m2 = (b1 * b2) / 10000.0
+    Vu_kg = wu_kgm2 * (trib_area - crit_area_m2)
 
-    # ประมาณค่าแรงเฉือน V_u (พื้นที่ Tributary Area ลบหน้าตัดวิกฤต)
-    trib_area = max(L1_l, L1_r) * L2  # พื้นที่รับน้ำหนักโดยประมาณ
-    crit_area = (c1_d * c2_d) / 10000.0  # ตร.ม.
-    Vu_kg = wu_kgm2 * (trib_area - crit_area)
+    # หน่วยแรงเฉือน (ksc)
+    vu_shear = Vu_kg / Ac
+    vu_moment = (gamma_v * M_col * 100 * c_AB) / Jc if Jc > 0 else 0
+    vu_total = vu_shear + vu_moment
+    
+    phi_vc = 0.85 * 1.06 * math.sqrt(fc) # ACI Metrix: 1.06*sqrt(fc') เทียบเท่า 4*sqrt(fc') ของ US
 
-    col_v1, col_v2 = st.columns(2)
-    with col_v1:
-        st.markdown("**1. Moment Transfer Fractions**")
-        st.latex(r"\gamma_f = \frac{1}{1 + \frac{2}{3}\sqrt{\frac{c_1+d}{c_2+d}}} = " + f"{gamma_f:.3f}")
-        st.latex(r"\gamma_v = 1 - \gamma_f = " + f"{gamma_v:.3f}")
+    with st.expander(f"🔍 ดูสมการและการแทนค่า (Shear & Moment Transfer - {col_type})", expanded=True):
+        st.write("**ก. คุณสมบัติหน้าตัดวิกฤต (Critical Section Properties)**")
+        st.latex(fr"b_1 = {b1:.1f} \text{{ cm}}, \quad b_2 = {b2:.1f} \text{{ cm}}")
+        st.latex(Ac_eq)
+        st.latex(fr"c_{{AB}} = {c_AB:.2f} \text{{ cm}}")
+        st.latex(Jc_eq)
         
-    with col_v2:
-        st.markdown("**2. Distributed Transfer**")
-        st.write(f"- **Transfer by Flexure ($M_f$):** {M_flexure:,.0f} kg-m (เพิ่มเหล็กเสริมพิเศษหน้าเสา)")
-        st.write(f"- **Transfer by Shear ($M_v$):** {M_shear:,.0f} kg-m (นำไปคิดหน่วยแรงเฉือนทะลุ)")
+        st.divider()
+        st.write("**ข. สัดส่วนการถ่ายเทโมเมนต์ (Transfer Fractions)**")
+        st.latex(fr"\gamma_f = \frac{{1}}{{1 + \frac{{2}}{{3}}\sqrt{{\frac{{b_1}}{{b_2}}}}}} = \frac{{1}}{{1 + \frac{{2}}{{3}}\sqrt{{\frac{{{b1:.1f}}}{{{b2:.1f}}}}}}} = {gamma_f:.3f}")
+        st.latex(fr"\gamma_v = 1 - \gamma_f = 1 - {gamma_f:.3f} = {gamma_v:.3f}")
+        
+        st.divider()
+        st.write("**ค. การตรวจสอบหน่วยแรงเฉือนทะลุ (Punching Shear Stress)**")
+        st.latex(fr"v_{{u(Shear)}} = \frac{{V_u}}{{A_c}} = \frac{{{fmt_num(Vu_kg,0)}}}{{{fmt_num(Ac,1)}}} = {fmt_num(vu_shear, 2)} \text{{ ksc}}")
+        st.latex(fr"v_{{u(Moment)}} = \frac{{\gamma_v M_{{sc}} c_{{AB}}}}{{J_c}} = \frac{{{gamma_v:.3f} \times ({fmt_num(M_col,0)} \times 100) \times {c_AB:.2f}}}{{{fmt_num(Jc,1)}}} = {fmt_num(vu_moment, 2)} \text{{ ksc}}")
+        st.latex(fr"v_{{u,total}} = {fmt_num(vu_shear,2)} + {fmt_num(vu_moment,2)} = {fmt_num(vu_total, 2)} \text{{ ksc}}")
+        
+        st.latex(fr"\phi v_c = \phi (1.06\sqrt{{f'_c}}) = 0.85 \times 1.06 \times \sqrt{{{fc}}} = {fmt_num(phi_vc, 2)} \text{{ ksc}}")
 
-    # การตรวจสอบ Punching Shear เบื้องต้น
-    bo_cm = 2 * (c1_d + c2_d)
-    Ac_cm2 = bo_cm * d_cm
-    Jc = (d_cm * c1_d**3 / 6) + (c1_d * d_cm**3 / 6) + (d_cm * c2_d * (c1_d**2) / 2) # Approximation for interior column
-    
-    # Stress calculation
-    vu_shear_only = Vu_kg / Ac_cm2
-    vu_moment = (M_shear * 100 * (c1_d / 2)) / Jc if Jc > 0 else 0
-    vu_total = vu_shear_only + vu_moment
-    
-    phi_vc = 0.85 * 1.06 * math.sqrt(fc) # ACI formula (ksc) (1.06 ในหน่วยเมตริกเทียบเท่า 4 in US Customary)
-    
-    st.markdown("**3. Punching Shear Stress Check at $d/2$ from Column Face**")
-    st.latex(r"v_u = \frac{V_u}{A_c} \pm \frac{\gamma_v M_{unbal} c}{J_c}")
-    
-    st.info(f"$$ v_{{u,max}} = {vu_shear_only:.2f} \\text{{ (Shear)}} + {vu_moment:.2f} \\text{{ (Moment)}} = {vu_total:.2f} \\text{{ ksc}} $$")
-    
     if vu_total <= phi_vc:
-        st.success(f"✅ **Punching Shear OK:** $v_u$ ({vu_total:.2f} ksc) $\le \phi v_c$ ({phi_vc:.2f} ksc)")
+        st.success(f"✅ **PASS:** หน่วยแรงเฉือนทะลุ $v_u$ ({vu_total:.2f} ksc) $\le \phi v_c$ ({phi_vc:.2f} ksc)")
     else:
-        st.error(f"❌ **Punching Shear FAILS:** $v_u$ ({vu_total:.2f} ksc) > $\phi v_c$ ({phi_vc:.2f} ksc). แนะนำให้เพิ่มความหนา, Drop Panel หรือเหล็กเสริมรับแรงเฉือน (Shear Studs)")
+        st.error(f"❌ **FAIL:** หน่วยแรงเฉือนทะลุ $v_u$ ({vu_total:.2f} ksc) > $\phi v_c$ ({phi_vc:.2f} ksc)")
+        st.info("💡 **ข้อแนะนำการแก้ไข:** เพิ่มความหนาพื้น, ออกแบบ Drop Panel บริเวณหัวเสา, หรือเสริมเหล็กรับแรงเฉือนทะลุ (Shear Studs / Stirrups)")
