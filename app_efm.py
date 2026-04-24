@@ -31,7 +31,8 @@ def render_efm_tab(calc_obj):
     L2 = calc_obj['geom'].get('L2', 6.0)
     c1_cm = calc_obj['geom']['c1_cm']
     c2_cm = calc_obj['geom']['c2_cm']
-    h = calc_obj['geom']['h_slab_cm'] / 100.0
+    h_cm = calc_obj['geom']['h_slab_cm']
+    h = h_cm / 100.0
     
     wu_kgm2 = calc_obj['loads']['wu']
     wu_line = wu_kgm2 * L2
@@ -41,10 +42,13 @@ def render_efm_tab(calc_obj):
     # Effective Depth (d)
     cover_cm = 2.5
     db_cm = 1.2
-    d_cm = (h * 100) - cover_cm - (db_cm / 2)
+    d_cm = h_cm - cover_cm - (db_cm / 2.0)
+
+    # ACI 318 Maximum Spacing Limit for Slabs: min(2h, 45 cm)
+    s_max = min(2 * h_cm, 45.0)
 
     col_type = calc_obj['geom'].get('col_loc', 'Interior Column')
-    st.info(f"**📍 Joint Location:** `{col_type}` (Effective depth $d$ = {d_cm:.1f} cm)")
+    st.info(f"**📍 Joint Location:** `{col_type}` | **Effective depth $d$:** {d_cm:.1f} cm | **Max Spacing Limit:** {s_max:.1f} cm")
     st.markdown("---")
 
     tab1, tab2, tab3, tab4 = st.tabs([
@@ -73,23 +77,18 @@ def render_efm_tab(calc_obj):
         st.latex(fr"DF_{{col}} = \frac{{K_{{ec}}}}{{K_{{ec}} + \Sigma K_s}} = {df_col:.4f}")
         st.latex(fr"DF_{{slab}} = \frac{{\Sigma K_s}}{{K_{{ec}} + \Sigma K_s}} = {df_slab:.4f}")
 
-        # เพิ่มตัวอักษร r (raw string) ด้านหน้า ป้องกันบั๊ก \frac ใน Python
         with st.expander("📚 Detailed Stiffness Formulas (ACI 318 EFM)", expanded=False):
             st.markdown(r"""
             **1. Slab Stiffness ($K_s$):**
-            Calculated based on the gross moment of inertia of the slab over the span $L_1$.
             $$ K_s = \frac{4 E_{cs} I_s}{L_1} $$
 
             **2. Column Stiffness ($\Sigma K_c$):**
-            Sum of the stiffness of the column above and below the joint.
             $$ \Sigma K_c = \frac{4 E_{cc} I_{c,up}}{L_{up}} + \frac{4 E_{cc} I_{c,low}}{L_{low}} $$
 
             **3. Torsional Member Stiffness ($K_t$):**
-            Represents the torsional resistance of the slab transverse to the direction of analysis.
             $$ K_t = \sum \frac{9 E_{cs} C}{L_2 \left(1 - \frac{c_2}{L_2}\right)^3} $$
 
             **4. Equivalent Column Stiffness ($K_{ec}$):**
-            Combines flexural stiffness of columns and torsional stiffness of transverse members.
             $$ K_{ec} = \frac{\Sigma K_c \cdot K_t}{\Sigma K_c + K_t} $$
             """)
 
@@ -117,12 +116,18 @@ def render_efm_tab(calc_obj):
 
         st.markdown("---")
         st.markdown("**2. Positive Moments (Mid-Span)**")
-        # คำนวณโมเมนต์บวกกลางช่วง (อ้างอิง ACI Static Moment Distribution)
-        M0_max = (wu_line * max(L1_l, L1_r)**2) / 8
-        Mu_pos = 0.35 * M0_max # 35% ของ Static Moment สำหรับช่วงภายใน (Interior span)
+        st.caption("*Note: Positive moments are conservatively approximated using DDM coefficients based on joint location.*")
         
-        st.latex(fr"M_0 = \frac{{w_u L_2 L_{{n}}^2}}{{8}} = {fmt_num(M0_max, 0)} \text{{ kg-m}}")
-        st.latex(fr"M_{{u,pos}} \approx 0.35 M_0 = {fmt_num(Mu_pos, 0)} \text{{ kg-m}}")
+        M0_max = (wu_line * max(L1_l, L1_r)**2) / 8
+        if "Edge" in col_type or "Corner" in col_type:
+            Mu_pos = 0.50 * M0_max # End span approximation
+            coef_txt = "0.50"
+        else:
+            Mu_pos = 0.35 * M0_max # Interior span approximation
+            coef_txt = "0.35"
+        
+        st.latex(fr"M_0 = \frac{{w_u L_2 L_{{1}}^2}}{{8}} = {fmt_num(M0_max, 0)} \text{{ kg-m}}")
+        st.latex(fr"M_{{u,pos}} \approx {coef_txt} M_0 = {fmt_num(Mu_pos, 0)} \text{{ kg-m}}")
 
     # ------------------------------------------
     # TAB 3: Flexural Design & Rebar Selection
@@ -152,16 +157,20 @@ def render_efm_tab(calc_obj):
             with c1:
                 rb_size = st.selectbox("Rebar Size", options=list(rebar_db.keys()), key=f"{key_prefix}_size")
             with c2:
-                spacing = st.number_input("Spacing @ (cm)", min_value=5.0, max_value=40.0, value=20.0, step=2.5, key=f"{key_prefix}_sp")
+                spacing = st.number_input("Spacing @ (cm)", min_value=5.0, max_value=50.0, value=20.0, step=2.5, key=f"{key_prefix}_sp")
             
             As_per_bar = rebar_db[rb_size]
             As_prov = (100 / spacing) * As_per_bar * (b_cm / 100)
             
             st.markdown(f"**$A_{{s,prov}}$:** {fmt_num(As_prov, 2)} cm² / {b_cm:.0f} cm strip")
-            if As_prov >= As_req:
+            
+            # --- ACI 318 Checks ---
+            if spacing > s_max:
+                st.error(f"❌ **FAIL:** Spacing exceeds ACI limit ($s_{{max}} = {s_max:.1f}$ cm)")
+            elif As_prov >= As_req:
                 st.success("✅ **PASS**")
             else:
-                st.error("❌ **FAIL**")
+                st.error("❌ **FAIL:** Increase rebar size or decrease spacing.")
 
         st.subheader("1. Support Section (Top Reinforcement)")
         st.markdown("Negative moment distribution: Column Strip (75%), Middle Strip (25%)")
