@@ -34,6 +34,10 @@ def render_efm_tab(calc_obj):
     h_cm = calc_obj['geom']['h_slab_cm']
     h = h_cm / 100.0
     
+    # Define column height for stiffness (defaulting to 3.0m if not explicitly provided)
+    Lc_m = calc_obj['geom'].get('H_col_m', 3.0) 
+    Lc_cm = Lc_m * 100.0
+    
     wu_kgm2 = calc_obj['loads']['wu']
     wu_line = wu_kgm2 * L2
     fc = calc_obj['mat']['fc']
@@ -66,12 +70,14 @@ def render_efm_tab(calc_obj):
         st.markdown("Calculation of member stiffnesses to determine Moment Distribution Factors (DF).")
         
         c1_stiff, c2_stiff, c3_stiff, c4_stiff = st.columns(4)
-        c1_stiff.metric("Slab ($K_s$)", fmt_sci(res.get('Ks', 0)))
-        c2_stiff.metric("Column ($\Sigma K_c$)", fmt_sci(res.get('Sum_Kc', 0)))
-        c3_stiff.metric("Torsion ($K_t$)", fmt_sci(res.get('Kt', 0)))
-        
         Kec_val = res.get('Kec', 0)
         Ks_val = res.get('Ks', 0)
+        Kt_val = res.get('Kt', 0)
+        Kc_val = res.get('Sum_Kc', 0)
+        
+        c1_stiff.metric("Slab ($K_s$)", fmt_sci(Ks_val))
+        c2_stiff.metric("Column ($\Sigma K_c$)", fmt_sci(Kc_val))
+        c3_stiff.metric("Torsion ($K_t$)", fmt_sci(Kt_val))
         c4_stiff.metric("Equiv. Col ($K_{ec}$)", fmt_sci(Kec_val))
 
         df_slab = res.get('df_slab', 0.5)
@@ -79,6 +85,42 @@ def render_efm_tab(calc_obj):
 
         st.latex(fr"DF_{{col}} = \frac{{K_{{ec}}}}{{K_{{ec}} + \Sigma K_s}} = \frac{{{fmt_sci(Kec_val)}}}{{{fmt_sci(Kec_val)} + {fmt_sci(Ks_val)}}} = {df_col:.4f}")
         st.latex(fr"DF_{{slab}} = \frac{{\Sigma K_s}}{{K_{{ec}} + \Sigma K_s}} = \frac{{{fmt_sci(Ks_val)}}}{{{fmt_sci(Kec_val)} + {fmt_sci(Ks_val)}}} = {df_slab:.4f}")
+
+        with st.expander("📝 Explicit Stiffness Calculations (Base Properties)", expanded=True):
+            # Base geometry for stiffness
+            Ec = 15100 * math.sqrt(fc)
+            L2_cm = L2 * 100
+            L1_avg_m = ((L1_l + L1_r) / 2) if (L1_l > 0 and L1_r > 0) else max(L1_l, L1_r)
+            L1_cm = L1_avg_m * 100
+            
+            Is = (L2_cm * (h_cm**3)) / 12
+            Ic = (c2_cm * (c1_cm**3)) / 12
+            
+            # Torsional constant (x is smaller dimension, y is larger dimension)
+            x_t, y_t = min(h_cm, c1_cm), max(h_cm, c1_cm)
+            C_val = (1 - 0.63 * (x_t / y_t)) * (x_t**3) * y_t / 3.0
+            
+            st.markdown("**0. Material & Section Properties**")
+            st.latex(fr"E_c = 15100 \sqrt{{f'_c}} = 15100 \sqrt{{{fc}}} = {fmt_num(Ec, 0)} \text{{ ksc}}")
+            st.latex(fr"I_s = \frac{{l_2 h^3}}{{12}} = \frac{{{L2_cm:.0f} \times {h_cm:.0f}^3}}{{12}} = {fmt_num(Is, 0)} \text{{ cm}}^4")
+            st.latex(fr"I_c = \frac{{c_2 c_1^3}}{{12}} = \frac{{{c2_cm:.0f} \times {c1_cm:.0f}^3}}{{12}} = {fmt_num(Ic, 0)} \text{{ cm}}^4")
+            st.latex(fr"C = \left(1 - 0.63\frac{{x}}{{y}}\right) \frac{{x^3 y}}{{3}} = \left(1 - 0.63\frac{{{x_t:.1f}}}{{{y_t:.1f}}}\right) \frac{{{x_t:.1f}^3 \times {y_t:.1f}}}{{3}} = {fmt_num(C_val, 0)} \text{{ cm}}^4")
+
+            st.markdown("**1. Slab Stiffness ($K_s$)** *(Assumed prismatic for explicit check)*")
+            st.latex(fr"K_s \approx \frac{{4 E_c I_s}}{{L_1}} = \frac{{4 \times {fmt_num(Ec, 0)} \times {fmt_num(Is, 0)}}}{{{L1_cm:.0f}}} = {fmt_sci((4 * Ec * Is) / L1_cm)}")
+            
+            st.markdown("**2. Column Stiffness ($\Sigma K_c$)** *(Sum of top and bottom columns)*")
+            st.latex(fr"\Sigma K_c \approx 2 \times \left(\frac{{4 E_c I_c}}{{L_c}}\right) = 2 \times \left(\frac{{4 \times {fmt_num(Ec, 0)} \times {fmt_num(Ic, 0)}}}{{{Lc_cm:.0f}}}\right) = {fmt_sci(2 * (4 * Ec * Ic) / Lc_cm)}")
+            
+            st.markdown("**3. Torsional Stiffness ($K_t$)**")
+            c2_ratio = c2_cm / L2_cm if L2_cm > 0 else 0
+            Kt_calc = (9 * Ec * C_val) / (L2_cm * (1 - c2_ratio)**3) if L2_cm > 0 else 0
+            st.latex(fr"K_t = \frac{{9 E_c C}}{{l_2 \left(1 - \frac{{c_2}}{{l_2}}\right)^3}} = \frac{{9 \times {fmt_num(Ec, 0)} \times {fmt_num(C_val, 0)}}}{{{L2_cm:.0f} \left(1 - \frac{{{c2_cm:.0f}}}{{{L2_cm:.0f}}}\right)^3}} = {fmt_sci(Kt_calc)}")
+            
+            st.markdown("**4. Equivalent Column Stiffness ($K_{ec}$)**")
+            st.latex(fr"K_{{ec}} = \frac{{\Sigma K_c \times K_t}}{{\Sigma K_c + K_t}} = \frac{{{fmt_sci(Kc_val)} \times {fmt_sci(Kt_val)}}}{{{fmt_sci(Kc_val)} + {fmt_sci(Kt_val)}}} = {fmt_sci(Kec_val)}")
+            
+            st.caption("*Note: The strict calculations in `calc_efm.py` may incorporate infinite joint rigidity modifiers resulting in slight variations from the purely prismatic $4EI/L$ approximations shown above, but the distribution logic remains identical.*")
 
     # ------------------------------------------
     # TAB 2: Moment Distribution
@@ -96,9 +138,9 @@ def render_efm_tab(calc_obj):
         M_slab_dist = M_unbal * df_slab
         Mu_neg = max(FEM_L, FEM_R) - (M_slab_dist / 2)
 
-        st.latex(fr"FEM_{{Right}} = \frac{{w_u L_2 L_{{1,R}}^2}}{{12}} = \frac{{{fmt_num(wu_kgm2,0)} \times {L2:.2f} \times {L1_r:.2f}^2}}{{12}} = {fmt_num(FEM_R, 0)} \text{{ kg-m}}")
+        st.latex(fr"FEM_{{Right}} = \frac{{w_u l_2 l_{{1,R}}^2}}{{12}} = \frac{{{fmt_num(wu_kgm2,0)} \times {L2:.2f} \times {L1_r:.2f}^2}}{{12}} = {fmt_num(FEM_R, 0)} \text{{ kg-m}}")
         if FEM_L > 0:
-            st.latex(fr"FEM_{{Left}} = \frac{{w_u L_2 L_{{1,L}}^2}}{{12}} = \frac{{{fmt_num(wu_kgm2,0)} \times {L2:.2f} \times {L1_l:.2f}^2}}{{12}} = {fmt_num(FEM_L, 0)} \text{{ kg-m}}")
+            st.latex(fr"FEM_{{Left}} = \frac{{w_u l_2 l_{{1,L}}^2}}{{12}} = \frac{{{fmt_num(wu_kgm2,0)} \times {L2:.2f} \times {L1_l:.2f}^2}}{{12}} = {fmt_num(FEM_L, 0)} \text{{ kg-m}}")
         
         st.latex(fr"M_{{unbal}} = |FEM_{{Left}} - FEM_{{Right}}| = |{fmt_num(FEM_L, 0)} - {fmt_num(FEM_R, 0)}| = {fmt_num(M_unbal, 0)} \text{{ kg-m}}")
         st.latex(fr"M_{{col}} = M_{{unbal}} \times DF_{{col}} = {fmt_num(M_unbal, 0)} \times {df_col:.4f} = {fmt_num(M_col, 0)} \text{{ kg-m}}")
@@ -117,7 +159,7 @@ def render_efm_tab(calc_obj):
             Mu_pos = 0.35 * M0_max
             coef_txt = "0.35"
         
-        st.latex(fr"M_0 = \frac{{w_u L_2 L_{{1}}^2}}{{8}} = \frac{{{fmt_num(wu_kgm2,0)} \times {L2:.2f} \times {max_L1:.2f}^2}}{{8}} = {fmt_num(M0_max, 0)} \text{{ kg-m}}")
+        st.latex(fr"M_0 = \frac{{w_u l_2 l_{{1}}^2}}{{8}} = \frac{{{fmt_num(wu_kgm2,0)} \times {L2:.2f} \times {max_L1:.2f}^2}}{{8}} = {fmt_num(M0_max, 0)} \text{{ kg-m}}")
         st.latex(fr"M_{{u,pos}} \approx {coef_txt} M_0 = {coef_txt} \times {fmt_num(M0_max, 0)} = {fmt_num(Mu_pos, 0)} \text{{ kg-m}}")
 
     # ------------------------------------------
