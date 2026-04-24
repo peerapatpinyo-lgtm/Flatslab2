@@ -5,6 +5,8 @@ import math
 import calc_ddm
 import viz_ddm
 import sys
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 def translate_warnings(msg):
     """Intercepts and translates Thai messages from the backend calc_ddm file."""
@@ -231,6 +233,7 @@ def render_ddm_tab(calc_obj):
     ])
 
     # --- TAB 1: Limitations ---
+
     with tab_limit:
         st.markdown("### 📐 ACI 318 Section 8.10.2: DDM Applicability Criteria")
         st.write("The Direct Design Method (DDM) is an approximate method. It can only be applied if the slab system satisfies the following strict geometric and loading conditions. If any condition fails, the Equivalent Frame Method (EFM) must be used.")
@@ -249,12 +252,27 @@ def render_ddm_tab(calc_obj):
         st.markdown("#### 2. Panel Aspect Ratio")
         st.caption("The ratio of the longer span to the shorter span within any panel must not exceed 2.0 to ensure two-way action.")
         
-        # ✅ แสดงรูปประกอบระยะ L1 และ L2 (สามารถเปลี่ยน URL เป็นชื่อไฟล์รูปในเครื่องได้ เช่น "slab_layout.png")
-        st.image("https://placehold.co/800x300/f0f2f6/1e1e1e?text=Plan+View:+L1+(Direction+of+Analysis)+and+L2+(Transverse)", 
-                 caption="Panel Dimensions (L1 and L2)", use_container_width=True)
+        # 🎨 วาดรูป Plan View ด้วย Matplotlib
+        fig_plan, ax_plan = plt.subplots(figsize=(6, 3))
+        # วาดแผงพื้น
+        ax_plan.add_patch(patches.Rectangle((1, 1), 4, 2.5, fill=True, color='#e2e8f0', ec='#1e293b', lw=2))
+        # วาดเสา 4 ต้น
+        for x in [1, 5]:
+            for y in [1, 3.5]:
+                ax_plan.add_patch(patches.Rectangle((x-0.15, y-0.15), 0.3, 0.3, fill=True, color='#334155'))
+        # ใส่เส้นบอกระยะ L1, L2
+        ax_plan.annotate('', xy=(1, 0.5), xytext=(5, 0.5), arrowprops=dict(arrowstyle='<->', lw=1.5, color='#1e293b'))
+        ax_plan.text(3, 0.2, 'L1 (Direction of Analysis)', ha='center', fontsize=10, fontweight='bold', color='#1e293b')
+        ax_plan.annotate('', xy=(0.5, 1), xytext=(0.5, 3.5), arrowprops=dict(arrowstyle='<->', lw=1.5, color='#1e293b'))
+        ax_plan.text(0.2, 2.25, 'L2 (Transverse)', va='center', rotation=90, fontsize=10, fontweight='bold', color='#1e293b')
+        ax_plan.set_xlim(0, 6)
+        ax_plan.set_ylim(0, 4.5)
+        ax_plan.axis('off')
+        
+        st.pyplot(fig_plan) # แสดงรูปใน Streamlit
         
         l_long = max(L1, L2)
-        l_short = min(L1, L2) if min(L1, L2) > 0 else 1.0 # ป้องกันการหารด้วยศูนย์
+        l_short = min(L1, L2) if min(L1, L2) > 0 else 1.0
         span_ratio_val = l_long / l_short
         
         st.latex(r"\text{Aspect Ratio} = \frac{L_{long}}{L_{short}} \le 2.0")
@@ -268,28 +286,23 @@ def render_ddm_tab(calc_obj):
         st.divider()
 
         # ==========================================
-        # 3. SUCCESSIVE SPAN DIFFERENCE
+        # 3. SUCCESSIVE SPAN DIFFERENCE & 4. LOAD RATIO
         # ==========================================
-        st.markdown("#### 3. Successive Span Difference")
-        st.caption("Successive span lengths in each direction shall not differ by more than one-third (33.3%) of the longer span.")
-        st.info(r"💡 **Condition Checklist:** Ensure that $|L_{i} - L_{i+1}| \le \frac{1}{3} \max(L_{i}, L_{i+1})$ in both orthogonal directions.")
-        st.divider()
-
-        # ==========================================
-        # 4. GRAVITY LOAD RATIO
-        # ==========================================
-        st.markdown("#### 4. Gravity Load Ratio")
-        st.caption("All loads shall be due to gravity only and distributed uniformly over an entire panel. Unfactored Live Load (LL) shall not exceed two times the unfactored Dead Load (DL).")
-        
-        load_ratio_val = ll / dl if dl > 0 else 0
-        
-        st.latex(r"\text{Loading Ratio} = \frac{LL}{DL} \le 2.0")
-        st.latex(r"\text{Ratio} = \frac{" + f"{ll:.0f}" + r"}{" + f"{dl:.0f}" + r"} = " + f"{load_ratio_val:.2f}")
-        
-        if load_ratio_val <= 2.0:
-            st.success(f"✅ **PASS:** LL/DL Ratio = **{load_ratio_val:.2f}** (≤ 2.0)")
-        else:
-            st.error(f"❌ **FAIL:** LL/DL Ratio = **{load_ratio_val:.2f}** (> 2.0). High pattern loading effects expected.")
+        col_A, col_B = st.columns(2)
+        with col_A:
+            st.markdown("#### 3. Successive Span Difference")
+            st.caption("Adjacent spans shall not differ by > 33.3% of the longer span.")
+            st.info(r"💡 Ensure $|L_{i} - L_{i+1}| \le \frac{1}{3} \max(L_{i}, L_{i+1})$")
+            
+        with col_B:
+            st.markdown("#### 4. Gravity Load Ratio")
+            st.caption("Unfactored Live Load (LL) ≤ 2 × Dead Load (DL).")
+            load_ratio_val = ll / dl if dl > 0 else 0
+            st.latex(r"\frac{LL}{DL} = \frac{" + f"{ll:.0f}" + r"}{" + f"{dl:.0f}" + r"} = " + f"{load_ratio_val:.2f}")
+            if load_ratio_val <= 2.0:
+                st.success("✅ **PASS**")
+            else:
+                st.error("❌ **FAIL**")
 
         st.divider()
 
@@ -297,11 +310,37 @@ def render_ddm_tab(calc_obj):
         # 5. CLEAR SPAN (Ln) CALCULATION
         # ==========================================
         st.markdown("#### 5. Effective Clear Span ($L_n$)")
-        st.caption("The clear span for positive and negative moment calculations is measured face-to-face of supports, but it shall not be less than 0.65 times the center-to-center span length.")
+        st.caption("The clear span is measured face-to-face of supports, but shall not be less than 0.65 times the center-to-center span length.")
         
-        # ✅ แสดงรูปประกอบการคำนวณ Clear Span (Ln)
-        st.image("https://placehold.co/800x300/f0f2f6/1e1e1e?text=Section+View:+Clear+Span+(Ln)+measured+Face-to-Face+of+Columns", 
-                 caption="Effective Clear Span (Ln) Calculation", use_container_width=True)
+        # 🎨 วาดรูป Section View แสดงระยะ Ln
+        fig_sec, ax_sec = plt.subplots(figsize=(7, 2.5))
+        # วาดเสา
+        ax_sec.add_patch(patches.Rectangle((1.5, 0), 0.6, 2, fill=True, color='#94a3b8'))
+        ax_sec.add_patch(patches.Rectangle((5.5, 0), 0.6, 2, fill=True, color='#94a3b8'))
+        # วาดพื้น
+        ax_sec.add_patch(patches.Rectangle((0.5, 2), 6.5, 0.4, fill=True, color='#e2e8f0', ec='#1e293b', lw=2))
+        
+        # เส้น C-to-C (L1)
+        ax_sec.plot([1.8, 1.8], [2.5, 3.2], color='gray', ls='--')
+        ax_sec.plot([5.8, 5.8], [2.5, 3.2], color='gray', ls='--')
+        ax_sec.annotate('', xy=(1.8, 3), xytext=(5.8, 3), arrowprops=dict(arrowstyle='<->', lw=1.2))
+        ax_sec.text(3.8, 3.2, 'L1 (Center-to-Center)', ha='center', fontsize=9)
+        
+        # เส้น Face-to-Face (Ln)
+        ax_sec.plot([2.1, 2.1], [0.5, 1.8], color='gray', ls='--')
+        ax_sec.plot([5.5, 5.5], [0.5, 1.8], color='gray', ls='--')
+        ax_sec.annotate('', xy=(2.1, 1.5), xytext=(5.5, 1.5), arrowprops=dict(arrowstyle='<->', color='#2563eb', lw=2))
+        ax_sec.text(3.8, 1.6, 'Clear Span (Ln)', ha='center', color='#2563eb', fontweight='bold')
+        
+        # ระยะ c1 (ความกว้างเสา)
+        ax_sec.annotate('', xy=(1.5, 1), xytext=(2.1, 1), arrowprops=dict(arrowstyle='<->', color='#dc2626'))
+        ax_sec.text(1.8, 1.15, 'c1', ha='center', color='#dc2626', fontweight='bold')
+        
+        ax_sec.set_xlim(0, 7.5)
+        ax_sec.set_ylim(0, 4)
+        ax_sec.axis('off')
+        
+        st.pyplot(fig_sec) # แสดงรูปใน Streamlit
 
         st.latex(r"L_n = \max(L_1 - c_1, \, 0.65 L_1)")
         
