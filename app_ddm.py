@@ -7,6 +7,7 @@ import viz_ddm
 import sys
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import copy
 
 def translate_warnings(msg):
     """Intercepts and translates Thai messages from the backend calc_ddm file."""
@@ -234,8 +235,8 @@ def render_ddm_tab(calc_obj):
 
     # --- TAB 1: Limitations ---
     with tab_limit:
-        st.markdown("### 📐 ACI 318 Section 8.10.2: DDM Applicability Criteria")
-        st.caption("The Direct Design Method (DDM) is an approximate method requiring strict adherence to geometric and loading constraints. If any condition fails, the Equivalent Frame Method (EFM) must be used.")
+        st.markdown("### 📐 ACI 318-19 Sec. 8.10.2: DDM Applicability Criteria")
+        st.write("To ensure gravity loads safely distribute to supports using the Direct Design Method (DDM), the slab geometry must strictly conform to these criteria. Non-compliance **requires** the Equivalent Frame Method (EFM).")
 
         # --- คำนวณสถานะล่วงหน้า ---
         l_long = max(L1, L2)
@@ -246,108 +247,142 @@ def render_ddm_tab(calc_obj):
         load_ratio_val = ll / dl if dl > 0 else 0
         is_load_ok = load_ratio_val <= 2.0
 
-        # ==========================================
-        # 1. GENERAL CONSTRAINTS (Assumptions)
-        # ==========================================
-        st.markdown("#### 🔹 General Layout Constraints")
         with st.container(border=True):
+            # ==========================================
+            # 1 & 2. GENERAL CONSTRAINTS
+            # ==========================================
+            st.markdown("#### I. General Configuration")
             col_req1, col_req2 = st.columns(2)
             with col_req1:
-                st.markdown("**1. Minimum Continuous Spans**")
-                st.info("💡 Requires $\\ge$ 3 continuous spans in each direction. (Assumed satisfied by user layout).")
+                st.info("**1. Minimum Continuous Spans**\n\nRequires $\\ge$ 3 continuous spans in each direction. *(Assumed satisfied by user)*.")
             with col_req2:
-                st.markdown("**2. Successive Span Difference**")
-                st.info(r"💡 Adjacent spans differ $\le 33.3\%$ of the longer span: $|L_{i} - L_{i+1}| \le \frac{1}{3} \max(L_{i}, L_{i+1})$")
+                st.info(r"**2. Successive Span Diff.**\n\nAdjacent spans differ $\le 33.3\%$ of longer span: $|L_{i} - L_{i+1}| \le \frac{1}{3} L_{longer}$")
 
-        # ==========================================
-        # 2. CALCULATED CONSTRAINTS
-        # ==========================================
-        st.markdown("#### 🔹 Calculated Constraints")
-        col_calc1, col_calc2 = st.columns(2)
+            st.divider()
 
-        with col_calc1:
-            with st.container(border=True):
-                st.markdown("**3. Panel Aspect Ratio**")
-                st.caption(r"Limit: $L_{long} / L_{short} \le 2.0$")
-                
-                # 🎨 วาดรูป Plan View (ย่อขนาดลงเล็กน้อยให้พอดี Card)
-                fig_plan, ax_plan = plt.subplots(figsize=(5, 2.5))
-                ax_plan.add_patch(patches.Rectangle((1, 1), 4, 2.5, fill=True, color='#e2e8f0', ec='#1e293b', lw=2))
-                for x in [1, 5]:
-                    for y in [1, 3.5]:
-                        ax_plan.add_patch(patches.Rectangle((x-0.15, y-0.15), 0.3, 0.3, fill=True, color='#334155'))
-                ax_plan.annotate('', xy=(1, 0.5), xytext=(5, 0.5), arrowprops=dict(arrowstyle='<->', lw=1.5, color='#1e293b'))
-                ax_plan.text(3, 0.2, 'L1', ha='center', fontsize=10, fontweight='bold', color='#1e293b')
-                ax_plan.annotate('', xy=(0.5, 1), xytext=(0.5, 3.5), arrowprops=dict(arrowstyle='<->', lw=1.5, color='#1e293b'))
-                ax_plan.text(0.2, 2.25, 'L2', va='center', rotation=90, fontsize=10, fontweight='bold', color='#1e293b')
-                ax_plan.set_xlim(0, 6); ax_plan.set_ylim(0, 4.5); ax_plan.axis('off')
-                
-                st.pyplot(fig_plan)
-                
-                st.latex(r"\text{Ratio} = \frac{" + f"{l_long:.2f}" + r"}{" + f"{l_short:.2f}" + r"} = " + f"{span_ratio_val:.2f}")
-                
-                if is_ratio_ok:
-                    st.success(f"✅ **PASS:** Two-way action confirmed.")
-                else:
-                    st.error(f"❌ **FAIL:** Ratio > 2.0 (One-way behavior).")
+            # ==========================================
+            # 3 & 4. CALCULATED CONSTRAINTS
+            # ==========================================
+            st.markdown("#### II. Panel Geometry & Loading Checks")
+            col_calc1, col_calc2 = st.columns(2)
 
-        with col_calc2:
-            with st.container(border=True):
-                st.markdown("**4. Gravity Load Ratio**")
-                st.caption(r"Limit: Unfactored LL $\le 2 \times$ Unfactored DL")
-                
-                st.write("") # Spacer
-                st.write("") # Spacer
-                
-                st.latex(r"\frac{LL}{DL} = \frac{" + f"{ll:,.0f}" + r"}{" + f"{dl:,.0f}" + r"} = " + f"{load_ratio_val:.2f}")
-                
-                st.write("") # Spacer
-                
-                if is_load_ok:
-                    st.success("✅ **PASS:** Load ratio within ACI limits.")
-                else:
-                    st.error("❌ **FAIL:** Live load exceeds DDM allowance.")
+            with col_calc1:
+                with st.container(border=True):
+                    st.markdown("**3. Panel Aspect Ratio**")
+                    st.caption(r"Limit: $L_{long} / L_{short} \le 2.0$")
+                    
+                    # 🎨 วาดรูป Plan View พร้อม Hatching
+                    fig_plan, ax_plan = plt.subplots(figsize=(6, 3))
+                    ax_plan.add_patch(patches.Rectangle((1, 1), 4, 2.5, fill=True, facecolor='#f8fafc', edgecolor='#1e293b', lw=2))
+                    
+                    # วาดเสา 4 ต้น (มีเส้น Hatch)
+                    for x in [1, 5]:
+                        for y in [1, 3.5]:
+                            ax_plan.add_patch(patches.Rectangle((x-0.15, y-0.15), 0.3, 0.3, fill=True, color='#334155', zorder=3))
+                            ax_plan.add_patch(patches.Rectangle((x-0.15, y-0.15), 0.3, 0.3, fill=False, edgecolor='#94a3b8', hatch='///', lw=0.5, zorder=4))
+                    
+                    ax_plan.annotate('', xy=(1, 0.5), xytext=(5, 0.5), arrowprops=dict(arrowstyle='<->', lw=1.5, color='#1e293b'))
+                    ax_plan.text(3, 0.2, 'L1 (Analysis Dir.)', ha='center', fontsize=10, fontweight='bold', color='#1e293b')
+                    
+                    ax_plan.annotate('', xy=(0.5, 1), xytext=(0.5, 3.5), arrowprops=dict(arrowstyle='<->', lw=1.5, color='#1e293b'))
+                    ax_plan.text(0.2, 2.25, 'L2 (Transverse)', va='center', rotation=90, fontsize=10, fontweight='bold', color='#1e293b')
+                    
+                    # เน้นสีเหลืองด้านที่สั้นกว่า
+                    if L1 >= L2:
+                         ax_plan.annotate('', xy=(1, 1), xytext=(1, 3.5), arrowprops=dict(arrowstyle='-', color='#ca8a04', lw=4, alpha=0.6, zorder=2))
+                    else:
+                         ax_plan.annotate('', xy=(1, 1), xytext=(5, 1), arrowprops=dict(arrowstyle='-', color='#ca8a04', lw=4, alpha=0.6, zorder=2))
 
-        # ==========================================
-        # 3. CLEAR SPAN (Ln)
-        # ==========================================
-        st.markdown("#### 🔹 Effective Clear Span ($L_n$)")
-        with st.container(border=True):
-            st.caption("Measured face-to-face of supports, but shall not be less than $0.65 L_1$.")
+                    ax_plan.set_xlim(0, 6); ax_plan.set_ylim(0, 4.5); ax_plan.axis('off')
+                    st.pyplot(fig_plan)
+                    
+                    st.latex(r"\frac{L_{long}}{L_{short}} = \frac{" + f"{l_long:.2f}" + r"}{" + f"{l_short:.2f}" + r"} = " + f"{span_ratio_val:.2f}")
+                    
+                    if is_ratio_ok:
+                        st.success(f"**PASS:** Aspect ratio ≤ 2.0 (Two-way action).")
+                    else:
+                        st.error(f"**FAIL:** Ratio > 2.0 (One-way behavior, EFM Req).")
+
+            with col_calc2:
+                with st.container(border=True):
+                    st.markdown("**4. Gravity Load Ratio**")
+                    st.caption(r"Limit: Unfactored LL $\le 2 \times$ Unfactored DL")
+                    
+                    # 🎨 วาดรูป Section แสดง Load สดๆ
+                    fig_load, ax_load = plt.subplots(figsize=(6, 3))
+                    ax_load.add_patch(patches.Rectangle((1, 1), 4, 0.3, fill=True, facecolor='#f1f5f9', edgecolor='#1e293b', lw=2))
+                    
+                    for x in [1.5, 2.5, 3.5, 4.5]:
+                        # DL Arrows (สีเทา)
+                        ax_load.annotate('', xy=(x, 1), xytext=(x, 0.5), arrowprops=dict(arrowstyle='<-', color='#94a3b8', lw=1.5))
+                        # LL Arrows (สีเหลืองเน้น)
+                        ax_load.annotate('', xy=(x, 1.3), xytext=(x, 1), arrowprops=dict(arrowstyle='-', color='#ca8a04', lw=5, alpha=0.8))
+                    
+                    ax_load.text(3, 1.45, f"Live Load (LL): {ll:.0f} kg/m²", ha='center', fontsize=10, fontweight='bold', color='#ca8a04')
+                    ax_load.text(3, 0.3, f"Dead Load (DL): {dl:.0f} kg/m²", ha='center', fontsize=10, color='#64748b')
+                    
+                    ax_load.set_xlim(0.5, 5.5); ax_load.set_ylim(0, 2); ax_load.axis('off')
+                    st.pyplot(fig_load)
+                    
+                    st.latex(r"\frac{LL}{DL} = \frac{" + f"{ll:,.0f}" + r"}{" + f"{dl:,.0f}" + r"} = " + f"{load_ratio_val:.2f}")
+                    
+                    if is_load_ok:
+                        st.success("**PASS:** Live Load ratio within DDM limits.")
+                    else:
+                        st.error("**FAIL:** Pattern loading dictates EFM.")
+
+            st.divider()
+
+            # ==========================================
+            # 5. CLEAR SPAN (Ln) - DETAILED Substitution
+            # ==========================================
+            st.markdown("#### III. Critical Span Definition: Effective Clear Span ($L_n$)")
             
-            col_ln_text, col_ln_plot = st.columns([1, 1.5])
-            
-            with col_ln_text:
+            with st.container(border=True):
+                # 🎨 วาดรูป Section View แสดงระยะ Ln เน้นสีเหลือง
+                fig_sec, ax_sec = plt.subplots(figsize=(8, 2.5))
+                # วาดเสาพร้อม Hatch
+                for x in [1.5, 5.5]:
+                    ax_sec.add_patch(patches.Rectangle((x, 0), 0.6, 2, fill=True, color='#475569', zorder=3))
+                    ax_sec.add_patch(patches.Rectangle((x, 0), 0.6, 2, fill=False, edgecolor='#94a3b8', hatch='///', lw=0.5, zorder=4))
+                
+                # วาดพื้น
+                ax_sec.add_patch(patches.Rectangle((0.5, 2), 6.5, 0.4, fill=True, facecolor='#f8fafc', edgecolor='#1e293b', lw=2))
+                
+                # เส้น L1 (C-to-C)
+                ax_sec.plot([1.8, 1.8], [2.5, 3.2], color='gray', ls='-', lw=1.5, zorder=1)
+                ax_sec.plot([5.8, 5.8], [2.5, 3.2], color='gray', ls='-', lw=1.5, zorder=1)
+                ax_sec.annotate('', xy=(1.8, 3), xytext=(5.8, 3), arrowprops=dict(arrowstyle='<->', color='#1e293b', lw=1.2))
+                ax_sec.text(3.8, 3.25, f'L1 (Centerline to Centerline) = {L1:.2f} m', ha='center', fontsize=10, fontweight='bold')
+                
+                # เส้น Ln (Face-to-Face) -> เน้นสีเหลือง
+                ax_sec.plot([2.1, 2.1], [0.5, 1.8], color='#ca8a04', ls=':', lw=2, zorder=2)
+                ax_sec.plot([5.5, 5.5], [0.5, 1.8], color='#ca8a04', ls=':', lw=2, zorder=2)
+                ax_sec.annotate('', xy=(2.1, 1.5), xytext=(5.5, 1.5), arrowprops=dict(arrowstyle='<->', color='#ca8a04', lw=2.5, zorder=5))
+                ax_sec.text(3.8, 1.65, 'Clear Span (Ln)', ha='center', color='#854d0e', fontweight='bold', fontsize=11)
+                
+                # ระยะ c1 (ความกว้างเสา) -> เน้นสีแดง
+                ax_sec.annotate('', xy=(1.5, 0.8), xytext=(2.1, 0.8), arrowprops=dict(arrowstyle='<->', color='#b91c1c', lw=1.5))
+                ax_sec.text(1.8, 1.0, f'c1={c1_cm:.0f}cm', ha='center', color='#b91c1c', fontweight='bold', fontsize=9)
+                
+                ax_sec.set_xlim(0, 7.5); ax_sec.set_ylim(-0.2, 4); ax_sec.axis('off')
+                st.pyplot(fig_sec)
+
+                st.markdown("**Detailed Substitution:**")
+                st.caption("ACI 318-19 defines clear span face-to-face of columns, but not less than 65% of the centerline span:")
+                
                 term1 = L1 - c1
                 term2 = 0.65 * L1
-                st.latex(r"L_n = \max(L_1 - c_1, \, 0.65 L_1)")
-                st.latex(r"L_n = \max(" + f"{term1:.2f}" + r", \, " + f"{term2:.2f}" + r")")
                 
-                st.markdown(f"### $L_n = {ln:.2f}$ m")
-                st.info("📏 Required for $M_o$ calculation.")
-                
-            with col_ln_plot:
-                # 🎨 วาดรูป Section View
-                fig_sec, ax_sec = plt.subplots(figsize=(6, 2.2))
-                ax_sec.add_patch(patches.Rectangle((1.5, 0), 0.6, 2, fill=True, color='#94a3b8'))
-                ax_sec.add_patch(patches.Rectangle((5.5, 0), 0.6, 2, fill=True, color='#94a3b8'))
-                ax_sec.add_patch(patches.Rectangle((0.5, 2), 6.5, 0.4, fill=True, color='#e2e8f0', ec='#1e293b', lw=2))
-                
-                ax_sec.plot([1.8, 1.8], [2.5, 3.2], color='gray', ls='--')
-                ax_sec.plot([5.8, 5.8], [2.5, 3.2], color='gray', ls='--')
-                ax_sec.annotate('', xy=(1.8, 3), xytext=(5.8, 3), arrowprops=dict(arrowstyle='<->', lw=1.2))
-                ax_sec.text(3.8, 3.2, 'L1', ha='center', fontsize=9)
-                
-                ax_sec.plot([2.1, 2.1], [0.5, 1.8], color='gray', ls='--')
-                ax_sec.plot([5.5, 5.5], [0.5, 1.8], color='gray', ls='--')
-                ax_sec.annotate('', xy=(2.1, 1.5), xytext=(5.5, 1.5), arrowprops=dict(arrowstyle='<->', color='#2563eb', lw=2))
-                ax_sec.text(3.8, 1.6, f'Ln = {ln:.2f} m', ha='center', color='#2563eb', fontweight='bold')
-                
-                ax_sec.annotate('', xy=(1.5, 1), xytext=(2.1, 1), arrowprops=dict(arrowstyle='<->', color='#dc2626'))
-                ax_sec.text(1.8, 1.15, 'c1', ha='center', color='#dc2626', fontweight='bold')
-                
-                ax_sec.set_xlim(0, 7.5); ax_sec.set_ylim(0, 4); ax_sec.axis('off')
-                st.pyplot(fig_sec)
+                # กล่องแสดงการแทนค่าสมการ
+                with st.container(border=True):
+                    st.latex(r"L_n = \max(\ L_1 - c_1,\ \ 0.65 L_1\ )")
+                    st.divider()
+                    st.latex(r"\text{Condition 1: } L_1 - c_1 = " + f"{L1:.2f}" + r" - " + f"{c1:.2f}" + r" = \mathbf{" + f"{term1:.2f}" + r" \text{ m}}")
+                    st.latex(r"\text{Condition 2: } 0.65 \times L_1 = 0.65 \times " + f"{L1:.2f}" + r" = \mathbf{" + f"{term2:.2f}" + r" \text{ m}}")
+                    st.divider()
+                    st.latex(r"L_n = \max(\ " + f"{term1:.2f}" + r",\ \ " + f"{term2:.2f}" + r"\ )")
+                    st.info(f"### 📏 Final Clear Span ($L_n$) = {ln:.2f} m")
     
     # --- TAB 2: Loads & Moments ---
     with tab_load:
