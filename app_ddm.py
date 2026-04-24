@@ -249,14 +249,14 @@ def render_ddm_tab(calc_obj):
         st.markdown("#### 2. Panel Aspect Ratio")
         st.caption("The ratio of the longer span to the shorter span within any panel must not exceed 2.0 to ensure two-way action.")
         
-        # แทรกรูปประกอบระยะ L1 และ L2 ของพื้น
-        st.write("")
+        # ✅ แสดงรูปประกอบระยะ L1 และ L2 (สามารถเปลี่ยน URL เป็นชื่อไฟล์รูปในเครื่องได้ เช่น "slab_layout.png")
+        st.image("https://placehold.co/800x300/f0f2f6/1e1e1e?text=Plan+View:+L1+(Direction+of+Analysis)+and+L2+(Transverse)", 
+                 caption="Panel Dimensions (L1 and L2)", use_container_width=True)
         
         l_long = max(L1, L2)
         l_short = min(L1, L2) if min(L1, L2) > 0 else 1.0 # ป้องกันการหารด้วยศูนย์
         span_ratio_val = l_long / l_short
         
-        # แก้ไขการต่อ String ป้องกัน Error \t
         st.latex(r"\text{Aspect Ratio} = \frac{L_{long}}{L_{short}} \le 2.0")
         st.latex(r"\text{Ratio} = \frac{" + f"{l_long:.2f}" + r"}{" + f"{l_short:.2f}" + r"} = " + f"{span_ratio_val:.2f}")
         
@@ -299,15 +299,15 @@ def render_ddm_tab(calc_obj):
         st.markdown("#### 5. Effective Clear Span ($L_n$)")
         st.caption("The clear span for positive and negative moment calculations is measured face-to-face of supports, but it shall not be less than 0.65 times the center-to-center span length.")
         
-        # แทรกรูปประกอบระยะ Clear Span (Ln)
-        st.write("")
+        # ✅ แสดงรูปประกอบการคำนวณ Clear Span (Ln)
+        st.image("https://placehold.co/800x300/f0f2f6/1e1e1e?text=Section+View:+Clear+Span+(Ln)+measured+Face-to-Face+of+Columns", 
+                 caption="Effective Clear Span (Ln) Calculation", use_container_width=True)
 
         st.latex(r"L_n = \max(L_1 - c_1, \, 0.65 L_1)")
         
         term1 = L1 - c1
         term2 = 0.65 * L1
         
-        # ✅ แก้ไข Error ตรงนี้: แยก r"\text{ m}" ออกมาต่างหาก เพื่อไม่ให้ \t ชนกับ f-string
         st.latex(r"L_n = \max(" + f"{L1:.2f} - {c1:.2f}" + r", \, 0.65 \times " + f"{L1:.2f}" + r")")
         st.latex(r"L_n = \max(" + f"{term1:.2f}" + r", \, " + f"{term2:.2f}" + r") = " + f"{ln:.2f}" + r" \text{ m}")
         
