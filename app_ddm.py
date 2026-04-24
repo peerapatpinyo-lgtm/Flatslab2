@@ -395,7 +395,6 @@ def render_ddm_tab(calc_obj):
                     st.latex(r"L_n = \max(\ " + f"{term1:.2f}" + r",\ \ " + f"{term2:.2f}" + r"\ )")
                     st.info(f"### 📏 Final Clear Span ($L_n$) = {ln:.2f} m")
 
-
     with tab_load:
         st.markdown("#### ACI 318 Section 5.3.1: Load Combinations")
         st.markdown(f"$$ W_u = 1.4 DL + 1.7 LL $$")
