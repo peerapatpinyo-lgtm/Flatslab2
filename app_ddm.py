@@ -93,7 +93,7 @@ def render_ddm_tab(calc_obj):
         'edge_beam': eb_data,
         'eb_width': eb_data.get('width_cm', 0) / 100.0,
         'eb_depth': eb_data.get('depth_cm', 0) / 100.0,
-        'analysis_dir': selected_direction
+        'analysis_dir': calc_obj.get('analysis_dir', 'x-axis')
     }
 
     # =========================================================================
