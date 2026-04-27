@@ -556,8 +556,28 @@ def render_ddm_tab(calc_obj):
                 
                 st.markdown("---")
 
+
     # --- TAB 5: Shear Design (Two-Way and One-Way) ---
     with tab_shear:
+        # ==========================================
+        # --- 🟢 เพิ่มระบบตรวจสอบทิศทางเพื่อสลับแกน ---
+        # ==========================================
+        analysis_dir = inputs.get('analysis_dir', 'X-Axis')
+        is_y_axis = "Y-Axis" in analysis_dir or "L2" in analysis_dir
+
+        if is_y_axis:
+            # วิเคราะห์แกน Y: ให้พิจารณา L2 เป็น Span หลัก และ c2 เป็นหน้าเสาหลัก
+            L_span, L_trans = L2, L1
+            c_span, c_trans = c2, c1
+            span_label, trans_label = "L2", "L1"
+            c_span_label, c_trans_label = "c_2", "c_1"
+        else:
+            # วิเคราะห์แกน X: ให้พิจารณา L1 เป็น Span หลัก และ c1 เป็นหน้าเสาหลัก
+            L_span, L_trans = L1, L2
+            c_span, c_trans = c1, c2
+            span_label, trans_label = "L1", "L2"
+            c_span_label, c_trans_label = "c_1", "c_2"
+
         # ==========================================
         # --- PART 5.1: TWO-WAY SHEAR (PUNCHING) ---
         # ==========================================
@@ -566,51 +586,52 @@ def render_ddm_tab(calc_obj):
         
         # --- 1. Critical Section Geometry ---
         d_shear_cm = d_eff_m * 100.0
-        c1_cm = c1 * 100.0
-        c2_cm = c2 * 100.0
+        c_span_cm = c_span * 100.0
+        c_trans_cm = c_trans * 100.0
         
-        # ดึงข้อมูล Drop Panel จาก calc_obj (ที่ถูกส่งมาจาก app_calc.py)
+        # ดึงข้อมูล Drop Panel จาก calc_obj
         has_drop = calc_obj['geom'].get('has_drop', False)
         drop_w1_cm = calc_obj['geom'].get('drop_w1', 0) * 100.0
         drop_w2_cm = calc_obj['geom'].get('drop_w2', 0) * 100.0
         
+        # สลับ Drop Panel ตามแกนด้วย
+        drop_span_cm = drop_w2_cm if is_y_axis else drop_w1_cm
+        drop_trans_cm = drop_w1_cm if is_y_axis else drop_w2_cm
+        
         st.markdown(f"**1. Critical Section Properties ($b_o$, $A_c$, $J_c$) - {col_loc} Column**")
 
-        # คำนวณขอบเขตหน้าตัดวิกฤต (bo) อิงตามตำแหน่งเสา พร้อมแสดงสมการ
+        # คำนวณขอบเขตหน้าตัดวิกฤต (bo) อิงตามตำแหน่งเสา และแกนที่เลือก
         if col_loc == "Corner":
-            b1 = c1_cm + (d_shear_cm / 2.0)
-            b2 = c2_cm + (d_shear_cm / 2.0)
+            b1 = c_span_cm + (d_shear_cm / 2.0)
+            b2 = c_trans_cm + (d_shear_cm / 2.0)
             bo_cm = b1 + b2
             
-            # แสดงสมการ Corner
-            st.markdown(f"$$b_1=c_1+\\frac{{d}}{{2}}={c1_cm:.2f}+\\frac{{{d_shear_cm:.2f}}}{{2}}={b1:.2f}\\text{{ cm}}$$")
-            st.markdown(f"$$b_2=c_2+\\frac{{d}}{{2}}={c2_cm:.2f}+\\frac{{{d_shear_cm:.2f}}}{{2}}={b2:.2f}\\text{{ cm}}$$")
+            st.markdown(f"$$b_1={c_span_label}+\\frac{{d}}{{2}}={c_span_cm:.2f}+\\frac{{{d_shear_cm:.2f}}}{{2}}={b1:.2f}\\text{{ cm}}$$")
+            st.markdown(f"$$b_2={c_trans_label}+\\frac{{d}}{{2}}={c_trans_cm:.2f}+\\frac{{{d_shear_cm:.2f}}}{{2}}={b2:.2f}\\text{{ cm}}$$")
             st.markdown(f"$$b_o=b_1+b_2={b1:.2f}+{b2:.2f}={bo_cm:.2f}\\text{{ cm}}$$")
 
             c_dist = (b1**2) / (2 * (b1 + b2)) if (b1 + b2) > 0 else b1 / 2.0
             Jc = (d_shear_cm * (b1**3) / 12.0) + ((b1 * (d_shear_cm**3)) / 12.0) + (d_shear_cm * b1 * (b2**2) / 4.0)
 
         elif col_loc == "Edge":
-            b1 = c1_cm + (d_shear_cm / 2.0)
-            b2 = c2_cm + d_shear_cm
+            b1 = c_span_cm + (d_shear_cm / 2.0)
+            b2 = c_trans_cm + d_shear_cm
             bo_cm = (2 * b1) + b2
             
-            # แสดงสมการ Edge
-            st.markdown(f"$$b_1=c_1+\\frac{{d}}{{2}}={c1_cm:.2f}+\\frac{{{d_shear_cm:.2f}}}{{2}}={b1:.2f}\\text{{ cm}}$$")
-            st.markdown(f"$$b_2=c_2+d={c2_cm:.2f}+{d_shear_cm:.2f}={b2:.2f}\\text{{ cm}}$$")
+            st.markdown(f"$$b_1={c_span_label}+\\frac{{d}}{{2}}={c_span_cm:.2f}+\\frac{{{d_shear_cm:.2f}}}{{2}}={b1:.2f}\\text{{ cm}}$$")
+            st.markdown(f"$$b_2={c_trans_label}+d={c_trans_cm:.2f}+{d_shear_cm:.2f}={b2:.2f}\\text{{ cm}}$$")
             st.markdown(f"$$b_o=2b_1+b_2=2({b1:.2f})+{b2:.2f}={bo_cm:.2f}\\text{{ cm}}$$")
 
             c_dist = (b1**2) / ((2 * b1) + b2) if ((2 * b1) + b2) > 0 else b1 / 2.0
             Jc = (d_shear_cm * (b1**3) / 6.0) + ((b1 * (d_shear_cm**3)) / 6.0) + (d_shear_cm * b1 * (b2**2) / 2.0)
 
         else: # Interior
-            b1 = c1_cm + d_shear_cm  
-            b2 = c2_cm + d_shear_cm  
+            b1 = c_span_cm + d_shear_cm  
+            b2 = c_trans_cm + d_shear_cm  
             bo_cm = 2 * (b1 + b2)
             
-            # แสดงสมการ Interior
-            st.markdown(f"$$b_1=c_1+d={c1_cm:.2f}+{d_shear_cm:.2f}={b1:.2f}\\text{{ cm}}$$")
-            st.markdown(f"$$b_2=c_2+d={c2_cm:.2f}+{d_shear_cm:.2f}={b2:.2f}\\text{{ cm}}$$")
+            st.markdown(f"$$b_1={c_span_label}+d={c_span_cm:.2f}+{d_shear_cm:.2f}={b1:.2f}\\text{{ cm}}$$")
+            st.markdown(f"$$b_2={c_trans_label}+d={c_trans_cm:.2f}+{d_shear_cm:.2f}={b2:.2f}\\text{{ cm}}$$")
             st.markdown(f"$$b_o=2(b_1+b_2)=2({b1:.2f}+{b2:.2f})={bo_cm:.2f}\\text{{ cm}}$$")
 
             c_dist = b1 / 2.0
@@ -619,28 +640,27 @@ def render_ddm_tab(calc_obj):
         # สรุปผลลัพธ์
         Ac = bo_cm * d_shear_cm
 
-        st.markdown("---") # เพิ่มเส้นคั่นบางๆ ให้ดูแยกส่วนชัดเจน
-        st.markdown(f"- $b_1$ (ทิศทาง $c_1$) = **{b1:.1f} cm**")
-        st.markdown(f"- $b_2$ (ทิศทาง $c_2$) = **{b2:.1f} cm**")
+        st.markdown("---")
+        st.markdown(f"- $b_1$ (ทิศทางขนาน {span_label}) = **{b1:.1f} cm**")
+        st.markdown(f"- $b_2$ (ทิศทางขนาน {trans_label}) = **{b2:.1f} cm**")
         st.markdown(f"$$ b_o = {bo_cm:.1f} \\text{{ cm}} $$")
         st.markdown(f"$$ A_c = b_o \\times d = {bo_cm:.1f} \\times {d_shear_cm:.1f} = {Ac:,.1f} \\text{{ cm}}^2 $$")
         st.markdown(f"$$ J_c \\approx {Jc:,.0f} \\text{{ cm}}^4 $$")
         st.markdown(f"- ระยะศูนย์ถ่วงถึงขอบหน้าตัดวิกฤต ($c$) = **{c_dist:.1f} cm**")
 
         # --- ส่วนขยาย: ตรวจสอบหน้าตัดวิกฤตรอบ Drop Panel (ถ้ามี) ---
-        if has_drop and drop_w1_cm > 0 and drop_w2_cm > 0:
+        if has_drop and drop_span_cm > 0 and drop_trans_cm > 0:
             st.divider()
             st.markdown("**1.1 Critical Section outside Drop Panel**")
             
-            # สมมติระยะ d นอก Drop Panel แบบคร่าวๆ (หัก Cover และเหล็ก)
             d_slab_cm = (calc_obj['geom']['h_s'] * 100.0) - (cc_m * 100.0) - (selected_rebar / 20.0) 
             
             if col_loc == "Corner":
-                bo_drop = (drop_w1_cm + d_slab_cm/2.0) + (drop_w2_cm + d_slab_cm/2.0)
+                bo_drop = (drop_span_cm + d_slab_cm/2.0) + (drop_trans_cm + d_slab_cm/2.0)
             elif col_loc == "Edge":
-                bo_drop = 2*(drop_w1_cm + d_slab_cm/2.0) + (drop_w2_cm + d_slab_cm)
+                bo_drop = 2*(drop_span_cm + d_slab_cm/2.0) + (drop_trans_cm + d_slab_cm)
             else:
-                bo_drop = 2 * ((drop_w1_cm + d_slab_cm) + (drop_w2_cm + d_slab_cm))
+                bo_drop = 2 * ((drop_span_cm + d_slab_cm) + (drop_trans_cm + d_slab_cm))
                 
             st.info(f"💡 **Drop Panel Punching Perimeter ($b_{{o,drop}}$):** {bo_drop:.1f} cm (ใช้สำหรับตรวจสอบ Shear ความหนาพื้นปกติรอบนอก Drop Panel)")
 
@@ -649,7 +669,7 @@ def render_ddm_tab(calc_obj):
         # --- 2. Demand Calculation (Vu and Munbal) ---
         st.markdown("**2. Shear and Unbalanced Moment Demand**")
         
-        # 🟢 ปรับปรุงใหม่: คำนวณพื้นที่รับน้ำหนัก (Tributary Area) และพื้นที่หักออก (Punched Area) ตามตำแหน่งเสา
+        # Tributary Area ใช้อิงตาม L1, L2 ปกติ เพราะพื้นที่รวมไม่เปลี่ยนตามการหมุนแกน
         if col_loc == "Corner":
             trib_area = (L1 / 2.0) * (L2 / 2.0)
             punched_area = (c1 + d_eff_m/2.0) * (c2 + d_eff_m/2.0)
@@ -668,74 +688,58 @@ def render_ddm_tab(calc_obj):
         st.markdown(f"$$ V_u = w_u \\times (A_{{trib}} - A_{{punched}}) $$")
         st.markdown(f"$$ V_u = {wu:,.0f} \\times ({trib_area:.2f} - {punched_area:.4f}) = {vu_kg:,.0f} \\text{{ kg}} $$")
         
-        # ดึงค่าโมเมนต์ลบที่หัวเสาเพื่อมาเป็น Unbalanced Moment
         mu_at_column = 0
         if not df_design.empty and 'Location' in df_design.columns:
             try:
-                # ดึง Mu จาก Interior Negative เป็นหลัก (หรือปรับตาม Location ที่พิจารณา)
                 match_int_neg = df_design[df_design['Location'].str.contains("Interior Negative", case=False, na=False)].iloc[0]
                 mu_at_column = match_int_neg.get('Mu (kg-m)', match_int_neg.get('Moment (kg-m)', 0))
             except IndexError:
                 mu_at_column = 0
                 
-        st.markdown(f"$$ M_{{unbal}} = {mu_at_column:,.0f} \\text{{ kg-m}} $$ *(อ้างอิงจากโมเมนต์ลบที่หัวเสา)*")
+        st.markdown(f"$$ M_{{unbal}} = {mu_at_column:,.0f} \\text{{ kg-m}} $$ *(อ้างอิงจากโมเมนต์ลบที่หัวเสาแกน {span_label})*")
         
-        # คำนวณสัดส่วนการถ่ายโอนโมเมนต์ (Moment Transfer Fractions)
         gamma_f = 1.0 / (1.0 + (2.0/3.0) * math.sqrt(b1/b2))
         gamma_v = 1.0 - gamma_f
         st.markdown(f"$$ \\gamma_f = \\frac{{1}}{{1 + \\frac{{2}}{{3}}\\sqrt{{b_1/b_2}}}} = {gamma_f:.3f} \\implies \\gamma_v = {gamma_v:.3f} $$")
         
-        # คำนวณหน่วยแรงเค้นเฉือนรวมสูงสุด (Maximum Combined Shear Stress)
         vu_direct = vu_kg / Ac
         vu_moment = (gamma_v * (mu_at_column * 100.0) * c_dist) / Jc if Jc > 0 else 0
         vu_max = vu_direct + vu_moment
         
         st.markdown(f"$$ v_{{u,direct}} = \\frac{{V_u}}{{A_c}} = {vu_direct:.2f} \\text{{ ksc}} $$")
-        st.markdown(f"$$ v_{{u,moment}} = \\frac{{\\gamma_v M_{{unbal}} c}}{{J_c}} = \\frac{{{gamma_v:.3f} \\times {mu_at_column:,.0f} \\times 100 \\times {c_dist:.1f}}}{{{Jc:,.0f}}} = {vu_moment:.2f} \\text{{ ksc}} $$")
+        st.markdown(f"$$ v_{{u,moment}} = \\frac{{\\gamma_v M_{{unbal}} c}}{{J_c}} = {vu_moment:.2f} \\text{{ ksc}} $$")
         st.markdown(f"$$ v_{{u,max}} = v_{{u,direct}} + v_{{u,moment}} = {vu_max:.2f} \\text{{ ksc}} $$")
 
         st.divider()
         
         # --- 3. Capacity Calculation ---
         st.markdown("#### ACI 318 Table 22.6.5.2: Two-Way Shear Strength ($v_c$)")
-        st.info("💡 **Note:** Coefficients updated to **MKS System (kg/cm²)**: 1.06, 0.53, 0.27 (Equivalent to SI: 0.33, 0.17, 0.083)")
+        st.info("💡 **Note:** Coefficients updated to **MKS System (kg/cm²)**: 1.06, 0.53, 0.27")
         
-        phi_shear = 0.85 # ACI 318-19 Table 21.2.1
+        phi_shear = 0.85 
         alpha_s = 40 if case_type == "Interior" else (30 if has_edge_beam else 20)
-        beta_c = max(c1, c2) / min(c1, c2)
+        beta_c = max(c_span, c_trans) / min(c_span, c_trans)
         
-        # คำนวณกำลังต้านทานในรูปแบบของแรง (Force: kg)
         vc1 = 1.06 * math.sqrt(fc_ksc) * bo_cm * d_shear_cm
         vc2 = 0.53 * (1 + (2/beta_c)) * math.sqrt(fc_ksc) * bo_cm * d_shear_cm
         vc3 = 0.27 * (2 + (alpha_s * d_shear_cm / bo_cm)) * math.sqrt(fc_ksc) * bo_cm * d_shear_cm
         vc_gov_force = min(vc1, vc2, vc3)
         phi_vc_force = phi_shear * vc_gov_force
-        
-        # แปลงเป็นหน่วยแรงเค้น (Stress: ksc) สำหรับตรวจสอบร่วมกับโมเมนต์
         phi_vc_stress = phi_vc_force / Ac
         
         st.markdown(f"- $\\beta$ (Column Aspect Ratio) = **{beta_c:.2f}**")
         st.markdown(f"- $\\alpha_s$ (Position Factor) = **{alpha_s}**")
 
-        st.markdown("**Equation (a):**")
-        st.markdown(f"$$ V_{{c1}} = 1.06 \\sqrt{{{fc_ksc:.0f}}} \\times {bo_cm:.1f} \\times {d_shear_cm:.1f} = {vc1:,.0f} \\text{{ kg}} $$")
-        
-        st.markdown("**Equation (b):**")
-        st.markdown(f"$$ V_{{c2}} = 0.53 \\left( 1 + \\frac{{2}}{{{beta_c:.2f}}} \\right) \\sqrt{{{fc_ksc:.0f}}} \\times {bo_cm:.1f} \\times {d_shear_cm:.1f} = {vc2:,.0f} \\text{{ kg}} $$")
-        
-        st.markdown("**Equation (c):**")
-        st.markdown(f"$$ V_{{c3}} = 0.27 \\left( 2 + \\frac{{{alpha_s} \\times {d_shear_cm:.1f}}}{{{bo_cm:.1f}}} \\right) \\sqrt{{{fc_ksc:.0f}}} \\times {bo_cm:.1f} \\times {d_shear_cm:.1f} = {vc3:,.0f} \\text{{ kg}} $$")
-        
-        st.markdown("**Governing Capacity:**")
-        st.markdown(f"$$ \\phi V_c = {phi_shear} \\times \\min(V_{{c1}}, V_{{c2}}, V_{{c3}}) = {phi_vc_force:,.0f} \\text{{ kg}} $$")
-        st.markdown(f"$$ \\phi v_c = \\frac{{\\phi V_c}}{{A_c}} = {phi_vc_stress:.2f} \\text{{ ksc}} $$")
+        st.markdown(f"**Equation (a):** $V_{{c1}} = {vc1:,.0f} \\text{{ kg}}$")
+        st.markdown(f"**Equation (b):** $V_{{c2}} = {vc2:,.0f} \\text{{ kg}}$")
+        st.markdown(f"**Equation (c):** $V_{{c3}} = {vc3:,.0f} \\text{{ kg}}$")
+        st.markdown(f"**Governing Capacity:** $\\phi V_c = {phi_vc_force:,.0f} \\text{{ kg}} \\implies \\phi v_c = {phi_vc_stress:.2f} \\text{{ ksc}}$")
 
         st.divider()
         
         # --- 4. Demand vs Capacity Verification ---
         st.markdown("#### Demand vs Capacity Verification (Stress Basis)")
         punch_status = "✅ SAFE" if vu_max <= phi_vc_stress else "❌ FAIL (Increase slab thickness / f'c)"
-        
         st.markdown(f"**Final Verification:** $v_{{u,max}} \\le \\phi v_c \\implies {vu_max:.2f} \\text{{ ksc}} \\le {phi_vc_stress:.2f} \\text{{ ksc}}$ ➡️ **{punch_status}**")
 
 
@@ -744,33 +748,31 @@ def render_ddm_tab(calc_obj):
         # ==========================================
         st.divider()
         st.markdown("#### ACI 318 Section 22.5: One-Way (Beam Action) Shear")
-        st.markdown("ตรวจสอบหน้าตัดวิกฤตที่ระยะ $d$ จากขอบเสา โดยคิดความกว้างพื้นเต็มช่วง ($b_w = L_2$)")
+        st.markdown(f"ตรวจสอบหน้าตัดวิกฤตที่ระยะ $d$ จากขอบเสา โดยคิดความกว้างพื้นเต็มช่วง ($b_w = {trans_label}$)")
         
         # --- 1. Geometry & Critical Section ---
-        # ระยะห่างจากกึ่งกลางเสาถึงหน้าตัดวิกฤต = c1/2 + d
-        dist_crit_m = (c1 / 2.0) + d_eff_m
+        # ระยะหน้าตัดวิกฤตคิดตามแกนที่วิเคราะห์ (c_span)
+        dist_crit_m = (c_span / 2.0) + d_eff_m
         
-        # ความยาวของพื้นที่รับน้ำหนัก (Tributary Length) ที่ทำให้เกิดแรงเฉือน ณ หน้าตัดวิกฤต
-        L_trib_m = (L1 / 2.0) - dist_crit_m
+        # Tributary Length คิดตามแกนที่วิเคราะห์ (L_span)
+        L_trib_m = (L_span / 2.0) - dist_crit_m
         if L_trib_m < 0:
-            L_trib_m = 0  # ป้องกันกรณีพื้นหนามากหรือช่วงสั้นมากจนหน้าตัดวิกฤตเลยกึ่งกลางช่วง
+            L_trib_m = 0  
             
-        b_w_m = L2
+        b_w_m = L_trans
         b_w_cm = b_w_m * 100.0
         
         st.markdown("**1. Demand Calculation ($V_{u,1way}$)**")
-        st.markdown(f"- ระยะหน้าตัดวิกฤตจากกึ่งกลางเสา = $c_1/2 + d = {c1/2:.2f} + {d_eff_m:.2f} = {dist_crit_m:.2f} \\text{{ m}}$")
-        st.markdown(f"- ระยะรับน้ำหนักเฉือน (Tributary Length) = $L_1/2 - ({dist_crit_m:.2f}) = {(L1/2):.2f} - {dist_crit_m:.2f} = {L_trib_m:.2f} \\text{{ m}}$")
+        st.markdown(f"- ระยะหน้าตัดวิกฤตจากกึ่งกลางเสาแกน {span_label} = ${c_span_label}/2 + d = {c_span/2:.2f} + {d_eff_m:.2f} = {dist_crit_m:.2f} \\text{{ m}}$")
+        st.markdown(f"- ระยะรับน้ำหนักเฉือน (Tributary Length) = ${span_label}/2 - ({dist_crit_m:.2f}) = {(L_span/2):.2f} - {dist_crit_m:.2f} = {L_trib_m:.2f} \\text{{ m}}$")
         
         vu_1way_kg = wu * b_w_m * L_trib_m
-        st.markdown(f"$$ V_{{u,1way}} = w_u \\times L_2 \\times \\text{{Tributary Length}} $$")
+        st.markdown(f"$$ V_{{u,1way}} = w_u \\times {trans_label} \\times \\text{{Trib. Length}} $$")
         st.markdown(f"$$ V_{{u,1way}} = {wu:,.0f} \\times {b_w_m:.2f} \\times {L_trib_m:.2f} = {vu_1way_kg:,.0f} \\text{{ kg}} $$")
         
         # --- 2. Capacity Calculation ---
         st.markdown("**2. Capacity Calculation ($\\phi V_{c,1way}$)**")
-        st.info("💡 **Note:** ใช้สัมประสิทธิ์ MKS: $0.53$ (เทียบเท่า $0.17$ ในระบบ SI) และ $\\phi = 0.75$ สำหรับแรงเฉือนแบบทางเดียว")
         
-        # Vc สำหรับ One-way shear = 0.53 * sqrt(fc') * bw * d
         vc_1way_kg = 0.53 * math.sqrt(fc_ksc) * b_w_cm * d_shear_cm
         phi_vc_1way = 0.75 * vc_1way_kg
         
@@ -783,7 +785,7 @@ def render_ddm_tab(calc_obj):
         oneway_status = "✅ SAFE" if vu_1way_kg <= phi_vc_1way else "❌ FAIL (Increase slab thickness / f'c)"
         
         st.markdown(f"**Final Verification:** $V_{{u,1way}} \\le \\phi V_{{c,1way}} \\implies {vu_1way_kg:,.0f} \\text{{ kg}} \\le {phi_vc_1way:,.0f} \\text{{ kg}}$ ➡️ **{oneway_status}**")
-
+    
     with tab_viz:
         st.markdown("#### 🎨 Detailed Engineering Drawings")
         st.markdown("Reinforcement detailing drawings based on physical proportions and ACI 318 specifications.")
