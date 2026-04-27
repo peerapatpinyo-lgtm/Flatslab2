@@ -33,20 +33,23 @@ def get_rebar_text(df, is_col_strip, is_negative):
 # ==========================================
 # 1. วาดรูป Plan View (แปลนพื้นแบบ Fixed Axis)
 # ==========================================
+# --- ใน viz_ddm.py ---
 def draw_rebar_plan_view(inputs, edited_df):
-    L1 = inputs.get('L1', 5.0) # แกน X เสมอ
-    L2 = inputs.get('L2', 5.0) # แกน Y เสมอ
-    c1 = inputs.get('c1', 0.5) # แกน X เสมอ
-    c2 = inputs.get('c2', 0.5) # แกน Y เสมอ
+    # 🌟 แก้ไข: ใช้พิมพ์เล็ก 'l1', 'l2' ให้ตรงกับ inputs ใน calc_ddm.py
+    L1 = inputs.get('l1', 5.0) 
+    L2 = inputs.get('l2', 5.0) 
+    c1 = inputs.get('c1', 0.5)
+    c2 = inputs.get('c2', 0.5)
     
     analysis_dir = inputs.get('analysis_dir', 'X-Axis')
     is_y_axis = "Y-Axis" in analysis_dir or "L2" in analysis_dir
     
     fig, ax = plt.subplots(figsize=(9, 7))
     
-    # วาดแผงพื้น (L1 แนวนอน, L2 แนวตั้ง เสมอ)
+    # วาดพื้น (L1 แนวนอน, L2 แนวตั้งเสมอ)
     ax.add_patch(patches.Rectangle((0, 0), L1, L2, fill=True, facecolor='#f8fafc', edgecolor='#94a3b8', lw=2))
     
+    # ... (ส่วนการดึง rebar_text และ if is_y_axis อื่นๆ ของคุณเขียนไว้ดีแล้วครับ) ...
     # ดึงข้อมูลเหล็ก
     cs_top = get_rebar_text(edited_df, is_col_strip=True, is_negative=True)
     cs_bot = get_rebar_text(edited_df, is_col_strip=True, is_negative=False)
