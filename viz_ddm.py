@@ -4,23 +4,33 @@ import pandas as pd
 import numpy as np
 
 # ==========================================
-# Helper Function ใหม่ (ดึงค่าแบบเจาะจงชื่อเป๊ะๆ 100%)
+# 1. ฟังก์ชันดึงค่า (แก้บั๊กคำซ้อนทับกัน ดึงเป๊ะทุกบรรทัด)
 # ==========================================
 def get_rebar_exact(df, is_col_strip, mom_type):
-    """
-    ดึงข้อมูลโดยระบุประเภท (Col/Mid) และโมเมนต์ (Pos, Ext Neg, Int Neg) แบบตรงตัว
-    """
     if df is None or df.empty or 'Location' not in df.columns:
         return "N/A"
         
     strip_kw = "Col" if is_col_strip else "Mid"
     
     try:
-        # หาบรรทัดที่คำมี Col/Mid และมีคำว่า Pos, Ext Neg หรือ Int Neg ตรงๆ
-        mask = df['Location'].str.contains(strip_kw, case=False, na=False) & \
-               df['Location'].str.contains(mom_type, case=False, na=False)
+        # กรองเอาเฉพาะ Col หรือ Mid ก่อน
+        df_strip = df[df['Location'].str.contains(strip_kw, case=False, na=False)]
+        
+        # ค้นหาคำแบบเจาะจงขั้นสุด ป้องกันบั๊ก "Neg" ไปชนกับ "Ext Neg"
+        if mom_type == "Ext Neg":
+            mask = df_strip['Location'].str.contains('Ext', case=False, na=False)
+        elif mom_type == "Int Neg":
+            mask = df_strip['Location'].str.contains('Int', case=False, na=False)
+        elif mom_type == "Pos":
+            mask = df_strip['Location'].str.contains('Pos', case=False, na=False)
+        elif mom_type == "Neg":
+            # ถ้าหา Neg เฉยๆ ต้องดักไม่ให้ไปดึงบรรทัด Ext หรือ Int มามั่วๆ
+            mask = df_strip['Location'].str.contains('Neg', case=False, na=False) & \
+                   ~df_strip['Location'].str.contains('Ext', case=False, na=False)
+        else:
+            mask = df_strip['Location'].str.contains(mom_type, case=False, na=False)
                
-        match = df[mask]
+        match = df_strip[mask]
         if not match.empty:
             row = match.iloc[0]
             bar_size = int(row.get('Bar Size (mm)', 12))
@@ -30,9 +40,8 @@ def get_rebar_exact(df, is_col_strip, mom_type):
     except:
         return "N/A"
 
-# --- ใน viz_ddm.py ---
 # ==========================================
-# 1. วาดรูป Plan View (แก้ให้พื้นกลับมาอยู่ตรงกลางสมมาตร ไม่ขยับเบี้ยวแล้ว)
+# 2. Plan View (ดักจับ Edge/Corner ให้ทำงานจริง พร้อมโชว์ Label ยืนยัน)
 # ==========================================
 def draw_rebar_plan_view(inputs, edited_df):
     L1 = float(inputs.get('l1', inputs.get('L1', 5.0))) 
@@ -40,209 +49,173 @@ def draw_rebar_plan_view(inputs, edited_df):
     c1 = float(inputs.get('c1', 0.5))
     c2 = float(inputs.get('c2', 0.5))
     
-    col_loc = str(inputs.get('col_loc', inputs.get('column_location', 'Interior'))).strip().title()
+    # ดักจับค่า Location แบบครอบจักรวาล ป้องกันบั๊ก key ไม่ตรง
+    col_loc_raw = ""
+    for k, v in inputs.items():
+        if 'loc' in k.lower() or 'column' in k.lower():
+            col_loc_raw = str(v).strip().title()
+            break
+            
+    is_edge_or_corner = ('Edge' in col_loc_raw) or ('Corner' in col_loc_raw)
+    
     analysis_dir = str(inputs.get('analysis_dir', 'X')).lower()
     is_y_axis = 'y' in analysis_dir or 'l2' in analysis_dir
     
     fig, ax = plt.subplots(figsize=(10, 8))
-    
-    # 🌟 เอาโค้ดที่ทำให้ขอบพื้นเลื่อนออกไป ให้มันสมมาตร (-L/2 ถึง L/2) เสมอ
     x_min, x_max = -L1/2.0, L1/2.0
     y_min, y_max = -L2/2.0, L2/2.0
+    slab_w, slab_h = x_max - x_min, y_max - y_min
     
-    slab_w = x_max - x_min
-    slab_h = y_max - y_min
-    
-    # วาดแผ่นพื้นและเสาตรงกลาง 0,0 เสมอ
+    # วาดพื้นและเสา
     ax.add_patch(patches.Rectangle((x_min, y_min), slab_w, slab_h, fill=True, facecolor='#f8fafc', edgecolor='#94a3b8', lw=2, zorder=1))
     ax.add_patch(patches.Rectangle((-c1/2.0, -c2/2.0), c1, c2, fill=True, facecolor='#1e293b', zorder=2))
     
-    # 🌟 ดึงข้อมูลเหล็กตาม 5 Cases จริง (Plan View โชว์เฉพาะเหล็กบริเวณริม)
-    if col_loc in ['Edge', 'Corner']:
+    # 🌟 ลอจิกสลับ Case ที่ใช้งานได้จริง! 🌟
+    if is_edge_or_corner:
         cs_top = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Ext Neg")
-        ms_top = "N/A" # เสาริมไม่มีเหล็กบน MS
+        ms_top = get_rebar_exact(edited_df, is_col_strip=False, mom_type="Ext Neg") # บางทีขอบ MS ไม่มีเหล็กบน จะคืนค่า N/A
+        label_cs_top = "Top(CS, Ext)"
+        label_ms_top = "Top(MS, Ext)"
     else:
-        cs_top = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Neg")
-        ms_top = get_rebar_exact(edited_df, is_col_strip=False, mom_type="Neg")
+        cs_top = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Int Neg")
+        # ถ้าหา Int ไม่เจอ ให้ถอยไปหา Neg เผื่อตารางเขียนแค่ Neg
+        if cs_top == "N/A": cs_top = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Neg")
+        
+        ms_top = get_rebar_exact(edited_df, is_col_strip=False, mom_type="Int Neg")
+        if ms_top == "N/A": ms_top = get_rebar_exact(edited_df, is_col_strip=False, mom_type="Neg")
+        
+        label_cs_top = "Top(CS, Int)"
+        label_ms_top = "Top(MS, Int)"
         
     cs_bot = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Pos")
     ms_bot = get_rebar_exact(edited_df, is_col_strip=False, mom_type="Pos")
 
     if is_y_axis:
-        # --- Y-Axis Frame ---
-        cs_x_min = max(-L1/4.0, x_min)
-        cs_x_max = min(L1/4.0, x_max)
+        cs_x_min, cs_x_max = max(-L1/4.0, x_min), min(L1/4.0, x_max)
         cs_w = cs_x_max - cs_x_min
         
-        ax.add_patch(patches.Rectangle((cs_x_min, y_min), cs_w, slab_h, fill=True, facecolor='#e2e8f0', alpha=0.6, edgecolor='none', zorder=1.5))
-        if cs_x_min > x_min: ax.axvline(cs_x_min, color='#94a3b8', linestyle='-.', lw=1, zorder=1.5)
-        if cs_x_max < x_max: ax.axvline(cs_x_max, color='#94a3b8', linestyle='-.', lw=1, zorder=1.5)
-        
-        ax.text((cs_x_min + cs_x_max)/2, y_min - 0.2, f'Column Strip\n(W = {cs_w:.2f}m)', va='top', ha='center', color='#334155', fontweight='bold', fontsize=9)
+        ax.add_patch(patches.Rectangle((cs_x_min, y_min), cs_w, slab_h, fill=True, facecolor='#e2e8f0', alpha=0.6, zorder=1.5))
         
         x_top_pos = cs_x_min + cs_w * 0.75
         x_bot_pos = cs_x_min + cs_w * 0.25
         
-        # เหล็ก CS
         top_y1, top_y2 = max(-L2/4, y_min), min(L2/4, y_max)
         ax.plot([x_top_pos, x_top_pos], [top_y1, top_y2], color='#ef4444', lw=2.5, linestyle='--', zorder=3)
-        ax.text(x_top_pos + 0.15, (top_y1+top_y2)/2, f"Top(CS)\n{cs_top}", color='#ef4444', va='center', ha='left', fontweight='bold', fontsize=9, bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
+        # ป้ายจะโชว์เลยว่าเป็น Ext หรือ Int
+        ax.text(x_top_pos + 0.15, (top_y1+top_y2)/2, f"{label_cs_top}\n{cs_top}", color='#ef4444', va='center', ha='left', fontweight='bold', fontsize=9, bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
         
         bot_y1, bot_y2 = y_min + 0.15, y_max - 0.15
         ax.plot([x_bot_pos, x_bot_pos], [bot_y1, bot_y2], color='#3b82f6', lw=2.5, zorder=3)
         ax.text(x_bot_pos - 0.15, (bot_y1+bot_y2)/2, f"Bot(CS)\n{cs_bot}", color='#3b82f6', va='center', ha='right', fontweight='bold', fontsize=9)
         
-        # เหล็ก MS
-        has_ms_right = (x_max - cs_x_max) > 0.1
-        has_ms_left = (cs_x_min - x_min) > 0.1
-        ms_x_list = []
-        if has_ms_right: ms_x_list.append((cs_x_max + x_max)/2)
-        if has_ms_left: ms_x_list.append((x_min + cs_x_min)/2)
-        
-        for ms_x in ms_x_list:
+        for ms_x in [(cs_x_max + x_max)/2, (x_min + cs_x_min)/2]:
+            if ms_x > x_max or ms_x < x_min: continue
             ax.plot([ms_x, ms_x], [bot_y1, bot_y2], color='#3b82f6', lw=2, zorder=3)
             ax.text(ms_x - 0.1, (bot_y1+bot_y2)/2, f"Bot(MS): {ms_bot}", color='#3b82f6', va='center', ha='right', rotation=90, fontsize=9)
             if ms_top != "N/A":
                 ax.plot([ms_x - 0.3, ms_x - 0.3], [top_y1, top_y2], color='#ef4444', lw=2, linestyle='--', zorder=3)
-                ax.text(ms_x - 0.4, (top_y1+top_y2)/2, f"Top(MS): {ms_top}", color='#ef4444', va='center', ha='right', rotation=90, fontsize=9)
-
+                ax.text(ms_x - 0.4, (top_y1+top_y2)/2, f"{label_ms_top}: {ms_top}", color='#ef4444', va='center', ha='right', rotation=90, fontsize=9)
         axis_title = "Y-Axis Frame"
-        
     else:
-        # --- X-Axis Frame ---
-        cs_y_min = max(-L2/4.0, y_min)
-        cs_y_max = min(L2/4.0, y_max)
+        cs_y_min, cs_y_max = max(-L2/4.0, y_min), min(L2/4.0, y_max)
         cs_w = cs_y_max - cs_y_min
         
-        ax.add_patch(patches.Rectangle((x_min, cs_y_min), slab_w, cs_w, fill=True, facecolor='#e2e8f0', alpha=0.6, edgecolor='none', zorder=1.5))
-        if cs_y_min > y_min: ax.axhline(cs_y_min, color='#94a3b8', linestyle='-.', lw=1, zorder=1.5)
-        if cs_y_max < y_max: ax.axhline(cs_y_max, color='#94a3b8', linestyle='-.', lw=1, zorder=1.5)
-        
-        ax.text(x_min - 0.2, (cs_y_min + cs_y_max)/2, f'Column Strip\n(W = {cs_w:.2f}m)', rotation=90, va='center', ha='right', color='#334155', fontweight='bold', fontsize=9)
+        ax.add_patch(patches.Rectangle((x_min, cs_y_min), slab_w, cs_w, fill=True, facecolor='#e2e8f0', alpha=0.6, zorder=1.5))
         
         y_top_pos = cs_y_min + cs_w * 0.75
         y_bot_pos = cs_y_min + cs_w * 0.25
         
-        # เหล็ก CS
         top_x1, top_x2 = max(-L1/4, x_min), min(L1/4, x_max)
         ax.plot([top_x1, top_x2], [y_top_pos, y_top_pos], color='#ef4444', lw=2.5, linestyle='--', zorder=3)
-        ax.text((top_x1+top_x2)/2, y_top_pos + 0.15, f"Top(CS): {cs_top}", color='#ef4444', ha='center', va='bottom', fontweight='bold', fontsize=9, bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
+        # ป้ายจะโชว์เลยว่าเป็น Ext หรือ Int
+        ax.text((top_x1+top_x2)/2, y_top_pos + 0.15, f"{label_cs_top}: {cs_top}", color='#ef4444', ha='center', va='bottom', fontweight='bold', fontsize=9, bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
         
         bot_x1, bot_x2 = x_min + 0.15, x_max - 0.15
         ax.plot([bot_x1, bot_x2], [y_bot_pos, y_bot_pos], color='#3b82f6', lw=2.5, zorder=3)
         ax.text((bot_x1+bot_x2)/2, y_bot_pos - 0.15, f"Bot(CS): {cs_bot}", color='#3b82f6', ha='center', va='top', fontweight='bold', fontsize=9)
         
-        # เหล็ก MS
-        has_ms_top = (y_max - cs_y_max) > 0.1
-        has_ms_bot = (cs_y_min - y_min) > 0.1
-        ms_y_list = []
-        if has_ms_top: ms_y_list.append((cs_y_max + y_max)/2)
-        if has_ms_bot: ms_y_list.append((y_min + cs_y_min)/2)
-        
-        for ms_y in ms_y_list:
+        for ms_y in [(cs_y_max + y_max)/2, (y_min + cs_y_min)/2]:
+            if ms_y > y_max or ms_y < y_min: continue
             ax.plot([bot_x1, bot_x2], [ms_y, ms_y], color='#3b82f6', lw=2, zorder=3)
             ax.text((bot_x1+bot_x2)/2, ms_y - 0.15, f"Bot(MS): {ms_bot}", color='#3b82f6', ha='center', va='top', fontsize=9)
             if ms_top != "N/A":
                 ax.plot([top_x1, top_x2], [ms_y + 0.3, ms_y + 0.3], color='#ef4444', lw=2, linestyle='--', zorder=3)
-                ax.text((top_x1+top_x2)/2, ms_y + 0.45, f"Top(MS): {ms_top}", color='#ef4444', ha='center', va='bottom', fontsize=9)
-
+                ax.text((top_x1+top_x2)/2, ms_y + 0.45, f"{label_ms_top}: {ms_top}", color='#ef4444', ha='center', va='bottom', fontsize=9)
         axis_title = "X-Axis Frame"
 
-    # ระบบ Dimension
-    dim_y = y_max + 0.4
-    if abs(x_min) > 0.01:
-        ax.annotate('', xy=(x_min, dim_y), xytext=(0, dim_y), arrowprops=dict(arrowstyle='<|-|>', color='black'))
-        ax.text(x_min/2, dim_y + 0.15, f"{abs(x_min):.2f} m", ha='center', fontweight='bold', fontsize=9)
-    if abs(x_max) > 0.01:
-        ax.annotate('', xy=(0, dim_y), xytext=(x_max, dim_y), arrowprops=dict(arrowstyle='<|-|>', color='black'))
-        ax.text(x_max/2, dim_y + 0.15, f"{x_max:.2f} m", ha='center', fontweight='bold', fontsize=9)
-        
-    dim_x = x_max + 0.4
-    if abs(y_min) > 0.01:
-        ax.annotate('', xy=(dim_x, y_min), xytext=(dim_x, 0), arrowprops=dict(arrowstyle='<|-|>', color='black'))
-        ax.text(dim_x + 0.15, y_min/2, f"{abs(y_min):.2f} m", va='center', rotation=270, fontweight='bold', fontsize=9)
-    if abs(y_max) > 0.01:
-        ax.annotate('', xy=(dim_x, 0), xytext=(dim_x, y_max), arrowprops=dict(arrowstyle='<|-|>', color='black'))
-        ax.text(dim_x + 0.15, y_max/2, f"{y_max:.2f} m", va='center', rotation=270, fontweight='bold', fontsize=9)
-    
-    padding = 1.0
-    ax.set_xlim(x_min - padding, x_max + padding)
-    ax.set_ylim(y_min - padding, y_max + padding)
     ax.set_aspect('equal')
     ax.axis('off')
-    ax.set_title(f"Plan View: {axis_title} ({col_loc} Column)", pad=30, fontweight='bold', fontsize=12)
     
+    # เพิ่มชื่อบอกชัดๆ ว่านี่คือ Case อะไร!
+    case_name = "Edge/Corner" if is_edge_or_corner else "Interior"
+    ax.set_title(f"Plan View: {axis_title} ({case_name} Column)", pad=30, fontweight='bold', fontsize=12)
     plt.tight_layout()
     return fig
     
 # ==========================================
-# 2. วาดรูป Cross Section (🌟 แก้ให้ดึง Int Neg ไปใส่ฝั่งขวา เพื่อโชว์ครบตามเคส)
+# 3. Section View (สลับ Case ซ้าย/ขวา ให้เห็นแบบจะๆ)
 # ==========================================
 def draw_slab_section_with_rebar(inputs, edited_df):
-    L1 = inputs.get('L1', 5.0)
-    L2 = inputs.get('L2', 5.0)
-    c1 = inputs.get('c1', 0.5)
-    c2 = inputs.get('c2', 0.5)
+    L1, L2 = inputs.get('L1', 5.0), inputs.get('L2', 5.0)
+    c1, c2 = inputs.get('c1', 0.5), inputs.get('c2', 0.5)
     h_slab = inputs.get('h_slab_cm', 20.0) / 100.0
-    has_drop = inputs.get('has_drop', False)
-    h_drop = inputs.get('h_drop', 20.0) / 100.0 if has_drop else h_slab
+    
+    col_loc_raw = ""
+    for k, v in inputs.items():
+        if 'loc' in k.lower() or 'column' in k.lower():
+            col_loc_raw = str(v).strip().title()
+            break
+            
+    is_edge_or_corner = ('Edge' in col_loc_raw) or ('Corner' in col_loc_raw)
     
     analysis_dir = inputs.get('analysis_dir', 'X-Axis')
     is_y_axis = "Y-Axis" in analysis_dir or "L2" in analysis_dir
-    col_loc = str(inputs.get('col_loc', inputs.get('column_location', 'Interior'))).strip().title()
-    
-    if is_y_axis:
-        span_len = L2
-        col_w = c2
-        span_label = "L2 (Y-Axis)"
-    else:
-        span_len = L1
-        col_w = c1
-        span_label = "L1 (X-Axis)"
+    span_len = L2 if is_y_axis else L1
+    col_w = c2 if is_y_axis else c1
 
     fig, ax = plt.subplots(figsize=(9, 3.5))
-    
     ax.add_patch(patches.Rectangle((0, -1), col_w/2, 1, fill=True, color='#64748b'))
     ax.add_patch(patches.Rectangle((span_len - col_w/2, -1), col_w, 1, fill=True, color='#64748b'))
     ax.add_patch(patches.Rectangle((0, 0), span_len, h_slab, fill=True, facecolor='#cbd5e1', edgecolor='#334155', lw=1.5))
     
-    if has_drop and h_drop > h_slab:
-        drop_w = span_len / 3.0 
-        ax.add_patch(patches.Rectangle((0, -(h_drop - h_slab)), drop_w/2, h_drop - h_slab, fill=True, facecolor='#cbd5e1', edgecolor='#334155'))
-        ax.add_patch(patches.Rectangle((span_len - drop_w/2, -(h_drop - h_slab)), drop_w, h_drop - h_slab, fill=True, facecolor='#cbd5e1', edgecolor='#334155'))
-    
-    # 🌟 ดึงค่าแบบแยกซ้ายขวา (Ext Neg ขอบริมซ้าย, Int Neg ขอบในขวา)
-    if col_loc in ['Edge', 'Corner']:
+    # 🌟 ลอจิก Section ที่เปลี่ยนตาม Case ชัดเจน
+    if is_edge_or_corner:
+        # ถ้าเป็นเสาริม ฝั่งซ้ายคือ Ext ฝั่งขวาคือ Int
         cs_top_left = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Ext Neg")
         cs_top_right = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Int Neg")
+        label_left = "Top(Ext)"
+        label_right = "Top(Int)"
     else:
-        cs_top_left = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Neg")
-        cs_top_right = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Neg")
+        # ถ้าเป็นเสาใน ซ้ายและขวาคือ Int ทั้งคู่
+        cs_top_left = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Int Neg")
+        if cs_top_left == "N/A": cs_top_left = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Neg")
+        cs_top_right = cs_top_left
+        label_left = "Top(Int)"
+        label_right = "Top(Int)"
         
     cs_bot = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Pos")
     cover = 0.03 
     
+    # วาดเหล็ก
     ax.plot([0, span_len/3], [h_slab - cover, h_slab - cover], color='#ef4444', lw=2.5)
     ax.plot([span_len/3, span_len/3], [h_slab - cover, h_slab - cover - 0.05], color='#ef4444', lw=2.5) 
     ax.plot([span_len - span_len/3, span_len], [h_slab - cover, h_slab - cover], color='#ef4444', lw=2.5)
     ax.plot([span_len - span_len/3, span_len - span_len/3], [h_slab - cover, h_slab - cover - 0.05], color='#ef4444', lw=2.5) 
     
-    # 🌟 ใส่ Text ซ้าย-ขวา แยกกันตาม Case ตรงตามที่คำนวณ!
-    ax.text(span_len/6, h_slab + 0.05, f"Top(Ext): {cs_top_left}", color='#ef4444', ha='center', fontweight='bold', fontsize=9)
-    ax.text(span_len - span_len/6, h_slab + 0.05, f"Top(Int): {cs_top_right}", color='#ef4444', ha='center', fontweight='bold', fontsize=9)
+    # ใส่ Text ยืนยันบนรูป
+    ax.text(span_len/6, h_slab + 0.05, f"{label_left}: {cs_top_left}", color='#ef4444', ha='center', fontweight='bold', fontsize=9)
+    ax.text(span_len - span_len/6, h_slab + 0.05, f"{label_right}: {cs_top_right}", color='#ef4444', ha='center', fontweight='bold', fontsize=9)
     
     ax.plot([span_len/5, 4*span_len/5], [cover, cover], color='#3b82f6', lw=2.5)
     ax.plot([span_len/5, span_len/5], [cover, cover + 0.05], color='#3b82f6', lw=2.5) 
     ax.plot([4*span_len/5, 4*span_len/5], [cover, cover + 0.05], color='#3b82f6', lw=2.5) 
     ax.text(span_len/2, cover - 0.15, f"Bot: {cs_bot}", color='#3b82f6', ha='center', fontweight='bold', fontsize=9)
     
-    ax.annotate('', xy=(0, h_slab/2), xytext=(span_len, h_slab/2), arrowprops=dict(arrowstyle='<|-|>', color='black', lw=1))
-    ax.text(span_len/2, h_slab/2 + 0.03, f"Section Cut Along {span_label} = {span_len:.2f} m", ha='center', color='black', fontweight='bold', fontsize=10, bbox=dict(facecolor='white', edgecolor='none', pad=0.5))
-    
     ax.set_xlim(-0.5, span_len + 0.5)
-    ax.set_ylim(-1.2, h_slab + 0.4)
+    ax.set_ylim(-0.5, h_slab + 0.4)
     ax.axis('off')
-    ax.set_title(f"Column Strip Elevation Section", pad=15, fontweight='bold')
+    case_name = "Edge/Corner" if is_edge_or_corner else "Interior"
+    ax.set_title(f"Column Strip Section ({case_name})", pad=15, fontweight='bold')
     
     plt.tight_layout()
     return fig
