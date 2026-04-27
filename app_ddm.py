@@ -291,12 +291,16 @@ def render_ddm_tab(calc_obj):
                     st.markdown("**3. Panel Aspect Ratio**")
                     st.caption(r"Limit: $L_{long} / L_{short} \le 2.0$")
                     
-                    # 🎨 วาดรูป Plan View (Dynamic Scale ตามสัดส่วน L1, L2 จริง)
+                    # 🎨 วาดรูป Plan View (ล็อก Scale ตาม Physical X-Y จริง เพื่อไม่ให้รูปหมุน)
                     fig_plan, ax_plan = plt.subplots(figsize=(6, 3.5))
-                    scale = 3.0 / l_long if l_long > 0 else 1.0
-                    viz_L1, viz_L2 = L1 * scale, L2 * scale
-                    x_c, y_c = 3.0, 1.75 # จุดศูนย์กลางแกน
-                    x0, y0 = x_c - viz_L1/2, y_c - viz_L2/2
+                    physical_long = max(physical_Lx, physical_Ly)
+                    scale = 3.0 / physical_long if physical_long > 0 else 1.0
+                    viz_Lx, viz_Ly = physical_Lx * scale, physical_Ly * scale
+                    x_c, y_c = 3.0, 1.75 
+                    x0, y0 = x_c - viz_Lx/2, y_c - viz_Ly/2
+                    
+                    # วาดพื้น
+                    ax_plan.add_patch(patches.Rectangle((x0, y0), viz_Lx, viz_Ly, fill=True, facecolor='#f8fafc', edgecolor='#1e293b', lw=2))
                     
                     # วาดพื้น
                     ax_plan.add_patch(patches.Rectangle((x0, y0), viz_L1, viz_L2, fill=True, facecolor='#f8fafc', edgecolor='#1e293b', lw=2))
