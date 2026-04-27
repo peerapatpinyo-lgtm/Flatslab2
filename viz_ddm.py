@@ -1,278 +1,214 @@
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import pandas as pd
 import numpy as np
 
-def draw_rebar_plan_view(*args, **kwargs):
+# ==========================================
+# Helper Function สำหรับดึงข้อความเหล็กเสริม
+# ==========================================
+def get_rebar_text(df, is_col_strip, is_negative):
     """
-    Generates a Reinforcement Plan View.
-    Bulletproof version: Searches through all arguments for direction and DataFrame.
+    ฟังก์ชันช่วยดึงขนาดและระยะแอดของเหล็กจาก edited_df 
+    ตามประเภทแถบ (Column/Middle) และตำแหน่งโมเมนต์ (Negative/Positive)
     """
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as patches
-    import numpy as np
-    import pandas as pd
+    if df is None or df.empty or 'Location' not in df.columns:
+        return "N/A"
+        
+    # คัดกรองว่าเป็น Column Strip หรือ Middle Strip
+    strip_kw = "Col" if is_col_strip else "Mid"
+    # คัดกรองว่าเป็น Negative (เหล็กบน) หรือ Positive (เหล็กล่าง)
+    mom_kw = "Neg" if is_negative else "Pos"
+    
+    try:
+        # หา row ที่ตรงกับเงื่อนไข
+        mask = df['Location'].str.contains(strip_kw, case=False, na=False) & \
+               df['Location'].str.contains(mom_kw, case=False, na=False)
+        
+        match = df[mask]
+        if not match.empty:
+            row = match.iloc[0]
+            bar_size = int(row.get('Bar Size (mm)', 12))
+            spacing = float(row.get('Spacing (cm)', 20.0))
+            return f"DB{bar_size} @{spacing:.1f}"
+        return "N/A"
+    except:
+        return "N/A"
 
+# ==========================================
+# 1. วาดรูป Plan View (แปลนพื้น)
+# ==========================================
+def draw_rebar_plan_view(inputs, edited_df):
+    L1 = inputs.get('L1', 5.0)
+    L2 = inputs.get('L2', 5.0)
+    c1 = inputs.get('c1', 0.5)
+    c2 = inputs.get('c2', 0.5)
+    
     fig, ax = plt.subplots(figsize=(8, 6))
     
-    # --- 1. ค่าเริ่มต้น (Fallback) ---
-    L1, L2, c1, c2 = 8.0, 6.0, 0.4, 0.4
-    analysis_dir = 'x-axis'
-    df_design = None
-
-    # --- 2. ระบบค้นหาตัวแปรอัจฉริยะแบบกวาดหมด (Scan All Arguments) ---
-    all_args = list(args) + list(kwargs.values())
+    # วาดแผงพื้น (Slab Panel)
+    ax.add_patch(patches.Rectangle((0, 0), L1, L2, fill=True, facecolor='#f8fafc', edgecolor='#94a3b8', lw=2))
     
-    for arg in all_args:
-        if isinstance(arg, dict):
-            # ถ้ามี Dictionary ส่งมา ให้ดึงค่าขนาดพื้น
-            L1 = arg.get('L1', L1)
-            L2 = arg.get('L2', L2)
-            c1 = arg.get('c1', c1)
-            c2 = arg.get('c2', c2)
-            if 'analysis_dir' in arg:
-                analysis_dir = str(arg['analysis_dir']).lower()
-                
-        elif isinstance(arg, pd.DataFrame):
-            # ถ้าพบว่ามีการส่ง DataFrame เข้ามา ให้เก็บไว้ดึงค่าเหล็ก
-            df_design = arg
-            
-        elif isinstance(arg, str):
-            # ถ้ามีข้อความส่งมาลอยๆ ให้เช็คว่าเป็นตัวบอกทิศทาง X/Y หรือไม่
-            arg_lower = arg.lower()
-            if 'x' in arg_lower or 'y' in arg_lower or 'l1' in arg_lower or 'l2' in arg_lower:
-                analysis_dir = arg_lower
-
-    # --- 3. ดึงข้อมูลปริมาณเหล็กจากตาราง (df_design) ---
-    top_bar_text = "Top Rebar (Support)"
-    bot_bar_text = "Bottom Rebar (Midspan)"
+    # คำนวณความกว้าง Column Strip (ประมาณ L2/4 สองฝั่ง = L2/2)
+    cs_width = L2 / 2.0
+    ms_width = L2 - cs_width
     
-    if df_design is not None and not df_design.empty:
-        try:
-            df_str = df_design.astype(str)
-            
-            # เล็งคอลัมน์สุดท้ายไว้ก่อน (มักจะเป็นคอลัมน์สรุปผลเหล็กเสริม)
-            target_col = df_design.columns[-1] 
-            
-            # หรือค้นหาชื่อคอลัมน์ที่น่าจะใช่
-            for col in df_design.columns:
-                col_name_lower = str(col).lower()
-                if any(kw in col_name_lower for kw in ['rebar', 'เหล็ก', 'เสริม', 'prov', 'as']):
-                    target_col = col
-                    break
-            
-            # ดึงข้อมูลจากคอลัมน์นั้น (ตัดค่าว่าง หรือขีดทิ้ง)
-            rebar_list = [val for val in df_str[target_col].tolist() if val.strip() and val.lower() != 'nan' and val.strip() != '-']
-            
-            if len(rebar_list) >= 2:
-                top_bar_text = f"Top: {rebar_list[0]}"  # แถวบนๆ มักเป็นเหล็ก Support
-                bot_bar_text = f"Bot: {rebar_list[-1]}" # แถวท้ายๆ มักเป็นเหล็ก Midspan
-            elif len(rebar_list) == 1:
-                top_bar_text = f"Rebar: {rebar_list[0]}"
-                bot_bar_text = f"Rebar: {rebar_list[0]}"
-        except Exception:
-            # ถ้าดึงพลาด จะแสดงข้อความนี้เพื่อให้รู้ว่ามีตารางส่งมา แต่โครงสร้างอ่านไม่ได้
-            top_bar_text = "Top (Format Error)"
-            bot_bar_text = "Bot (Format Error)"
-
-    # --- 4. วาดเส้นขอบพื้นและเสา ---
-    ax.add_patch(patches.Rectangle((0, 0), L1, L2, fill=False, edgecolor='black', linewidth=2.5, zorder=3))
-    col_coords = [(0,0), (L1,0), (0,L2), (L1,L2)]
-    for (cx, cy) in col_coords:
-        col = patches.Rectangle((cx - c1/2, cy - c2/2), c1, c2, fill=True, color='dimgray', zorder=4)
-        ax.add_patch(col)
-        
-    # --- 5. เช็คทิศทางและวาดเหล็ก ---
-    is_x_dir = 'x' in analysis_dir or 'l1' in analysis_dir or 'long' in analysis_dir
+    # วาดแรเงาแยก Column Strip และ Middle Strip (แนวนอนตามแกนวิเคราะห์ L1)
+    # Column Strip จะอยู่ขอบบนขอบล่าง (สมมติแบ่งครึ่งโชว์)
+    cs_y0 = (L2 - cs_width) / 2.0
+    ax.add_patch(patches.Rectangle((0, cs_y0), L1, cs_width, fill=True, facecolor='#e2e8f0', alpha=0.5, edgecolor='none'))
+    ax.text(-0.2, L2/2, 'Column Strip', rotation=90, va='center', ha='center', color='#475569', fontweight='bold')
+    ax.text(-0.2, cs_y0/2, 'Middle Strip', rotation=90, va='center', ha='center', color='#475569', fontweight='bold')
+    ax.text(-0.2, L2 - cs_y0/2, 'Middle Strip', rotation=90, va='center', ha='center', color='#475569', fontweight='bold')
     
-    if is_x_dir:
-        # ➡️ วาดเหล็กแนวนอน (X-Axis)
-        ax.set_title(f"Reinforcement Plan View - X-Axis Frame\n[ {top_bar_text} / {bot_bar_text} ]", fontsize=12, fontweight='bold', pad=15)
-        
-        ax.hlines(y=[L2*0.85, L2*0.90, L2*0.95], xmin=0, xmax=L1*0.3, color='#ef4444', lw=1.5, label='Top Rebar (Support)')
-        ax.hlines(y=[L2*0.85, L2*0.90, L2*0.95], xmin=L1*0.7, xmax=L1, color='#ef4444', lw=1.5)
-        ax.text(L1*0.15, L2*0.97, top_bar_text, color='#ef4444', ha='center', fontweight='bold', fontsize=9)
-        ax.text(L1*0.85, L2*0.97, top_bar_text, color='#ef4444', ha='center', fontweight='bold', fontsize=9)
-        
-        y_bottoms = np.linspace(L2*0.25, L2*0.75, 7)
-        ax.hlines(y=y_bottoms, xmin=0.05*L1, xmax=0.95*L1, color='#3b82f6', lw=1.2, linestyle='--', label='Bottom Rebar (Midspan)')
-        ax.text(L1*0.5, L2*0.78, bot_bar_text, color='#3b82f6', ha='center', fontweight='bold', fontsize=9)
-        
-    else:
-        # ⬆️ วาดเหล็กแนวตั้ง (Y-Axis)
-        ax.set_title(f"Reinforcement Plan View - Y-Axis Frame\n[ {top_bar_text} / {bot_bar_text} ]", fontsize=12, fontweight='bold', pad=15)
-        
-        ax.vlines(x=[L1*0.85, L1*0.90, L1*0.95], ymin=0, ymax=L2*0.3, color='#ef4444', lw=1.5, label='Top Rebar (Support)')
-        ax.vlines(x=[L1*0.85, L1*0.90, L1*0.95], ymin=L2*0.7, ymax=L2, color='#ef4444', lw=1.5)
-        ax.text(L1*0.97, L2*0.15, top_bar_text, color='#ef4444', va='center', rotation=-90, fontweight='bold', fontsize=9)
-        ax.text(L1*0.97, L2*0.85, top_bar_text, color='#ef4444', va='center', rotation=-90, fontweight='bold', fontsize=9)
-        
-        x_bottoms = np.linspace(L1*0.25, L1*0.75, 7)
-        ax.vlines(x=x_bottoms, ymin=0.05*L2, ymax=0.95*L2, color='#3b82f6', lw=1.2, linestyle='--', label='Bottom Rebar (Midspan)')
-        ax.text(L1*0.78, L2*0.5, bot_bar_text, color='#3b82f6', va='center', rotation=-90, fontweight='bold', fontsize=9)
-
-    # --- 6. การตกแต่งและปิดงาน ---
+    # วาดเสา (ตรงกลาง สมมติเป็น Interior)
+    ax.add_patch(patches.Rectangle(((L1-c1)/2, (L2-c2)/2), c1, c2, fill=True, facecolor='#334155'))
+    
+    # --- ดึงข้อมูลเหล็กเสริม ---
+    cs_top = get_rebar_text(edited_df, is_col_strip=True, is_negative=True)
+    cs_bot = get_rebar_text(edited_df, is_col_strip=True, is_negative=False)
+    ms_top = get_rebar_text(edited_df, is_col_strip=False, is_negative=True)
+    ms_bot = get_rebar_text(edited_df, is_col_strip=False, is_negative=False)
+    
+    # --- วาดสัญลักษณ์เหล็กเสริมลงบนแปลน ---
+    # 1. เหล็กบน (Top Bar) สีแดง (ที่หัวเสา/Support)
+    ax.plot([L1/2 - 1, L1/2 + 1], [L2/2 + c2, L2/2 + c2], color='#ef4444', lw=2, linestyle='--')
+    ax.text(L1/2, L2/2 + c2 + 0.1, f"Top: {cs_top}", color='#ef4444', ha='center', fontweight='bold')
+    
+    # 2. เหล็กล่าง (Bottom Bar) สีน้ำเงิน (ที่กึ่งกลางช่วง/Midspan)
+    ax.plot([L1/4, 3*L1/4], [L2/2, L2/2], color='#3b82f6', lw=2)
+    ax.text(L1/2, L2/2 - 0.2, f"Bot: {cs_bot}", color='#3b82f6', ha='center', fontweight='bold')
+    
+    # เหล็ก Middle Strip
+    ax.plot([L1/4, 3*L1/4], [cs_y0/2, cs_y0/2], color='#3b82f6', lw=2)
+    ax.text(L1/2, cs_y0/2 - 0.2, f"Bot: {ms_bot}", color='#3b82f6', ha='center', fontweight='bold')
+    
+    ax.plot([0.1, L1/4], [cs_y0/2, cs_y0/2], color='#ef4444', lw=2, linestyle='--')
+    ax.text(L1/8, cs_y0/2 + 0.1, f"Top: {ms_top}", color='#ef4444', ha='center', fontweight='bold')
+    
+    ax.set_xlim(-0.5, L1 + 0.5)
+    ax.set_ylim(-0.5, L2 + 0.5)
     ax.set_aspect('equal')
-    ax.set_xlim(-c1, L1 + c1)
-    ax.set_ylim(-c2, L2 + c2)
-    ax.set_xlabel("X - Dimension (m)", fontsize=10, fontweight='bold')
-    ax.set_ylabel("Y - Dimension (m)", fontsize=10, fontweight='bold')
+    ax.axis('off')
+    ax.set_title("Reinforcement Plan View (Analysis Direction: L1)", pad=20, fontweight='bold')
     
-    handles, labels = ax.get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    ax.legend(by_label.values(), by_label.keys(), loc="upper right", bbox_to_anchor=(1.25, 1.05), frameon=False)
-    
-    ax.grid(True, linestyle=':', alpha=0.5)
     plt.tight_layout()
     return fig
 
-def draw_slab_section_with_rebar(inputs, df_design=None):
-    """
-    Generates a Cross-Section View of the slab showing top and bottom reinforcement.
-    """
-    fig, ax = plt.subplots(figsize=(10, 3.5))
-    
-    # Extract Geometry from inputs
-    L1 = inputs.get('L1', 8.0)
-    h_slab = inputs.get('h_slab_cm', 20.0) / 100.0  # Convert to meters
+# ==========================================
+# 2. วาดรูป Cross Section (หน้าตัดพื้น)
+# ==========================================
+def draw_slab_section_with_rebar(inputs, edited_df):
+    L1 = inputs.get('L1', 5.0)
     c1 = inputs.get('c1', 0.5)
+    h_slab = inputs.get('h_slab_cm', 20.0) / 100.0
     has_drop = inputs.get('has_drop', False)
-    h_drop = inputs.get('h_drop', h_slab * 100) / 100.0
+    h_drop = inputs.get('h_drop', 20.0) / 100.0 if has_drop else h_slab
     
-    # Visual limits
-    plot_width = L1 + 2 * c1
+    fig, ax = plt.subplots(figsize=(8, 3))
     
-    # 1. Draw Columns (Supports)
-    # Left Column
-    ax.add_patch(patches.Rectangle((-c1/2, -1.0), c1, 1.0, fill=True, color='#64748b', zorder=2))
-    # Right Column
-    ax.add_patch(patches.Rectangle((L1 - c1/2, -1.0), c1, 1.0, fill=True, color='#64748b', zorder=2))
+    # วาดเสา
+    ax.add_patch(patches.Rectangle((0, -1), c1/2, 1, fill=True, color='#64748b'))
+    ax.add_patch(patches.Rectangle((L1 - c1/2, -1), c1, 1, fill=True, color='#64748b'))
     
-    # 2. Draw Drop Panels (if any)
+    # วาดพื้น (Slab)
+    ax.add_patch(patches.Rectangle((0, 0), L1, h_slab, fill=True, facecolor='#cbd5e1', edgecolor='#334155', lw=1.5))
+    
+    # วาด Drop Panel (ถ้ามี)
     if has_drop and h_drop > h_slab:
-        drop_w = L1 / 3.0  # Approximate drop panel width for visual
-        drop_depth = h_drop - h_slab
-        ax.add_patch(patches.Rectangle((-drop_w/2, -drop_depth), drop_w, drop_depth, fill=True, color='#e2e8f0', edgecolor='#0f172a', zorder=3))
-        ax.add_patch(patches.Rectangle((L1 - drop_w/2, -drop_depth), drop_w, drop_depth, fill=True, color='#e2e8f0', edgecolor='#0f172a', zorder=3))
-
-    # 3. Draw Slab
-    ax.add_patch(patches.Rectangle((-c1, 0), plot_width, h_slab, fill=True, facecolor='#e2e8f0', edgecolor='#0f172a', lw=1.5, zorder=4))
+        drop_w = L1 / 3.0 # กะขนาด Drop Panel คร่าวๆ สำหรับแสดงผล
+        ax.add_patch(patches.Rectangle((0, -(h_drop - h_slab)), drop_w/2, h_drop - h_slab, fill=True, facecolor='#cbd5e1', edgecolor='#334155'))
+        ax.add_patch(patches.Rectangle((L1 - drop_w/2, -(h_drop - h_slab)), drop_w, h_drop - h_slab, fill=True, facecolor='#cbd5e1', edgecolor='#334155'))
     
-    # 4. Draw Rebars
-    cover = 0.03  # 3 cm concrete cover
+    # --- ดึงข้อมูลเหล็กเสริม (ดึง Column Strip เป็นหลัก) ---
+    cs_top = get_rebar_text(edited_df, is_col_strip=True, is_negative=True)
+    cs_bot = get_rebar_text(edited_df, is_col_strip=True, is_negative=False)
     
-    # Top Rebars (over supports - Negative Moment)
-    ax.plot([-c1*0.8, L1*0.3], [h_slab - cover, h_slab - cover], color='#ef4444', lw=2.5, zorder=5, label='Top Rebar (Support)')
-    ax.plot([L1*0.7, L1 + c1*0.8], [h_slab - cover, h_slab - cover], color='#ef4444', lw=2.5, zorder=5)
+    cover = 0.03 # m
     
-    # Bottom Rebars (midspan - Positive Moment)
-    ax.plot([L1*0.1, L1*0.9], [cover, cover], color='#3b82f6', lw=2.5, zorder=5, label='Bottom Rebar (Midspan)')
+    # วาดเส้นเหล็กบน (Top Bar) เหนือเสา
+    ax.plot([0, L1/3], [h_slab - cover, h_slab - cover], color='#ef4444', lw=2.5)
+    ax.plot([L1 - L1/3, L1], [h_slab - cover, h_slab - cover], color='#ef4444', lw=2.5)
+    ax.text(L1/6, h_slab + 0.05, f"Top Bar (CS): {cs_top}", color='#ef4444', ha='center', fontweight='bold', fontsize=9)
+    ax.text(L1 - L1/6, h_slab + 0.05, f"Top Bar (CS): {cs_top}", color='#ef4444', ha='center', fontweight='bold', fontsize=9)
     
-    # 5. Annotations & Dimension Lines
-    # Slab thickness dimension
-    ax.annotate('', xy=(L1/2, 0), xytext=(L1/2, h_slab), arrowprops=dict(arrowstyle='<->', color='#0f172a', lw=1.5), zorder=6)
-    ax.text(L1/2 + 0.1, h_slab/2, f'h = {h_slab*100:.1f} cm', va='center', fontweight='bold', fontsize=10)
+    # วาดเส้นเหล็กล่าง (Bottom Bar) กึ่งกลางช่วง
+    ax.plot([L1/4, 3*L1/4], [cover, cover], color='#3b82f6', lw=2.5)
+    ax.text(L1/2, cover - 0.15, f"Bottom Bar (CS): {cs_bot}", color='#3b82f6', ha='center', fontweight='bold', fontsize=9)
     
-    # Span dimension
-    ax.annotate('', xy=(0, -0.5), xytext=(L1, -0.5), arrowprops=dict(arrowstyle='<->', color='#475569', lw=1.5), zorder=6)
-    ax.text(L1/2, -0.4, f'Span L = {L1:.2f} m', ha='center', va='bottom', color='#334155', fontweight='bold', fontsize=10)
-
-    # Styling
-    ax.set_title("Slab Cross-Section Details", fontsize=14, fontweight='bold', pad=15)
-    ax.set_xlim(-c1*1.5, L1 + c1*1.5)
-    ax.set_ylim(-0.8, h_slab + 0.2)
+    # แกนอ้างอิง
+    ax.annotate('', xy=(0, h_slab/2), xytext=(L1, h_slab/2), arrowprops=dict(arrowstyle='<->', color='gray', lw=1))
+    ax.text(L1/2, h_slab/2 + 0.05, f"Span L1 = {L1:.2f} m", ha='center', color='gray', fontsize=9)
+    
+    ax.set_xlim(-0.5, L1 + 0.5)
+    ax.set_ylim(-1.2, h_slab + 0.5)
     ax.axis('off')
-    
-    # Add legend at top right
-    ax.legend(loc="upper right", bbox_to_anchor=(1.0, 1.15), frameon=False, ncol=2)
+    ax.set_title("Column Strip Elevation (Cross-Section)", pad=10, fontweight='bold')
     
     plt.tight_layout()
     return fig
-def draw_punching_plan(*args, **kwargs):
-    """
-    Generates a Plan View of the Punching Shear Critical Section.
-    Bulletproof version: Extracts parameters whether they are passed as a dict, 
-    or as individual positional arguments (e.g., str, float, float, float).
-    """
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as patches
-    
-    fig, ax = plt.subplots(figsize=(6, 6))
-    
-    # --- 1. ระบบแยกแยะและดึงข้อมูลอัจฉริยะแบบกัน Error ---
-    c1 = 50.0      # ค่าเริ่มต้น (cm)
-    c2 = 50.0      # ค่าเริ่มต้น (cm)
-    col_loc = 'Interior' # ค่าเริ่มต้น
-    h_slab = 20.0  # ค่าเริ่มต้น (cm)
-    
-    # เช็คว่ามีการส่ง Dictionary (เช่น inputs) มาหรือไม่
-    dict_arg = next((arg for arg in args if isinstance(arg, dict)), None)
-    
-    if dict_arg:
-        # กรณีส่ง inputs มาเป็น Dictionary ตามปกติ
-        c1 = dict_arg.get('c1', 0.5) * 100.0
-        c2 = dict_arg.get('c2', 0.5) * 100.0
-        col_loc = dict_arg.get('col_loc', 'Interior')
-        h_slab = dict_arg.get('h_slab_cm', 20.0)
-    else:
-        # กรณีส่งตัวแปรแยกมา 4 ตัว (ข้อความ 1, ตัวเลข 3)
-        strings = [arg for arg in args if isinstance(arg, str)]
-        numbers = [arg for arg in args if isinstance(arg, (int, float))]
-        
-        if strings:
-            col_loc = strings[0] # ดึงประเภทเสา (Interior, Edge, Corner)
-            
-        if len(numbers) >= 3:
-            # ดึงค่า c1, c2, h_slab (ถ้าค่าน้อยกว่า 10 แสดงว่าเป็นหน่วยเมตร ให้คูณ 100)
-            c1 = numbers[0] * 100.0 if numbers[0] < 10 else numbers[0]
-            c2 = numbers[1] * 100.0 if numbers[1] < 10 else numbers[1]
-            h_slab = numbers[2] * 100.0 if numbers[2] < 10 else numbers[2]
-            
-    # --- 2. คำนวณและวาดรูป ---
-    d = h_slab - 3.0 - 0.6  # ประมาณค่า Effective depth (cm)
-    col_color = '#334155'
-    crit_color = '#ef4444'
-    
-    if col_loc.lower() == 'corner':
-        # เสามุม
-        ax.add_patch(patches.Rectangle((0, 0), c1, c2, fill=True, color=col_color))
-        b1, b2 = c1 + d/2.0, c2 + d/2.0
-        ax.plot([b1, b1], [0, b2], color=crit_color, ls='--', lw=2.5)
-        ax.plot([0, b1], [b2, b2], color=crit_color, ls='--', lw=2.5)
-        ax.set_xlim(-20, b1 + 50)
-        ax.set_ylim(-20, b2 + 50)
-        
-    elif col_loc.lower() == 'edge':
-        # เสาขอบ
-        ax.add_patch(patches.Rectangle((0, -c2/2.0), c1, c2, fill=True, color=col_color))
-        b1, b2 = c1 + d/2.0, c2 + d
-        ax.plot([b1, b1], [-b2/2.0, b2/2.0], color=crit_color, ls='--', lw=2.5)
-        ax.plot([0, b1], [b2/2.0, b2/2.0], color=crit_color, ls='--', lw=2.5)
-        ax.plot([0, b1], [-b2/2.0, -b2/2.0], color=crit_color, ls='--', lw=2.5)
-        ax.set_xlim(-20, b1 + 50)
-        ax.set_ylim(-b2/2.0 - 50, b2/2.0 + 50)
-        
-    else: 
-        # เสากลาง (Interior)
-        ax.add_patch(patches.Rectangle((-c1/2.0, -c2/2.0), c1, c2, fill=True, color=col_color))
-        b1, b2 = c1 + d, c2 + d
-        ax.add_patch(patches.Rectangle((-b1/2.0, -b2/2.0), b1, b2, fill=False, edgecolor=crit_color, ls='--', lw=2.5))
-        ax.set_xlim(-b1/2.0 - 50, b1/2.0 + 50)
-        ax.set_ylim(-b2/2.0 - 50, b2/2.0 + 50)
-        
-        # ลากเส้นบอกระยะบวกข้อความ (เฉพาะเสากลาง)
-        ax.annotate('', xy=(-c1/2, 0), xytext=(c1/2, 0), arrowprops=dict(arrowstyle='<->', color='white'))
-        ax.text(0, 0, f'c1', color='white', ha='center', va='center', fontweight='bold')
-        ax.text(-b1/2, b2/2 + 5, f'b1 = {b1:.1f} cm', color=crit_color, fontweight='bold')
-        ax.text(b1/2 + 5, 0, f'b2\n=\n{b2:.1f}\ncm', color=crit_color, fontweight='bold', va='center')
 
-    # --- 3. ตกแต่งกราฟ ---
-    ax.set_title(f"Punching Shear Critical Section - {col_loc.capitalize()} Column", fontsize=13, fontweight='bold', pad=15)
+# ==========================================
+# 3. วาดรูป Punching Shear Perimeter
+# ==========================================
+def draw_punching_plan(col_loc, c1_cm, c2_cm, d_cm):
+    fig, ax = plt.subplots(figsize=(5, 5))
+    
+    c1 = c1_cm / 100.0
+    c2 = c2_cm / 100.0
+    d = d_cm / 100.0
+    
+    # กำหนดตำแหน่งเสาและระยะวิกฤตตามประเภทของเสา
+    if col_loc == "Interior":
+        cx, cy = 0, 0
+        b1, b2 = c1 + d, c2 + d
+        ax.add_patch(patches.Rectangle((-c1/2, -c2/2), c1, c2, fill=True, color='#475569'))
+        ax.add_patch(patches.Rectangle((-b1/2, -b2/2), b1, b2, fill=False, edgecolor='#ef4444', lw=2, linestyle='--'))
+        
+        # Labels
+        ax.text(0, 0, 'Col', color='white', ha='center', va='center', fontweight='bold')
+        ax.annotate('', xy=(-c1/2, c2/2+0.05), xytext=(-b1/2, c2/2+0.05), arrowprops=dict(arrowstyle='<->', color='blue'))
+        ax.text(-(c1/2 + d/4), c2/2+0.1, 'd/2', color='blue', ha='center', fontsize=9)
+        
+        ax.set_xlim(-b1, b1)
+        ax.set_ylim(-b2, b2)
+
+    elif col_loc == "Edge":
+        # เสาอยู่ขอบล่าง (y=0)
+        b1, b2 = c1 + d/2, c2 + d
+        ax.add_patch(patches.Rectangle((-c1/2, 0), c1, c2, fill=True, color='#475569'))
+        # เส้น Perimeter รูปตัว U
+        ax.plot([-b1/2, -b1/2, b1/2, b1/2], [0, b2, b2, 0], color='#ef4444', lw=2, linestyle='--')
+        
+        # พื้นที่ขอบพื้น
+        ax.axhline(0, color='black', lw=2)
+        ax.text(0, -0.1, 'Slab Edge', ha='center', fontweight='bold')
+        
+        ax.set_xlim(-b1, b1)
+        ax.set_ylim(-0.2, b2 + 0.2)
+        
+    elif col_loc == "Corner":
+        # เสาอยู่มุมซ้ายล่าง (0,0)
+        b1, b2 = c1 + d/2, c2 + d/2
+        ax.add_patch(patches.Rectangle((0, 0), c1, c2, fill=True, color='#475569'))
+        # เส้น Perimeter รูปตัว L
+        ax.plot([b1, b1, 0], [0, b2, b2], color='#ef4444', lw=2, linestyle='--')
+        
+        # พื้นที่ขอบพื้น
+        ax.axvline(0, color='black', lw=2)
+        ax.axhline(0, color='black', lw=2)
+        ax.text(c1/2, -0.1, 'Edge', ha='center', fontweight='bold')
+        ax.text(-0.1, c2/2, 'Edge', va='center', rotation=90, fontweight='bold')
+        
+        ax.set_xlim(-0.2, b1 + 0.2)
+        ax.set_ylim(-0.2, b2 + 0.2)
+    
+    # Title & Legend
+    ax.plot([], [], color='#ef4444', linestyle='--', lw=2, label='Critical Perimeter (bo)')
+    ax.legend(loc='upper right', fontsize=8)
+    
     ax.set_aspect('equal')
     ax.axis('off')
+    ax.set_title(f"Punching Shear Perimeter ({col_loc})", fontweight='bold')
     
-    ax.plot([], [], color=col_color, lw=5, label='Column Dimension (c1 x c2)')
-    ax.plot([], [], color=crit_color, ls='--', lw=2.5, label='Critical Perimeter (bo) at d/2')
-    ax.legend(loc='lower center', bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=1)
-    
-    fig.tight_layout()
+    plt.tight_layout()
     return fig
