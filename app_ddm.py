@@ -299,26 +299,31 @@ def render_ddm_tab(calc_obj):
                     x_c, y_c = 3.0, 1.75 
                     x0, y0 = x_c - viz_Lx/2, y_c - viz_Ly/2
                     
-                    # วาดพื้น
+                    # 1. วาดพื้น (ใช้ viz_Lx, viz_Ly)
                     ax_plan.add_patch(patches.Rectangle((x0, y0), viz_Lx, viz_Ly, fill=True, facecolor='#f8fafc', edgecolor='#1e293b', lw=2))
                     
-                    # วาดพื้น
-                    ax_plan.add_patch(patches.Rectangle((x0, y0), viz_L1, viz_L2, fill=True, facecolor='#f8fafc', edgecolor='#1e293b', lw=2))
-                    
-                    # วาดเสา
+                    # 2. วาดเสา (ขยับตาม viz_Lx, viz_Ly)
                     col_w = 0.25
-                    for x in [x0, x0 + viz_L1]:
-                        for y in [y0, y0 + viz_L2]:
+                    for x in [x0, x0 + viz_Lx]:
+                        for y in [y0, y0 + viz_Ly]:
                             ax_plan.add_patch(patches.Rectangle((x-col_w/2, y-col_w/2), col_w, col_w, fill=True, color='#334155', zorder=3))
                             ax_plan.add_patch(patches.Rectangle((x-col_w/2, y-col_w/2), col_w, col_w, fill=False, edgecolor='#94a3b8', hatch='///', lw=0.5, zorder=4))
                     
-                    # แกน L1 (Analysis Direction) - สีน้ำเงิน
-                    ax_plan.annotate('', xy=(x0, y0-0.3), xytext=(x0+viz_L1, y0-0.3), arrowprops=dict(arrowstyle='<->', color='#2563eb', lw=2))
-                    ax_plan.text(x_c, y0-0.5, f'L1 (Analysis Dir.) = {L1:.2f} m', ha='center', color='#2563eb', fontweight='bold', fontsize=9)
-                    
-                    # แกน L2 (Transverse Direction) - สีเขียว
-                    ax_plan.annotate('', xy=(x0-0.3, y0), xytext=(x0-0.3, y0+viz_L2), arrowprops=dict(arrowstyle='<->', color='#16a34a', lw=2))
-                    ax_plan.text(x0-0.45, y_c, f'L2 (Transverse) = {L2:.2f} m', va='center', rotation=90, color='#16a34a', fontweight='bold', fontsize=9)
+                    # 3. วาดเส้นบอกระยะแกน (สลับสีและข้อความตามแกนที่วิเคราะห์)
+                    if analysis_dir == 'x-axis':
+                        # วิเคราะห์แกน X: L1 อยู่แนวนอน(น้ำเงิน), L2 อยู่แนวตั้ง(เขียว)
+                        ax_plan.annotate('', xy=(x0, y0-0.3), xytext=(x0+viz_Lx, y0-0.3), arrowprops=dict(arrowstyle='<->', color='#2563eb', lw=2))
+                        ax_plan.text(x_c, y0-0.5, f'L1 (Analysis Dir.) = {L1:.2f} m', ha='center', color='#2563eb', fontweight='bold', fontsize=9)
+                        
+                        ax_plan.annotate('', xy=(x0-0.3, y0), xytext=(x0-0.3, y0+viz_Ly), arrowprops=dict(arrowstyle='<->', color='#16a34a', lw=2))
+                        ax_plan.text(x0-0.45, y_c, f'L2 (Transverse) = {L2:.2f} m', va='center', rotation=90, color='#16a34a', fontweight='bold', fontsize=9)
+                    else:
+                        # วิเคราะห์แกน Y: L1 อยู่แนวตั้ง(น้ำเงิน), L2 อยู่แนวนอน(เขียว)
+                        ax_plan.annotate('', xy=(x0-0.3, y0), xytext=(x0-0.3, y0+viz_Ly), arrowprops=dict(arrowstyle='<->', color='#2563eb', lw=2))
+                        ax_plan.text(x0-0.45, y_c, f'L1 (Analysis Dir.) = {L1:.2f} m', va='center', rotation=90, color='#2563eb', fontweight='bold', fontsize=9)
+                        
+                        ax_plan.annotate('', xy=(x0, y0-0.3), xytext=(x0+viz_Lx, y0-0.3), arrowprops=dict(arrowstyle='<->', color='#16a34a', lw=2))
+                        ax_plan.text(x_c, y0-0.5, f'L2 (Transverse) = {L2:.2f} m', ha='center', color='#16a34a', fontweight='bold', fontsize=9)
                     
                     ax_plan.set_xlim(0, 6); ax_plan.set_ylim(0, 3.5); ax_plan.axis('off')
                     st.pyplot(fig_plan)
@@ -332,7 +337,7 @@ def render_ddm_tab(calc_obj):
                         st.success(f"**PASS:** Aspect ratio ≤ 2.0 (Two-way action).")
                     else:
                         st.error(f"**FAIL:** Ratio > 2.0 (One-way behavior, EFM Req).")
-
+               
             with col_calc2:
                 with st.container(border=True):
                     st.markdown("**4. Gravity Load Ratio**")
