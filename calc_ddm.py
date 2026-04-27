@@ -26,20 +26,35 @@ def calculate_ddm(inputs):
     results = []
     messages = []
     details = {}
-    
     # ==========================================
     # --- 1. Unpack Inputs ---
     # ==========================================
     try:
-        l1 = float(inputs['l1'])
-        l2 = float(inputs['l2'])
-        ln_actual = float(inputs['ln'])
+        # 🌟 เพิ่มการรับค่าแกนที่ต้องการวิเคราะห์
+        analysis_dir = inputs.get('analysis_dir', 'X-Axis')
+        is_y_axis = "Y-Axis" in analysis_dir or "L2" in analysis_dir
+
+        # ดึงค่าดิบที่กรอกมาจาก UI
+        raw_l1 = float(inputs['l1'])
+        raw_l2 = float(inputs['l2'])
+        raw_c1 = float(inputs['c1']) # ขนาดเสาขนาน l1 (m)
+        raw_c2 = float(inputs['c2']) # ขนาดเสาขนาน l2 (m)
+
+        # 🌟 สลับแกนตามทิศทางวิเคราะห์ (ทิศทางวิเคราะห์ต้องเป็น l1 เสมอ)
+        if is_y_axis:
+            l1, l2 = raw_l2, raw_l1
+            c1, c2 = raw_c2, raw_c1
+        else:
+            l1, l2 = raw_l1, raw_l2
+            c1, c2 = raw_c1, raw_c2
+
+        # คำนวณ Clear span (ln) ใหม่ให้สอดคล้องกับแกนที่ถูกสลับแล้ว
+        ln_actual = l1 - c1
+
         wu = float(inputs['wu'])
         
-        c1 = float(inputs['c1']) # ขนาดเสาขนาน l1 (m)
-        c2 = float(inputs['c2']) # ขนาดเสาขนาน l2 (m)
-        
         h_slab = float(inputs['h_slab']) # cm
+    
         h_drop = float(inputs.get('h_drop', h_slab)) # cm
         has_drop = inputs.get('has_drop', False)
         
