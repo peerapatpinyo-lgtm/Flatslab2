@@ -30,22 +30,23 @@ def get_rebar_text(df, is_col_strip, is_negative):
     except:
         return "N/A"
 
+# --- ใน viz_ddm.py ---
 # ==========================================
 # 1. วาดรูป Plan View (แปลนพื้นแบบ Fixed Axis)
 # ==========================================
-# --- ใน viz_ddm.py ---
 def draw_rebar_plan_view(inputs, edited_df):
-    # 🌟 แก้ไข: ใช้พิมพ์เล็ก 'l1', 'l2' ให้ตรงกับ inputs ใน calc_ddm.py
-    L1 = inputs.get('l1', 5.0) 
-    L2 = inputs.get('l2', 5.0) 
-    c1 = inputs.get('c1', 0.5)
-    c2 = inputs.get('c2', 0.5)
+    # 💡 1. ปรับการรับค่าให้รองรับทั้งพิมพ์เล็ก/ใหญ่ (เผื่อส่ง l1 มาแทน L1)
+    L1 = float(inputs.get('l1', inputs.get('L1', 5.0))) 
+    L2 = float(inputs.get('l2', inputs.get('L2', 5.0))) 
+    c1 = float(inputs.get('c1', 0.5))
+    c2 = float(inputs.get('c2', 0.5))
     
-    analysis_dir = inputs.get('analysis_dir', 'X-Axis')
-    is_y_axis = "Y-Axis" in analysis_dir or "L2" in analysis_dir
+    # 🚨 2. จุดแก้ปัญหาหลัก: ทำให้การเช็กแกน ไม่สนตัวพิมพ์เล็ก/ใหญ่
+    analysis_dir = str(inputs.get('analysis_dir', 'X')).lower()
+    is_y_axis = 'y' in analysis_dir or 'l2' in analysis_dir
     
     fig, ax = plt.subplots(figsize=(9, 7))
-    
+    # ... (ส่วนที่เหลือวาดรูปเหมือนเดิม ปล่อยไว้ได้เลยครับ) ...
     # วาดพื้น (L1 แนวนอน, L2 แนวตั้งเสมอ)
     ax.add_patch(patches.Rectangle((0, 0), L1, L2, fill=True, facecolor='#f8fafc', edgecolor='#94a3b8', lw=2))
     
