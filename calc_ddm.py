@@ -26,27 +26,37 @@ def calculate_ddm(inputs):
     results = []
     messages = []
     details = {}
+    
     # ==========================================
-    # --- 1. Unpack Inputs ---
+    # --- 1. Unpack Inputs (ฉบับแก้ไขให้รองรับสลับแกน) ---
     # ==========================================
     try:
-        # 🌟 เพิ่มการรับค่าแกนที่ต้องการวิเคราะห์
+        # ดึงค่าดิบจาก UI
+        raw_l1 = float(inputs['l1'])
+        raw_l2 = float(inputs['l2'])
+        raw_c1 = float(inputs['c1'])
+        raw_c2 = float(inputs['c2'])
+        
+        # ตรวจสอบแกนที่เลือก
         analysis_dir = inputs.get('analysis_dir', 'X-Axis')
         is_y_axis = "Y-Axis" in analysis_dir or "L2" in analysis_dir
 
-        # ดึงค่าดิบที่กรอกมาจาก UI
-        raw_l1 = float(inputs['l1'])
-        raw_l2 = float(inputs['l2'])
-        raw_c1 = float(inputs['c1']) # ขนาดเสาขนาน l1 (m)
-        raw_c2 = float(inputs['c2']) # ขนาดเสาขนาน l2 (m)
-
-        # 🌟 สลับแกนตามทิศทางวิเคราะห์ (ทิศทางวิเคราะห์ต้องเป็น l1 เสมอ)
+        # 🌟 หัวใจสำคัญ: ถ้าเป็นแกน Y ต้องสลับเอา L2 มาเป็น L1 ในสูตรคำนวณ
         if is_y_axis:
-            l1, l2 = raw_l2, raw_l1
-            c1, c2 = raw_c2, raw_c1
+            l1 = raw_l2   # ช่วงพิจารณา (Span of interest)
+            l2 = raw_l1   # ช่วงตั้งฉาก (Transverse span)
+            c1 = raw_c2   # ขนาดเสาด้านขนานกับช่วงพิจารณา
+            c2 = raw_c1   # ขนาดเสาด้านตั้งฉาก
         else:
-            l1, l2 = raw_l1, raw_l2
-            c1, c2 = raw_c1, raw_c2
+            l1 = raw_l1
+            l2 = raw_l2
+            c1 = raw_c1
+            c2 = raw_c2
+
+        # 🌟 คำนวณ ln ใหม่เสมอ ห้ามดึงจาก inputs['ln'] ตรงๆ เพราะค่าใน UI อาจจะไม่ Update ตามแกน
+        ln_actual = l1 - c1 
+        
+        # ... (ค่าอื่นๆ เหมือนเดิม) ...
 
         # คำนวณ Clear span (ln) ใหม่ให้สอดคล้องกับแกนที่ถูกสลับแล้ว
         ln_actual = l1 - c1
