@@ -785,29 +785,38 @@ def render_ddm_tab(calc_obj):
 
     with tab_viz:
         st.markdown("#### 🎨 Detailed Engineering Drawings")
-        st.markdown("ภาพวาดเพื่อการจัดเหล็ก (Detailing) อ้างอิงตามสัดส่วนและข้อกำหนด ACI 318")
+        st.markdown("Reinforcement detailing drawings based on physical proportions and ACI 318 specifications.")
         
         if 'viz_ddm' in sys.modules or 'viz_ddm' in globals():
-            
-            # --- แถวที่ 1: Top View (Plan) ---
-            st.markdown("##### 1. Reinforcement Plan View (Top View)")
-            fig_plan = viz_ddm.draw_rebar_plan_view(inputs, edited_df)
-            st.pyplot(fig_plan)
-            
-            st.divider()
-            
-            # --- แถวที่ 2: แบ่ง 2 คอลัมน์สำหรับ Section และ Punching ---
-            col_viz1, col_viz2 = st.columns(2)
-            
-            with col_viz1:
-                st.markdown("##### 2. Cross-Section Details")
-                fig_sec = viz_ddm.draw_slab_section_with_rebar(inputs, edited_df)
-                st.pyplot(fig_sec)
+            try:
+                # --- Row 1: Reinforcement Plan View ---
+                st.markdown("##### 1. Reinforcement Plan View (Top View)")
+                if edited_df is not None and not edited_df.empty:
+                    fig_plan = viz_ddm.draw_rebar_plan_view(inputs, edited_df)
+                    st.pyplot(fig_plan)
+                else:
+                    st.warning("⚠️ No reinforcement data available to generate the plan view.")
                 
-            with col_viz2:
-                st.markdown(f"##### 3. Punching Perimeter ({col_loc})")
-                fig_punch = viz_ddm.draw_punching_plan(col_loc, c1_cm, c2_cm, d_shear_cm)
-                st.pyplot(fig_punch)
+                st.divider()
+                
+                # --- Row 2: Cross-Section and Punching Shear Details ---
+                col_viz1, col_viz2 = st.columns(2)
+                
+                with col_viz1:
+                    st.markdown("##### 2. Cross-Section Details")
+                    if edited_df is not None and not edited_df.empty:
+                        fig_sec = viz_ddm.draw_slab_section_with_rebar(inputs, edited_df)
+                        st.pyplot(fig_sec)
+                    else:
+                        st.warning("⚠️ No reinforcement data available to generate the section details.")
+                        
+                with col_viz2:
+                    st.markdown(f"##### 3. Punching Shear Perimeter ({col_loc} Column)")
+                    fig_punch = viz_ddm.draw_punching_plan(col_loc, c1_cm, c2_cm, d_shear_cm)
+                    st.pyplot(fig_punch)
+                    
+            except Exception as e:
+                st.error(f"🚨 An error occurred while generating the drawings: {e}")
                 
         else:
-            st.error("ไม่สามารถโหลดระบบวาดภาพได้ กรุณาตรวจสอบไฟล์ `viz_ddm.py`")
+            st.error("❌ Unable to load the visualization module. Please ensure `viz_ddm.py` is correctly imported.")
