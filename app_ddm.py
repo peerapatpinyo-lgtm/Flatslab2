@@ -181,7 +181,7 @@ def render_ddm_tab(calc_obj):
                 "Bar Size (mm)": st.column_config.SelectboxColumn("Bar Size (mm)", options=[10, 12, 16, 20, 25]),
                 "Spacing (cm)": st.column_config.NumberColumn("Spacing (cm)", min_value=2.5, max_value=45.0, step=2.5),
             },
-            use_container_width=True, hide_index=True, key="rebar_editor"
+            width="stretch", hide_index=True, key="rebar_editor"
         )
 
         def compute_results(row, original_df):
@@ -211,7 +211,7 @@ def render_ddm_tab(calc_obj):
         styled_df = edited_df[display_cols].style.map(highlight_status, subset=['Status']).format({
             'As Req (cm2)': "{:.2f}", 'Prov. Area (cm2)': "{:.2f}", 'Max Spacing (cm)': "{:.1f}"
         })
-        st.dataframe(styled_df, use_container_width=True, hide_index=True)
+        st.dataframe(styled_df, width="stretch", hide_index=True)
         
     # ==========================================================================
     # STEP 5: COMPREHENSIVE CALCULATION NOTE (ACI 318)
@@ -433,7 +433,6 @@ def render_ddm_tab(calc_obj):
         }
         st.table(pd.DataFrame(trans_data))
         st.info("*Note: The system backend (`calc_ddm.py`) automatically interpolates exact percentages dynamically based on actual span ratios ($L_2/L_1$) and torsional stiffness per ACI 318.*")
-
 
     # --- TAB 4: Flexural Design (ALL SECTIONS) ---
     with tab_flex:
