@@ -32,7 +32,7 @@ def get_rebar_text(df, is_col_strip, is_negative):
 
 # --- ใน viz_ddm.py ---
 # ==========================================
-# 1. วาดรูป Plan View (Professional Dynamic Coordinates)
+# 1. วาดรูป Plan View (Professional Dynamic Coordinates - Fixed Edge/Corner)
 # ==========================================
 def draw_rebar_plan_view(inputs, edited_df):
     # ดึงค่าพารามิเตอร์พื้นฐาน
@@ -41,38 +41,35 @@ def draw_rebar_plan_view(inputs, edited_df):
     c1 = float(inputs.get('c1', 0.5))
     c2 = float(inputs.get('c2', 0.5))
     
-    # 📌 ดึงประเภทของเสา (ถ้าไม่มีใน inputs จะสมมติเป็น Interior)
     col_loc = str(inputs.get('col_loc', inputs.get('column_location', 'Interior'))).strip().title()
-    
     analysis_dir = str(inputs.get('analysis_dir', 'X')).lower()
     is_y_axis = 'y' in analysis_dir or 'l2' in analysis_dir
     
-    fig, ax = plt.subplots(figsize=(9, 7))
+    fig, ax = plt.subplots(figsize=(10, 8))
     
     # ----------------------------------------------------
-    # 🌟 1. ตั้งค่า Bounding Box (ให้ 0,0 อยู่ที่กึ่งกลางเสา)
+    # 🌟 1. Bounding Box (เสาอยู่ 0,0 เสมอ)
     # ----------------------------------------------------
     x_min, x_max = -L1/2.0, L1/2.0
     y_min, y_max = -L2/2.0, L2/2.0
     
+    # กำหนดสมมติฐาน Edge: ถ้าวิเคราะห์ X ขอบแผ่นพื้นจะขาดที่แนวตั้ง (ซ้าย), ถ้าวิเคราะห์ Y ขอบจะขาดที่แนวนอน (ล่าง)
     if col_loc == 'Edge':
-        # สมมติฐาน: ถ้าวิเคราะห์แกน X ให้ขอบเสาเป็นริมซ้าย / แกน Y ให้ขอบเสาเป็นริมล่าง
         if not is_y_axis: 
             x_min = -c1/2.0
         else:
             y_min = -c2/2.0
     elif col_loc == 'Corner':
-        # มุมแผ่นพื้น (ขาดทั้งซ้ายและล่าง)
         x_min = -c1/2.0
         y_min = -c2/2.0
 
     slab_w = x_max - x_min
     slab_h = y_max - y_min
     
-    # วาดแผ่นพื้น
-    ax.add_patch(patches.Rectangle((x_min, y_min), slab_w, slab_h, fill=True, facecolor='#f8fafc', edgecolor='#94a3b8', lw=2))
-    # วาดเสาตรงกลางพิกัด (0,0) เสมอ (สั่ง zorder เพื่อให้อยู่ด้านบนพื้น)
-    ax.add_patch(patches.Rectangle((-c1/2.0, -c2/2.0), c1, c2, fill=True, facecolor='#1e293b', zorder=5))
+    # วาดแผ่นพื้น (zorder=1 ให้อยู่ล่างสุด)
+    ax.add_patch(patches.Rectangle((x_min, y_min), slab_w, slab_h, fill=True, facecolor='#f8fafc', edgecolor='#94a3b8', lw=2, zorder=1))
+    # วาดเสาตรงกลาง (zorder=2)
+    ax.add_patch(patches.Rectangle((-c1/2.0, -c2/2.0), c1, c2, fill=True, facecolor='#1e293b', zorder=2))
     
     # ดึงข้อความเหล็กเสริม
     cs_top = get_rebar_text(edited_df, is_col_strip=True, is_negative=True)
@@ -82,117 +79,118 @@ def draw_rebar_plan_view(inputs, edited_df):
 
     if is_y_axis:
         # ----------------------------------------------------
-        # 🌟 2. Y-Axis Frame (วิเคราะห์แนวตั้ง)
+        # 🌟 2. Y-Axis Frame (วิเคราะห์ตามแนว L2)
         # ----------------------------------------------------
         cs_x_min = max(-L1/4.0, x_min)
         cs_x_max = min(L1/4.0, x_max)
         cs_w = cs_x_max - cs_x_min
         
-        # วาด Column Strip (CS) แนวตั้ง
-        ax.add_patch(patches.Rectangle((cs_x_min, y_min), cs_w, slab_h, fill=True, facecolor='#e2e8f0', alpha=0.6, edgecolor='none'))
-        if cs_x_min > x_min: ax.axvline(cs_x_min, color='#94a3b8', linestyle='-.', lw=1)
-        if cs_x_max < x_max: ax.axvline(cs_x_max, color='#94a3b8', linestyle='-.', lw=1)
+        # วาดแถบ Column Strip (zorder=1.5)
+        ax.add_patch(patches.Rectangle((cs_x_min, y_min), cs_w, slab_h, fill=True, facecolor='#e2e8f0', alpha=0.6, edgecolor='none', zorder=1.5))
+        if cs_x_min > x_min: ax.axvline(cs_x_min, color='#94a3b8', linestyle='-.', lw=1, zorder=1.5)
+        if cs_x_max < x_max: ax.axvline(cs_x_max, color='#94a3b8', linestyle='-.', lw=1, zorder=1.5)
         
         ax.text((cs_x_min + cs_x_max)/2, y_min - 0.2, f'Column Strip\n(W = {cs_w:.2f}m)', va='top', ha='center', color='#334155', fontweight='bold', fontsize=9)
         
-        # พิกัดแนวแกน X สำหรับวางเส้นเหล็กเสริมให้อยู่ตรงกลาง Strip พอดี
         x_top_pos = cs_x_min + cs_w * 0.75
         x_bot_pos = cs_x_min + cs_w * 0.25
         
-        # เหล็กบน CS (พาดผ่านเสา Y = 0)
+        # เหล็ก CS (zorder=3 ให้อยู่บนสุดเสมอ)
         top_y1, top_y2 = max(-L2/4, y_min), min(L2/4, y_max)
-        ax.plot([x_top_pos, x_top_pos], [top_y1, top_y2], color='#ef4444', lw=2.5, linestyle='--')
-        ax.text(x_top_pos + 0.15, 0, f"Top(CS)\n{cs_top}", color='#ef4444', va='center', ha='left', fontweight='bold', fontsize=9, bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
+        ax.plot([x_top_pos, x_top_pos], [top_y1, top_y2], color='#ef4444', lw=2.5, linestyle='--', zorder=3)
+        ax.text(x_top_pos + 0.15, (top_y1+top_y2)/2, f"Top(CS)\n{cs_top}", color='#ef4444', va='center', ha='left', fontweight='bold', fontsize=9, bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
         
-        # เหล็กล่าง CS (พาดใน Span บวก)
-        bot_y1 = y_min + 0.2 if y_max <= c2/2 else c2/2 + 0.2
-        bot_y2 = y_max - 0.2
-        if bot_y1 >= bot_y2: bot_y1, bot_y2 = y_min + 0.1, y_max - 0.1
-        ax.plot([x_bot_pos, x_bot_pos], [bot_y1, bot_y2], color='#3b82f6', lw=2.5)
+        bot_y1, bot_y2 = y_min + 0.15, y_max - 0.15
+        ax.plot([x_bot_pos, x_bot_pos], [bot_y1, bot_y2], color='#3b82f6', lw=2.5, zorder=3)
         ax.text(x_bot_pos - 0.15, (bot_y1+bot_y2)/2, f"Bot(CS)\n{cs_bot}", color='#3b82f6', va='center', ha='right', fontweight='bold', fontsize=9)
         
-        # วาด Middle Strip (MS) ฝั่งขวา หรือ ซ้าย ที่มีพื้นที่เหลือ
+        # เหล็ก MS
         has_ms_right = (x_max - cs_x_max) > 0.1
         has_ms_left = (cs_x_min - x_min) > 0.1
         
-        ms_x_center = None
-        if has_ms_right: ms_x_center = (cs_x_max + x_max)/2
-        elif has_ms_left: ms_x_center = (x_min + cs_x_min)/2
+        ms_x_list = []
+        if has_ms_right: ms_x_list.append((cs_x_max + x_max)/2)
+        if has_ms_left: ms_x_list.append((x_min + cs_x_min)/2)
         
-        if ms_x_center is not None:
-            ax.text(ms_x_center, y_min - 0.2, f'Middle Strip', va='top', ha='center', color='#64748b', fontsize=8)
-            ax.plot([ms_x_center, ms_x_center], [bot_y1, bot_y2], color='#3b82f6', lw=2)
-            ax.text(ms_x_center - 0.1, (bot_y1+bot_y2)/2, f"Bot(MS): {ms_bot}", color='#3b82f6', va='center', ha='right', rotation=90, fontsize=9)
+        for ms_x in ms_x_list:
+            ax.plot([ms_x, ms_x], [bot_y1, bot_y2], color='#3b82f6', lw=2, zorder=3)
+            ax.text(ms_x - 0.1, (bot_y1+bot_y2)/2, f"Bot(MS): {ms_bot}", color='#3b82f6', va='center', ha='right', rotation=90, fontsize=9)
             
-            ax.plot([ms_x_center - 0.3, ms_x_center - 0.3], [top_y1, top_y2], color='#ef4444', lw=2, linestyle='--')
-            ax.text(ms_x_center - 0.4, (top_y1+top_y2)/2, f"Top(MS): {ms_top}", color='#ef4444', va='center', ha='right', rotation=90, fontsize=9)
+            ax.plot([ms_x - 0.3, ms_x - 0.3], [top_y1, top_y2], color='#ef4444', lw=2, linestyle='--', zorder=3)
+            ax.text(ms_x - 0.4, (top_y1+top_y2)/2, f"Top(MS): {ms_top}", color='#ef4444', va='center', ha='right', rotation=90, fontsize=9)
 
-        axis_title = "Y-Axis Frame (Analysis along L2)"
+        axis_title = "Y-Axis Frame"
         
     else:
         # ----------------------------------------------------
-        # 🌟 3. X-Axis Frame (วิเคราะห์แนวนอน)
+        # 🌟 3. X-Axis Frame (วิเคราะห์ตามแนว L1)
         # ----------------------------------------------------
         cs_y_min = max(-L2/4.0, y_min)
         cs_y_max = min(L2/4.0, y_max)
         cs_w = cs_y_max - cs_y_min
         
-        # วาด Column Strip (CS) แนวนอน
-        ax.add_patch(patches.Rectangle((x_min, cs_y_min), slab_w, cs_w, fill=True, facecolor='#e2e8f0', alpha=0.6, edgecolor='none'))
-        if cs_y_min > y_min: ax.axhline(cs_y_min, color='#94a3b8', linestyle='-.', lw=1)
-        if cs_y_max < y_max: ax.axhline(cs_y_max, color='#94a3b8', linestyle='-.', lw=1)
+        # วาดแถบ Column Strip
+        ax.add_patch(patches.Rectangle((x_min, cs_y_min), slab_w, cs_w, fill=True, facecolor='#e2e8f0', alpha=0.6, edgecolor='none', zorder=1.5))
+        if cs_y_min > y_min: ax.axhline(cs_y_min, color='#94a3b8', linestyle='-.', lw=1, zorder=1.5)
+        if cs_y_max < y_max: ax.axhline(cs_y_max, color='#94a3b8', linestyle='-.', lw=1, zorder=1.5)
         
         ax.text(x_min - 0.2, (cs_y_min + cs_y_max)/2, f'Column Strip\n(W = {cs_w:.2f}m)', rotation=90, va='center', ha='right', color='#334155', fontweight='bold', fontsize=9)
         
-        # พิกัดแนวยืนสำหรับวางเส้นเหล็กเสริม
         y_top_pos = cs_y_min + cs_w * 0.75
         y_bot_pos = cs_y_min + cs_w * 0.25
         
-        # เหล็กบน CS (พาดผ่านเสา X = 0)
+        # เหล็ก CS
         top_x1, top_x2 = max(-L1/4, x_min), min(L1/4, x_max)
-        ax.plot([top_x1, top_x2], [y_top_pos, y_top_pos], color='#ef4444', lw=2.5, linestyle='--')
-        ax.text(0, y_top_pos + 0.15, f"Top(CS): {cs_top}", color='#ef4444', ha='center', va='bottom', fontweight='bold', fontsize=9, bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
+        ax.plot([top_x1, top_x2], [y_top_pos, y_top_pos], color='#ef4444', lw=2.5, linestyle='--', zorder=3)
+        ax.text((top_x1+top_x2)/2, y_top_pos + 0.15, f"Top(CS): {cs_top}", color='#ef4444', ha='center', va='bottom', fontweight='bold', fontsize=9, bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
         
-        # เหล็กล่าง CS (พาดใน Span บวก)
-        bot_x1 = x_min + 0.2 if x_max <= c1/2 else c1/2 + 0.2
-        bot_x2 = x_max - 0.2
-        if bot_x1 >= bot_x2: bot_x1, bot_x2 = x_min + 0.1, x_max - 0.1
-        ax.plot([bot_x1, bot_x2], [y_bot_pos, y_bot_pos], color='#3b82f6', lw=2.5)
+        bot_x1, bot_x2 = x_min + 0.15, x_max - 0.15
+        ax.plot([bot_x1, bot_x2], [y_bot_pos, y_bot_pos], color='#3b82f6', lw=2.5, zorder=3)
         ax.text((bot_x1+bot_x2)/2, y_bot_pos - 0.15, f"Bot(CS): {cs_bot}", color='#3b82f6', ha='center', va='top', fontweight='bold', fontsize=9)
         
-        # วาด Middle Strip (MS)
+        # เหล็ก MS
         has_ms_top = (y_max - cs_y_max) > 0.1
         has_ms_bot = (cs_y_min - y_min) > 0.1
         
-        ms_y_center = None
-        if has_ms_top: ms_y_center = (cs_y_max + y_max)/2
-        elif has_ms_bot: ms_y_center = (y_min + cs_y_min)/2
+        ms_y_list = []
+        if has_ms_top: ms_y_list.append((cs_y_max + y_max)/2)
+        if has_ms_bot: ms_y_list.append((y_min + cs_y_min)/2)
         
-        if ms_y_center is not None:
-            ax.text(x_min - 0.2, ms_y_center, f'Middle Strip', rotation=90, va='center', ha='right', color='#64748b', fontsize=8)
-            ax.plot([bot_x1, bot_x2], [ms_y_center, ms_y_center], color='#3b82f6', lw=2)
-            ax.text((bot_x1+bot_x2)/2, ms_y_center - 0.15, f"Bot(MS): {ms_bot}", color='#3b82f6', ha='center', va='top', fontsize=9)
+        for ms_y in ms_y_list:
+            ax.plot([bot_x1, bot_x2], [ms_y, ms_y], color='#3b82f6', lw=2, zorder=3)
+            ax.text((bot_x1+bot_x2)/2, ms_y - 0.15, f"Bot(MS): {ms_bot}", color='#3b82f6', ha='center', va='top', fontsize=9)
             
-            ax.plot([top_x1, top_x2], [ms_y_center + 0.3, ms_y_center + 0.3], color='#ef4444', lw=2, linestyle='--')
-            ax.text(0, ms_y_center + 0.45, f"Top(MS): {ms_top}", color='#ef4444', ha='center', va='bottom', fontsize=9)
+            ax.plot([top_x1, top_x2], [ms_y + 0.3, ms_y + 0.3], color='#ef4444', lw=2, linestyle='--', zorder=3)
+            ax.text((top_x1+top_x2)/2, ms_y + 0.45, f"Top(MS): {ms_top}", color='#ef4444', ha='center', va='bottom', fontsize=9)
 
-        axis_title = "X-Axis Frame (Analysis along L1)"
+        axis_title = "X-Axis Frame"
 
     # ----------------------------------------------------
-    # 🌟 4. เส้นบอกระยะ Dimension (อิงตามขอบเขตแผ่นพื้นจริง)
+    # 🌟 4. ระบบ Dimension แยกซ้าย-ขวาจากศูนย์กลางเสา
     # ----------------------------------------------------
-    ax.annotate('', xy=(x_min, y_max + 0.4), xytext=(x_max, y_max + 0.4), arrowprops=dict(arrowstyle='<|-|>', color='black'))
-    ax.text(0, y_max + 0.55, f"L1 = {slab_w:.2f} m", ha='center', fontweight='bold')
+    dim_y = y_max + 0.4
+    if abs(x_min) > 0.01:
+        ax.annotate('', xy=(x_min, dim_y), xytext=(0, dim_y), arrowprops=dict(arrowstyle='<|-|>', color='black'))
+        ax.text(x_min/2, dim_y + 0.15, f"{abs(x_min):.2f} m", ha='center', fontweight='bold', fontsize=9)
+    if abs(x_max) > 0.01:
+        ax.annotate('', xy=(0, dim_y), xytext=(x_max, dim_y), arrowprops=dict(arrowstyle='<|-|>', color='black'))
+        ax.text(x_max/2, dim_y + 0.15, f"{x_max:.2f} m", ha='center', fontweight='bold', fontsize=9)
+        
+    dim_x = x_max + 0.4
+    if abs(y_min) > 0.01:
+        ax.annotate('', xy=(dim_x, y_min), xytext=(dim_x, 0), arrowprops=dict(arrowstyle='<|-|>', color='black'))
+        ax.text(dim_x + 0.15, y_min/2, f"{abs(y_min):.2f} m", va='center', rotation=270, fontweight='bold', fontsize=9)
+    if abs(y_max) > 0.01:
+        ax.annotate('', xy=(dim_x, 0), xytext=(dim_x, y_max), arrowprops=dict(arrowstyle='<|-|>', color='black'))
+        ax.text(dim_x + 0.15, y_max/2, f"{y_max:.2f} m", va='center', rotation=270, fontweight='bold', fontsize=9)
     
-    ax.annotate('', xy=(x_max + 0.4, y_min), xytext=(x_max + 0.4, y_max), arrowprops=dict(arrowstyle='<|-|>', color='black'))
-    ax.text(x_max + 0.55, 0, f"L2 = {slab_h:.2f} m", va='center', rotation=270, fontweight='bold')
-    
-    # ซูมมุมกล้องให้กระชับพอดี
-    ax.set_xlim(x_min - 1.0, x_max + 1.0)
-    ax.set_ylim(y_min - 1.0, y_max + 1.0)
+    # ปรับแต่งมุมมองให้พอดี
+    padding = 1.0
+    ax.set_xlim(x_min - padding, x_max + padding)
+    ax.set_ylim(y_min - padding, y_max + padding)
     ax.set_aspect('equal')
     ax.axis('off')
-    ax.set_title(f"Plan View: {axis_title} ({col_loc})", pad=20, fontweight='bold', fontsize=12)
+    ax.set_title(f"Plan View: {axis_title} ({col_loc} Column)", pad=30, fontweight='bold', fontsize=12)
     
     plt.tight_layout()
     return fig
