@@ -434,9 +434,28 @@ def render_ddm_tab(calc_obj):
         st.table(pd.DataFrame(trans_data))
         st.info("*Note: The system backend (`calc_ddm.py`) automatically interpolates exact percentages dynamically based on actual span ratios ($L_2/L_1$) and torsional stiffness per ACI 318.*")
 
+
     # --- TAB 4: Flexural Design (ALL SECTIONS) ---
     with tab_flex:
-        st.markdown("#### ACI 318 Section 22.2: Flexural Reinforcement Required")
+        # ==========================================
+        # --- 🟢 เพิ่มระบบตรวจสอบทิศทางเพื่อสลับแกน ---
+        # ==========================================
+        analysis_dir = inputs.get('analysis_dir', 'X-Axis')
+        is_y_axis = "Y-Axis" in analysis_dir or "L2" in analysis_dir
+
+        if is_y_axis:
+            # วิเคราะห์แกน Y (ขนาน L2)
+            span_L, trans_L = L2, L1
+            span_label, trans_label = "L_2", "L_1"
+            rebar_dir_text = "เหล็กหลักขนานแนวแกน Y (L2)"
+        else:
+            # วิเคราะห์แกน X (ขนาน L1)
+            span_L, trans_L = L1, L2
+            span_label, trans_label = "L_1", "L_2"
+            rebar_dir_text = "เหล็กหลักขนานแนวแกน X (L1)"
+
+        st.markdown(f"#### ACI 318 Section 22.2: Flexural Reinforcement Required")
+        st.markdown(f"**ทิศทางการออกแบบปัจจุบัน:** {rebar_dir_text}")
         st.markdown("Calculations for **every strip** based on the equivalent rectangular concrete stress block. ($\\phi = 0.90$)")
         
         st.info("💡 **Concept:** $M_u = M_o \\times \\text{Longitudinal Factor} \\times \\text{Transverse Factor}$")
@@ -525,10 +544,12 @@ def render_ddm_tab(calc_obj):
                 
                 if is_col_strip:
                     st.markdown("- **Strip Width ($b$):** Based on **Column Strip** geometry")
+                    # Column Strip กว้าง min(0.5*L1, 0.5*L2) เสมอ (ตามหลัก ACI) ดังนั้นไม่ต้องสลับสูตรนี้
                     st.markdown(f"$$ b = \\min(0.5 L_1, 0.5 L_2) = \\min(0.5 \\times {L1:.2f}, 0.5 \\times {L2:.2f}) = {b_width_m:.2f} \\text{{ m}} = {b_width_cm:.1f} \\text{{ cm}} $$")
                 else:
                     st.markdown("- **Strip Width ($b$):** Based on **Middle Strip** geometry")
-                    st.markdown(f"$$ b = L_2 - b_{{cs}} = {L2:.2f} - {cs_width:.2f} = {b_width_m:.2f} \\text{{ m}} = {b_width_cm:.1f} \\text{{ cm}} $$")
+                    # 🟢 Middle Strip จะใช้ความกว้างขวาง (Transverse) หักด้วยความกว้าง Column Strip
+                    st.markdown(f"$$ b = {trans_label} - b_{{cs}} = {trans_L:.2f} - {cs_width:.2f} = {b_width_m:.2f} \\text{{ m}} = {b_width_cm:.1f} \\text{{ cm}} $$")
                     
                 st.markdown("- **Effective Depth ($d$):**")
                 st.markdown(f"$$ d = h_{{slab}} - \\text{{Cover}} - \\frac{{d_b}}{{2}} = {h_slab_m*100:.1f} - {cc_m*100:.1f} - \\frac{{{selected_rebar/10:.1f}}}{{2}} = {d_eff_cm:.2f} \\text{{ cm}} $$")
@@ -555,6 +576,7 @@ def render_ddm_tab(calc_obj):
                 st.success(f"**Conclusion:** $A_{{s,prov}} \\ge A_{{s,req}} \\implies {as_prov:.2f} \\ge {as_req_final:.2f}$ ➡️ **{check_status}**")
                 
                 st.markdown("---")
+    
 
 
     # --- TAB 5: Shear Design (Two-Way and One-Way) ---
