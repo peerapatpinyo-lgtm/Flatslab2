@@ -382,6 +382,9 @@ with tab3:
 
         # สร้างตัวโคลนของ calc_obj เพื่อไม่ให้กระทบ Physical Model ใน Tab อื่น
         ddm_calc_obj = copy.deepcopy(calc_obj)
+
+        ddm_calc_obj['analysis_dir'] = analysis_dir
+        ddm_calc_obj['geom']['analysis_dir'] = analysis_dir
         
         # โลจิกสลับแกน: ถ้าเลือก Y-Axis ให้เอาค่าแกน Y มาสวมทับแกน X ของ DDM
         if "Y-Axis" in analysis_dir:
