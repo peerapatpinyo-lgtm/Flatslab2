@@ -133,5 +133,81 @@ def draw_slab_section_with_rebar(inputs, df_design=None):
     
     plt.tight_layout()
     return fig
+def draw_punching_plan(inputs):
+    """
+    Generates a Plan View of the Punching Shear Critical Section.
+    """
+    fig, ax = plt.subplots(figsize=(6, 6))
+    
+    # 1. ดึงข้อมูลจาก inputs
+    c1 = inputs.get('c1', 0.5) * 100.0  # แปลงเป็น cm
+    c2 = inputs.get('c2', 0.5) * 100.0  # แปลงเป็น cm
+    col_loc = inputs.get('col_loc', 'Interior')
+    h_slab = inputs.get('h_slab_cm', 20.0)
+    
+    # ประมาณการค่า Effective Depth (d) (หัก Covering และครึ่งหนึ่งของเหล็ก)
+    d = h_slab - 3.0 - 0.6  # สมมติ covering 3cm, เหล็ก 12mm
+    
+    col_color = '#334155'
+    crit_color = '#ef4444'
+    
+    # 2. วาดรูปตามตำแหน่งเสา (Interior, Edge, Corner)
+    if col_loc == 'Corner':
+        # เสามุม
+        ax.add_patch(patches.Rectangle((0, 0), c1, c2, fill=True, color=col_color))
+        b1 = c1 + d/2.0
+        b2 = c2 + d/2.0
+        
+        # เส้น Critical Section (d/2)
+        ax.plot([b1, b1], [0, b2], color=crit_color, ls='--', lw=2.5)
+        ax.plot([0, b1], [b2, b2], color=crit_color, ls='--', lw=2.5)
+        
+        ax.set_xlim(-20, b1 + 50)
+        ax.set_ylim(-20, b2 + 50)
+        
+    elif col_loc == 'Edge':
+        # เสาขอบ
+        ax.add_patch(patches.Rectangle((0, -c2/2.0), c1, c2, fill=True, color=col_color))
+        b1 = c1 + d/2.0
+        b2 = c2 + d
+        
+        # เส้น Critical Section (d/2)
+        ax.plot([b1, b1], [-b2/2.0, b2/2.0], color=crit_color, ls='--', lw=2.5)
+        ax.plot([0, b1], [b2/2.0, b2/2.0], color=crit_color, ls='--', lw=2.5)
+        ax.plot([0, b1], [-b2/2.0, -b2/2.0], color=crit_color, ls='--', lw=2.5)
+        
+        ax.set_xlim(-20, b1 + 50)
+        ax.set_ylim(-b2/2.0 - 50, b2/2.0 + 50)
+        
+    else: 
+        # เสากลาง (Interior)
+        ax.add_patch(patches.Rectangle((-c1/2.0, -c2/2.0), c1, c2, fill=True, color=col_color))
+        b1 = c1 + d
+        b2 = c2 + d
+        
+        # เส้น Critical Section (d/2 รอบทิศ)
+        ax.add_patch(patches.Rectangle((-b1/2.0, -b2/2.0), b1, b2, fill=False, edgecolor=crit_color, ls='--', lw=2.5))
+        
+        ax.set_xlim(-b1/2.0 - 50, b1/2.0 + 50)
+        ax.set_ylim(-b2/2.0 - 50, b2/2.0 + 50)
+        
+        # ลากเส้นบอกระยะบวกข้อความ (สำหรับเสากลาง)
+        ax.annotate('', xy=(-c1/2, 0), xytext=(c1/2, 0), arrowprops=dict(arrowstyle='<->', color='white'))
+        ax.text(0, 0, f'c1', color='white', ha='center', va='center', fontweight='bold')
+        ax.text(-b1/2, b2/2 + 5, f'b1 = {b1:.1f} cm', color=crit_color, fontweight='bold')
+        ax.text(b1/2 + 5, 0, f'b2\n=\n{b2:.1f}\ncm', color=crit_color, fontweight='bold', va='center')
+
+    # 3. ตกแต่งกราฟ
+    ax.set_title(f"Punching Shear Critical Section - {col_loc} Column", fontsize=13, fontweight='bold', pad=15)
+    ax.set_aspect('equal')
+    ax.axis('off')
+    
+    # เพิ่ม Legend อธิบายสี
+    ax.plot([], [], color=col_color, lw=5, label='Column Dimension (c1 x c2)')
+    ax.plot([], [], color=crit_color, ls='--', lw=2.5, label='Critical Perimeter (bo) at d/2')
+    ax.legend(loc='lower center', bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=1)
+    
+    fig.tight_layout()
+    return fig
     
     return fig
