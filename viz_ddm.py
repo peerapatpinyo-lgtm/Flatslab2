@@ -133,9 +133,11 @@ def draw_slab_section_with_rebar(inputs, df_design=None):
     
     plt.tight_layout()
     return fig
-def draw_punching_plan(inputs):
+
+def draw_punching_plan(inputs, *args, **kwargs):
     """
     Generates a Plan View of the Punching Shear Critical Section.
+    Uses *args and **kwargs to safely absorb any additional arguments passed by the main app.
     """
     fig, ax = plt.subplots(figsize=(6, 6))
     
@@ -208,6 +210,4 @@ def draw_punching_plan(inputs):
     ax.legend(loc='lower center', bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=1)
     
     fig.tight_layout()
-    return fig
-    
     return fig
