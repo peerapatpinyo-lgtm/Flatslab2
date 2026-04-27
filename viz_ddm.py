@@ -133,78 +133,89 @@ def draw_slab_section_with_rebar(inputs, df_design=None):
     
     plt.tight_layout()
     return fig
-
-def draw_punching_plan(inputs, *args, **kwargs):
+def draw_punching_plan(*args, **kwargs):
     """
     Generates a Plan View of the Punching Shear Critical Section.
-    Uses *args and **kwargs to safely absorb any additional arguments passed by the main app.
+    Bulletproof version: Extracts parameters whether they are passed as a dict, 
+    or as individual positional arguments (e.g., str, float, float, float).
     """
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
+    
     fig, ax = plt.subplots(figsize=(6, 6))
     
-    # 1. ดึงข้อมูลจาก inputs
-    c1 = inputs.get('c1', 0.5) * 100.0  # แปลงเป็น cm
-    c2 = inputs.get('c2', 0.5) * 100.0  # แปลงเป็น cm
-    col_loc = inputs.get('col_loc', 'Interior')
-    h_slab = inputs.get('h_slab_cm', 20.0)
+    # --- 1. ระบบแยกแยะและดึงข้อมูลอัจฉริยะแบบกัน Error ---
+    c1 = 50.0      # ค่าเริ่มต้น (cm)
+    c2 = 50.0      # ค่าเริ่มต้น (cm)
+    col_loc = 'Interior' # ค่าเริ่มต้น
+    h_slab = 20.0  # ค่าเริ่มต้น (cm)
     
-    # ประมาณการค่า Effective Depth (d) (หัก Covering และครึ่งหนึ่งของเหล็ก)
-    d = h_slab - 3.0 - 0.6  # สมมติ covering 3cm, เหล็ก 12mm
+    # เช็คว่ามีการส่ง Dictionary (เช่น inputs) มาหรือไม่
+    dict_arg = next((arg for arg in args if isinstance(arg, dict)), None)
     
+    if dict_arg:
+        # กรณีส่ง inputs มาเป็น Dictionary ตามปกติ
+        c1 = dict_arg.get('c1', 0.5) * 100.0
+        c2 = dict_arg.get('c2', 0.5) * 100.0
+        col_loc = dict_arg.get('col_loc', 'Interior')
+        h_slab = dict_arg.get('h_slab_cm', 20.0)
+    else:
+        # กรณีส่งตัวแปรแยกมา 4 ตัว (ข้อความ 1, ตัวเลข 3)
+        strings = [arg for arg in args if isinstance(arg, str)]
+        numbers = [arg for arg in args if isinstance(arg, (int, float))]
+        
+        if strings:
+            col_loc = strings[0] # ดึงประเภทเสา (Interior, Edge, Corner)
+            
+        if len(numbers) >= 3:
+            # ดึงค่า c1, c2, h_slab (ถ้าค่าน้อยกว่า 10 แสดงว่าเป็นหน่วยเมตร ให้คูณ 100)
+            c1 = numbers[0] * 100.0 if numbers[0] < 10 else numbers[0]
+            c2 = numbers[1] * 100.0 if numbers[1] < 10 else numbers[1]
+            h_slab = numbers[2] * 100.0 if numbers[2] < 10 else numbers[2]
+            
+    # --- 2. คำนวณและวาดรูป ---
+    d = h_slab - 3.0 - 0.6  # ประมาณค่า Effective depth (cm)
     col_color = '#334155'
     crit_color = '#ef4444'
     
-    # 2. วาดรูปตามตำแหน่งเสา (Interior, Edge, Corner)
-    if col_loc == 'Corner':
+    if col_loc.lower() == 'corner':
         # เสามุม
         ax.add_patch(patches.Rectangle((0, 0), c1, c2, fill=True, color=col_color))
-        b1 = c1 + d/2.0
-        b2 = c2 + d/2.0
-        
-        # เส้น Critical Section (d/2)
+        b1, b2 = c1 + d/2.0, c2 + d/2.0
         ax.plot([b1, b1], [0, b2], color=crit_color, ls='--', lw=2.5)
         ax.plot([0, b1], [b2, b2], color=crit_color, ls='--', lw=2.5)
-        
         ax.set_xlim(-20, b1 + 50)
         ax.set_ylim(-20, b2 + 50)
         
-    elif col_loc == 'Edge':
+    elif col_loc.lower() == 'edge':
         # เสาขอบ
         ax.add_patch(patches.Rectangle((0, -c2/2.0), c1, c2, fill=True, color=col_color))
-        b1 = c1 + d/2.0
-        b2 = c2 + d
-        
-        # เส้น Critical Section (d/2)
+        b1, b2 = c1 + d/2.0, c2 + d
         ax.plot([b1, b1], [-b2/2.0, b2/2.0], color=crit_color, ls='--', lw=2.5)
         ax.plot([0, b1], [b2/2.0, b2/2.0], color=crit_color, ls='--', lw=2.5)
         ax.plot([0, b1], [-b2/2.0, -b2/2.0], color=crit_color, ls='--', lw=2.5)
-        
         ax.set_xlim(-20, b1 + 50)
         ax.set_ylim(-b2/2.0 - 50, b2/2.0 + 50)
         
     else: 
         # เสากลาง (Interior)
         ax.add_patch(patches.Rectangle((-c1/2.0, -c2/2.0), c1, c2, fill=True, color=col_color))
-        b1 = c1 + d
-        b2 = c2 + d
-        
-        # เส้น Critical Section (d/2 รอบทิศ)
+        b1, b2 = c1 + d, c2 + d
         ax.add_patch(patches.Rectangle((-b1/2.0, -b2/2.0), b1, b2, fill=False, edgecolor=crit_color, ls='--', lw=2.5))
-        
         ax.set_xlim(-b1/2.0 - 50, b1/2.0 + 50)
         ax.set_ylim(-b2/2.0 - 50, b2/2.0 + 50)
         
-        # ลากเส้นบอกระยะบวกข้อความ (สำหรับเสากลาง)
+        # ลากเส้นบอกระยะบวกข้อความ (เฉพาะเสากลาง)
         ax.annotate('', xy=(-c1/2, 0), xytext=(c1/2, 0), arrowprops=dict(arrowstyle='<->', color='white'))
         ax.text(0, 0, f'c1', color='white', ha='center', va='center', fontweight='bold')
         ax.text(-b1/2, b2/2 + 5, f'b1 = {b1:.1f} cm', color=crit_color, fontweight='bold')
         ax.text(b1/2 + 5, 0, f'b2\n=\n{b2:.1f}\ncm', color=crit_color, fontweight='bold', va='center')
 
-    # 3. ตกแต่งกราฟ
-    ax.set_title(f"Punching Shear Critical Section - {col_loc} Column", fontsize=13, fontweight='bold', pad=15)
+    # --- 3. ตกแต่งกราฟ ---
+    ax.set_title(f"Punching Shear Critical Section - {col_loc.capitalize()} Column", fontsize=13, fontweight='bold', pad=15)
     ax.set_aspect('equal')
     ax.axis('off')
     
-    # เพิ่ม Legend อธิบายสี
     ax.plot([], [], color=col_color, lw=5, label='Column Dimension (c1 x c2)')
     ax.plot([], [], color=crit_color, ls='--', lw=2.5, label='Critical Perimeter (bo) at d/2')
     ax.legend(loc='lower center', bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=1)
