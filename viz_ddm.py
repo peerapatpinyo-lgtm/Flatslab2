@@ -4,34 +4,22 @@ import pandas as pd
 import numpy as np
 
 # ==========================================
-# Helper Function สำหรับดึงข้อความเหล็กเสริม (แก้ไข Logic แล้ว)
+# Helper Function ใหม่ (ดึงค่าแบบเจาะจงชื่อเป๊ะๆ 100%)
 # ==========================================
-def get_rebar_text(df, is_col_strip, is_negative, col_loc='Interior'):
+def get_rebar_exact(df, is_col_strip, mom_type):
     """
-    ดึงขนาดและระยะแอดของเหล็กจาก edited_df 
-    *อัปเดต: กรองกรณี Edge/Corner แยกต่างหาก
+    ดึงข้อมูลโดยระบุประเภท (Col/Mid) และโมเมนต์ (Pos, Ext Neg, Int Neg) แบบตรงตัว
     """
     if df is None or df.empty or 'Location' not in df.columns:
         return "N/A"
         
     strip_kw = "Col" if is_col_strip else "Mid"
     
-    # เงื่อนไขพิเศษสำหรับเสาริมและเสามุม
-    if col_loc in ['Edge', 'Corner']:
-        if is_negative:
-            if is_col_strip:
-                mom_kw = "Ext Neg" # ดึงเฉพาะเหล็กที่ขอบนอก (ไม่เอา Int Neg)
-            else:
-                return "N/A" # Middle Strip ไม่มีโมเมนต์ลบที่ขอบนอก ข้ามไปเลย
-        else:
-            mom_kw = "Pos"
-    else:
-        mom_kw = "Neg" if is_negative else "Pos"
-    
     try:
+        # หาบรรทัดที่คำมี Col/Mid และมีคำว่า Pos, Ext Neg หรือ Int Neg ตรงๆ
         mask = df['Location'].str.contains(strip_kw, case=False, na=False) & \
-               df['Location'].str.contains(mom_kw, case=False, na=False)
-        
+               df['Location'].str.contains(mom_type, case=False, na=False)
+               
         match = df[mask]
         if not match.empty:
             row = match.iloc[0]
@@ -44,10 +32,9 @@ def get_rebar_text(df, is_col_strip, is_negative, col_loc='Interior'):
 
 # --- ใน viz_ddm.py ---
 # ==========================================
-# 1. วาดรูป Plan View (แก้ไขการวาดเส้นเหล็ก Top MS แล้ว)
+# 1. วาดรูป Plan View (แก้ให้พื้นกลับมาอยู่ตรงกลางสมมาตร ไม่ขยับเบี้ยวแล้ว)
 # ==========================================
 def draw_rebar_plan_view(inputs, edited_df):
-    # ดึงค่าพารามิเตอร์พื้นฐาน
     L1 = float(inputs.get('l1', inputs.get('L1', 5.0))) 
     L2 = float(inputs.get('l2', inputs.get('L2', 5.0))) 
     c1 = float(inputs.get('c1', 0.5))
@@ -59,44 +46,34 @@ def draw_rebar_plan_view(inputs, edited_df):
     
     fig, ax = plt.subplots(figsize=(10, 8))
     
-    # ----------------------------------------------------
-    # 🌟 1. Bounding Box (เสาอยู่ 0,0 เสมอ)
-    # ----------------------------------------------------
+    # 🌟 เอาโค้ดที่ทำให้ขอบพื้นเลื่อนออกไป ให้มันสมมาตร (-L/2 ถึง L/2) เสมอ
     x_min, x_max = -L1/2.0, L1/2.0
     y_min, y_max = -L2/2.0, L2/2.0
     
-    if col_loc == 'Edge':
-        if not is_y_axis: 
-            x_min = -c1/2.0
-        else:
-            y_min = -c2/2.0
-    elif col_loc == 'Corner':
-        x_min = -c1/2.0
-        y_min = -c2/2.0
-
     slab_w = x_max - x_min
     slab_h = y_max - y_min
     
-    # วาดแผ่นพื้น
+    # วาดแผ่นพื้นและเสาตรงกลาง 0,0 เสมอ
     ax.add_patch(patches.Rectangle((x_min, y_min), slab_w, slab_h, fill=True, facecolor='#f8fafc', edgecolor='#94a3b8', lw=2, zorder=1))
-    # วาดเสาตรงกลาง
     ax.add_patch(patches.Rectangle((-c1/2.0, -c2/2.0), c1, c2, fill=True, facecolor='#1e293b', zorder=2))
     
-    # ดึงข้อความเหล็กเสริม (ส่ง col_loc เข้าไปด้วย)
-    cs_top = get_rebar_text(edited_df, is_col_strip=True, is_negative=True, col_loc=col_loc)
-    cs_bot = get_rebar_text(edited_df, is_col_strip=True, is_negative=False, col_loc=col_loc)
-    ms_top = get_rebar_text(edited_df, is_col_strip=False, is_negative=True, col_loc=col_loc)
-    ms_bot = get_rebar_text(edited_df, is_col_strip=False, is_negative=False, col_loc=col_loc)
+    # 🌟 ดึงข้อมูลเหล็กตาม 5 Cases จริง (Plan View โชว์เฉพาะเหล็กบริเวณริม)
+    if col_loc in ['Edge', 'Corner']:
+        cs_top = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Ext Neg")
+        ms_top = "N/A" # เสาริมไม่มีเหล็กบน MS
+    else:
+        cs_top = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Neg")
+        ms_top = get_rebar_exact(edited_df, is_col_strip=False, mom_type="Neg")
+        
+    cs_bot = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Pos")
+    ms_bot = get_rebar_exact(edited_df, is_col_strip=False, mom_type="Pos")
 
     if is_y_axis:
-        # ----------------------------------------------------
-        # 🌟 2. Y-Axis Frame (วิเคราะห์ตามแนว L2)
-        # ----------------------------------------------------
+        # --- Y-Axis Frame ---
         cs_x_min = max(-L1/4.0, x_min)
         cs_x_max = min(L1/4.0, x_max)
         cs_w = cs_x_max - cs_x_min
         
-        # วาดแถบ Column Strip
         ax.add_patch(patches.Rectangle((cs_x_min, y_min), cs_w, slab_h, fill=True, facecolor='#e2e8f0', alpha=0.6, edgecolor='none', zorder=1.5))
         if cs_x_min > x_min: ax.axvline(cs_x_min, color='#94a3b8', linestyle='-.', lw=1, zorder=1.5)
         if cs_x_max < x_max: ax.axvline(cs_x_max, color='#94a3b8', linestyle='-.', lw=1, zorder=1.5)
@@ -118,7 +95,6 @@ def draw_rebar_plan_view(inputs, edited_df):
         # เหล็ก MS
         has_ms_right = (x_max - cs_x_max) > 0.1
         has_ms_left = (cs_x_min - x_min) > 0.1
-        
         ms_x_list = []
         if has_ms_right: ms_x_list.append((cs_x_max + x_max)/2)
         if has_ms_left: ms_x_list.append((x_min + cs_x_min)/2)
@@ -126,8 +102,6 @@ def draw_rebar_plan_view(inputs, edited_df):
         for ms_x in ms_x_list:
             ax.plot([ms_x, ms_x], [bot_y1, bot_y2], color='#3b82f6', lw=2, zorder=3)
             ax.text(ms_x - 0.1, (bot_y1+bot_y2)/2, f"Bot(MS): {ms_bot}", color='#3b82f6', va='center', ha='right', rotation=90, fontsize=9)
-            
-            # วาดเส้น Top MS เฉพาะเมื่อมีข้อมูล (ไม่เป็น N/A)
             if ms_top != "N/A":
                 ax.plot([ms_x - 0.3, ms_x - 0.3], [top_y1, top_y2], color='#ef4444', lw=2, linestyle='--', zorder=3)
                 ax.text(ms_x - 0.4, (top_y1+top_y2)/2, f"Top(MS): {ms_top}", color='#ef4444', va='center', ha='right', rotation=90, fontsize=9)
@@ -135,14 +109,11 @@ def draw_rebar_plan_view(inputs, edited_df):
         axis_title = "Y-Axis Frame"
         
     else:
-        # ----------------------------------------------------
-        # 🌟 3. X-Axis Frame (วิเคราะห์ตามแนว L1)
-        # ----------------------------------------------------
+        # --- X-Axis Frame ---
         cs_y_min = max(-L2/4.0, y_min)
         cs_y_max = min(L2/4.0, y_max)
         cs_w = cs_y_max - cs_y_min
         
-        # วาดแถบ Column Strip
         ax.add_patch(patches.Rectangle((x_min, cs_y_min), slab_w, cs_w, fill=True, facecolor='#e2e8f0', alpha=0.6, edgecolor='none', zorder=1.5))
         if cs_y_min > y_min: ax.axhline(cs_y_min, color='#94a3b8', linestyle='-.', lw=1, zorder=1.5)
         if cs_y_max < y_max: ax.axhline(cs_y_max, color='#94a3b8', linestyle='-.', lw=1, zorder=1.5)
@@ -164,7 +135,6 @@ def draw_rebar_plan_view(inputs, edited_df):
         # เหล็ก MS
         has_ms_top = (y_max - cs_y_max) > 0.1
         has_ms_bot = (cs_y_min - y_min) > 0.1
-        
         ms_y_list = []
         if has_ms_top: ms_y_list.append((cs_y_max + y_max)/2)
         if has_ms_bot: ms_y_list.append((y_min + cs_y_min)/2)
@@ -172,17 +142,13 @@ def draw_rebar_plan_view(inputs, edited_df):
         for ms_y in ms_y_list:
             ax.plot([bot_x1, bot_x2], [ms_y, ms_y], color='#3b82f6', lw=2, zorder=3)
             ax.text((bot_x1+bot_x2)/2, ms_y - 0.15, f"Bot(MS): {ms_bot}", color='#3b82f6', ha='center', va='top', fontsize=9)
-            
-            # วาดเส้น Top MS เฉพาะเมื่อมีข้อมูล (ไม่เป็น N/A)
             if ms_top != "N/A":
                 ax.plot([top_x1, top_x2], [ms_y + 0.3, ms_y + 0.3], color='#ef4444', lw=2, linestyle='--', zorder=3)
                 ax.text((top_x1+top_x2)/2, ms_y + 0.45, f"Top(MS): {ms_top}", color='#ef4444', ha='center', va='bottom', fontsize=9)
 
         axis_title = "X-Axis Frame"
 
-    # ----------------------------------------------------
-    # 🌟 4. ระบบ Dimension แยกซ้าย-ขวาจากศูนย์กลางเสา
-    # ----------------------------------------------------
+    # ระบบ Dimension
     dim_y = y_max + 0.4
     if abs(x_min) > 0.01:
         ax.annotate('', xy=(x_min, dim_y), xytext=(0, dim_y), arrowprops=dict(arrowstyle='<|-|>', color='black'))
@@ -199,7 +165,6 @@ def draw_rebar_plan_view(inputs, edited_df):
         ax.annotate('', xy=(dim_x, 0), xytext=(dim_x, y_max), arrowprops=dict(arrowstyle='<|-|>', color='black'))
         ax.text(dim_x + 0.15, y_max/2, f"{y_max:.2f} m", va='center', rotation=270, fontweight='bold', fontsize=9)
     
-    # ปรับแต่งมุมมองให้พอดี
     padding = 1.0
     ax.set_xlim(x_min - padding, x_max + padding)
     ax.set_ylim(y_min - padding, y_max + padding)
@@ -211,7 +176,7 @@ def draw_rebar_plan_view(inputs, edited_df):
     return fig
     
 # ==========================================
-# 2. วาดรูป Cross Section (ตัดหน้าตัดตามแกนที่วิเคราะห์)
+# 2. วาดรูป Cross Section (🌟 แก้ให้ดึง Int Neg ไปใส่ฝั่งขวา เพื่อโชว์ครบตามเคส)
 # ==========================================
 def draw_slab_section_with_rebar(inputs, edited_df):
     L1 = inputs.get('L1', 5.0)
@@ -224,10 +189,8 @@ def draw_slab_section_with_rebar(inputs, edited_df):
     
     analysis_dir = inputs.get('analysis_dir', 'X-Axis')
     is_y_axis = "Y-Axis" in analysis_dir or "L2" in analysis_dir
-    
     col_loc = str(inputs.get('col_loc', inputs.get('column_location', 'Interior'))).strip().title()
     
-    # Section จะต้องยาวเท่ากับแกนที่ถูกตัดวิเคราะห์
     if is_y_axis:
         span_len = L2
         col_w = c2
@@ -248,9 +211,15 @@ def draw_slab_section_with_rebar(inputs, edited_df):
         ax.add_patch(patches.Rectangle((0, -(h_drop - h_slab)), drop_w/2, h_drop - h_slab, fill=True, facecolor='#cbd5e1', edgecolor='#334155'))
         ax.add_patch(patches.Rectangle((span_len - drop_w/2, -(h_drop - h_slab)), drop_w, h_drop - h_slab, fill=True, facecolor='#cbd5e1', edgecolor='#334155'))
     
-    # ส่ง col_loc เข้าไปช่วยกรองข้อความด้วย
-    cs_top = get_rebar_text(edited_df, is_col_strip=True, is_negative=True, col_loc=col_loc)
-    cs_bot = get_rebar_text(edited_df, is_col_strip=True, is_negative=False, col_loc=col_loc)
+    # 🌟 ดึงค่าแบบแยกซ้ายขวา (Ext Neg ขอบริมซ้าย, Int Neg ขอบในขวา)
+    if col_loc in ['Edge', 'Corner']:
+        cs_top_left = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Ext Neg")
+        cs_top_right = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Int Neg")
+    else:
+        cs_top_left = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Neg")
+        cs_top_right = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Neg")
+        
+    cs_bot = get_rebar_exact(edited_df, is_col_strip=True, mom_type="Pos")
     cover = 0.03 
     
     ax.plot([0, span_len/3], [h_slab - cover, h_slab - cover], color='#ef4444', lw=2.5)
@@ -258,8 +227,9 @@ def draw_slab_section_with_rebar(inputs, edited_df):
     ax.plot([span_len - span_len/3, span_len], [h_slab - cover, h_slab - cover], color='#ef4444', lw=2.5)
     ax.plot([span_len - span_len/3, span_len - span_len/3], [h_slab - cover, h_slab - cover - 0.05], color='#ef4444', lw=2.5) 
     
-    ax.text(span_len/6, h_slab + 0.05, f"Top: {cs_top}", color='#ef4444', ha='center', fontweight='bold', fontsize=9)
-    ax.text(span_len - span_len/6, h_slab + 0.05, f"Top: {cs_top}", color='#ef4444', ha='center', fontweight='bold', fontsize=9)
+    # 🌟 ใส่ Text ซ้าย-ขวา แยกกันตาม Case ตรงตามที่คำนวณ!
+    ax.text(span_len/6, h_slab + 0.05, f"Top(Ext): {cs_top_left}", color='#ef4444', ha='center', fontweight='bold', fontsize=9)
+    ax.text(span_len - span_len/6, h_slab + 0.05, f"Top(Int): {cs_top_right}", color='#ef4444', ha='center', fontweight='bold', fontsize=9)
     
     ax.plot([span_len/5, 4*span_len/5], [cover, cover], color='#3b82f6', lw=2.5)
     ax.plot([span_len/5, span_len/5], [cover, cover + 0.05], color='#3b82f6', lw=2.5) 
