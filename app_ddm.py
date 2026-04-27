@@ -30,7 +30,7 @@ def translate_warnings(msg):
 
 def render_ddm_tab(calc_obj):
     # =========================================================================
-    # 🌟 1. ดึงข้อมูลพื้นฐานอย่างปลอดภัย (กัน KeyError และค่าเป็น 0)
+    # 🌟 1. ดึงข้อมูลพื้นฐาน (Physical Variables) และทำ MASTER SWAP
     # =========================================================================
     raw_loc = calc_obj.get('col_location_raw', 'Interior Column')
     col_loc = str(raw_loc).replace(" Column", "") 
@@ -46,20 +46,37 @@ def render_ddm_tab(calc_obj):
 
     geom_data = calc_obj.get('geom', {})
     
-    L1 = geom_data.get('L1', 0)
-    L2 = geom_data.get('L2', 0)
+    # 1.1 ดึงค่า Physical X-Y ดิบๆ จากหน้าจอมาก่อน (มองหน้าจอ X คือแนวนอน, Y คือแนวตั้ง)
+    physical_Lx = geom_data.get('L1', 0)
+    physical_Ly = geom_data.get('L2', 0)
+    physical_L2_t = geom_data.get('L2_t', physical_Ly)
+    physical_L2_b = geom_data.get('L2_b', physical_Ly)
+    physical_cx_cm = geom_data.get('c1_cm', 50)
+    physical_cy_cm = geom_data.get('c2_cm', 50)
     
-    # ✅ ดึงค่าแผงย่อย (ถ้าหาไม่เจอ ให้คืนค่า L2 ไว้กัน Error)
-    L2_t = geom_data.get('L2_t', L2)
-    L2_b = geom_data.get('L2_b', L2)
-    
-    c1_cm = geom_data.get('c1_cm', 50)
-    c2_cm = geom_data.get('c2_cm', 50)
-    
+    analysis_dir = calc_obj.get('analysis_dir', 'x-axis')
+
+    # 1.2 🌟 MASTER SWAP LOGIC 🌟
+    # สลับแกนตั้งแต่ต้นทาง! ให้ L1 เป็นแกนที่ใช้วิเคราะห์เสมอ
+    if analysis_dir == 'y-axis':
+        L1 = physical_Ly
+        L2 = physical_Lx
+        L2_t = physical_Lx  # แผงด้านข้างของแกน Y ก็คือความกว้างด้าน X
+        L2_b = physical_Lx
+        c1_cm = physical_cy_cm
+        c2_cm = physical_cx_cm
+    else:
+        L1 = physical_Lx
+        L2 = physical_Ly
+        L2_t = physical_L2_t
+        L2_b = physical_L2_b
+        c1_cm = physical_cx_cm
+        c2_cm = physical_cy_cm
+        
     c1_m = c1_cm / 100.0
     c2_m = c2_cm / 100.0
     
-    # 🌟 คำนวณ Clear Span (ln) ตรงนี้เลย เพื่อส่งเข้า inputs ทันที
+    # 🌟 คำนวณ Clear Span (ln) จากแกนที่จัดเรียงถูกต้องแล้ว
     ln = max(L1 - c1_m, 0.65 * L1) if L1 > 0 else 0
 
     h_slab_cm = geom_data.get('h_slab_cm', geom_data.get('h_s', 0.20) * 100.0)
@@ -69,18 +86,18 @@ def render_ddm_tab(calc_obj):
     eb_data = geom_data.get('edge_beam', {})
 
     # =========================================================================
-    # 🌟 2. แพ็กข้อมูล inputs (รับรองว่า calculate_ddm หาเจอทุกตัวแปร)
+    # 🌟 2. แพ็กข้อมูล inputs (รับรองว่า calculate_ddm หาเจอทุกตัวแปรแบบไม่สลับแกนแล้ว!)
     # =========================================================================
     inputs = {
         'l1': L1, 'L1': L1,
         'l2': L2, 'L2': L2,
-        'ln': ln,                # ✅ ส่ง ln เข้าไปแล้ว
+        'ln': ln,
         'wu': wu,
         'c1': c1_m, 
         'c2': c2_m,
         'c1_cm': c1_cm,
         'c2_cm': c2_cm,
-        'h_slab': h_slab_cm,     # ✅ ส่ง h_slab เข้าไปแล้ว
+        'h_slab': h_slab_cm,
         'h_slab_cm': h_slab_cm,
         'has_drop': has_drop,
         'h_drop': h_drop_cm,
@@ -93,7 +110,7 @@ def render_ddm_tab(calc_obj):
         'edge_beam': eb_data,
         'eb_width': eb_data.get('width_cm', 0) / 100.0,
         'eb_depth': eb_data.get('depth_cm', 0) / 100.0,
-        'analysis_dir': calc_obj.get('analysis_dir', 'x-axis')
+        'analysis_dir': analysis_dir
     }
 
     # =========================================================================
