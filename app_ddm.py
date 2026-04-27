@@ -438,10 +438,13 @@ def render_ddm_tab(calc_obj):
     # --- TAB 4: Flexural Design (ALL SECTIONS) ---
     with tab_flex:
         # ==========================================
-        # --- 🟢 เพิ่มระบบตรวจสอบทิศทางเพื่อสลับแกน ---
+        # --- 🟢 ระบบตรวจสอบทิศทางเพื่อสลับแกน (แก้บัค Case Sensitive แล้ว) ---
         # ==========================================
-        analysis_dir = inputs.get('analysis_dir', 'X-Axis')
-        is_y_axis = "Y-Axis" in analysis_dir or "L2" in analysis_dir
+        analysis_dir = inputs.get('analysis_dir', 'x-axis')
+        
+        # จับแปลงเป็นตัวพิมพ์เล็กทั้งหมดก่อนเช็ค เพื่อไม่ให้พลาดอีก
+        dir_str = str(analysis_dir).lower()
+        is_y_axis = 'y' in dir_str or 'l2' in dir_str
 
         if is_y_axis:
             # วิเคราะห์แกน Y (ขนาน L2)
@@ -458,6 +461,7 @@ def render_ddm_tab(calc_obj):
         st.markdown(f"**ทิศทางการออกแบบปัจจุบัน:** {rebar_dir_text}")
         st.markdown("Calculations for **every strip** based on the equivalent rectangular concrete stress block. ($\\phi = 0.90$)")
         
+    
         st.info("💡 **Concept:** $M_u = M_o \\times \\text{Longitudinal Factor} \\times \\text{Transverse Factor}$")
         
         st.markdown("**General Formulas:**")
