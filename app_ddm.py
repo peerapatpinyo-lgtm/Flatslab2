@@ -203,30 +203,67 @@ def render_ddm_tab(calc_obj):
 
         def compute_results(row, original_df):
             width_m = original_df.loc[original_df['Location'] == row['Location'], 'Strip Width (m)'].values[0]
-            bar_area = math.pi * (row['Bar Size (mm)'] / 10.0)**2 / 4.0
+            db_mm = row['Bar Size (mm)']
+            bar_area = math.pi * (db_mm / 10.0)**2 / 4.0
             as_req = row['As Req (cm2)']
             
             spacing = row['Spacing (cm)'] if row['Spacing (cm)'] > 0 else 1.0
-            as_prov = bar_area * ((width_m * 100.0) / spacing)
-            num_bars = math.ceil((width_m * 100.0) / spacing)
+            width_cm = width_m * 100.0
             
-            max_spacing_aci = min(2 * h_slab_m * 100, 45.0)
-            status = "PASS" if (as_prov >= as_req and spacing <= max_spacing_aci) else "FAIL"
-            return pd.Series([width_m, num_bars, max_spacing_aci, as_prov, status])
+            # คำนวณจำนวนเส้นและพื้นที่เหล็กเสริมที่จัดจริง
+            num_bars = math.ceil(width_cm / spacing)
+            as_prov = bar_area * num_bars
+            
+            # 1. ตรวจสอบระยะเรียงมากที่สุด (ACI 318-19 Sec 8.7.2.1): min(2h, 45 cm)
+            max_spacing_aci = min(2 * h_slab_cm, 45.0)
+            
+            # 2. ตรวจสอบระยะเรียงน้อยที่สุด (ACI 318-19 Sec 25.2.1): max(db, 2.5 cm) เพื่อการเทคอนกรีตที่ดี
+            min_spacing_aci = max(db_mm / 10.0, 2.5)
+            
+            # 3. คำนวณเหล็กเสริมขั้นต่ำต้านการยืดหดตัวและอุณหภูมิ (ACI 318-19 Sec 24.4)
+            # ปรับตามความหนาจริง: แถบหัวเสาภายใน (Int Neg) ที่มี Drop Panel จะใช้ h_drop_cm นอกนั้นใช้ h_slab_cm
+            h_current = h_drop_cm if ("Int Neg" in row['Location'] and has_drop) else h_slab_cm
+            as_min_temp = 0.0018 * width_cm * h_current
+            
+            # ตรวจสอบเงื่อนไขแยกรายข้อเพื่อรายงานผลตรงจุด
+            reasons = []
+            if as_prov < as_req:
+                reasons.append("⚠️ As ไม่พอ")
+            if spacing > max_spacing_aci:
+                reasons.append(f"❌ ห่างเกิน ({max_spacing_aci:.1f} cm)")
+            if spacing < min_spacing_aci:
+                reasons.append(f"❌ ชิดเกิน ({min_spacing_aci:.1f} cm)")
+                
+            status = "✅ PASS" if not reasons else " | ".join(reasons)
+            return pd.Series([width_m, num_bars, min_spacing_aci, max_spacing_aci, as_min_temp, as_prov, status])
 
-        edited_df[['Width (m)', 'Total Bars', 'Max Spacing (cm)', 'Prov. Area (cm2)', 'Status']] = edited_df.apply(lambda r: compute_results(r, df_design), axis=1)
+        # อัปเดตคอลัมน์ที่ส่งกลับมาจากฟังก์ชันดึงค่า
+        edited_df[['Width (m)', 'Total Bars', 'Min Spacing (cm)', 'Max Spacing (cm)', 'As Min Temp (cm2)', 'Prov. Area (cm2)', 'Status']] = edited_df.apply(lambda r: compute_results(r, df_design), axis=1)
 
-        if "FAIL" in edited_df['Status'].values:
-            st.error("Overall Status: FAIL. Ensure provided area exceeds required area AND spacing complies with ACI limits.")
+        # ปรับปรุงกล่องแจ้งเตือนภาพรวมตามสัญลักษณ์ใหม่
+        if "❌" in "".join(edited_df['Status'].values) or "⚠️" in "".join(edited_df['Status'].values):
+            st.error("Overall Status: Compliance issues found. Please adjust bar size or spacing to satisfy ACI limits.")
         else:
-            st.success("Overall Status: PASS. Reinforcement is structurally adequate per ACI 318 spacing limits.")
+            st.success("Overall Status: PASS. Reinforcement layout complies fully with ACI 318 detailing criteria.")
 
-        display_cols = ['Location', 'Bar Size (mm)', 'Spacing (cm)', 'Max Spacing (cm)', 'As Req (cm2)', 'Prov. Area (cm2)', 'Status']
+        # เลือกคอลัมน์ที่จะนำมาแสดงผลบนตารางให้ครอบคลุมข้อมูลเชิงวิศวกรรม
+        display_cols = [
+            'Location', 'Bar Size (mm)', 'Spacing (cm)', 
+            'Min Spacing (cm)', 'Max Spacing (cm)', 
+            'As Req (cm2)', 'As Min Temp (cm2)', 
+            'Prov. Area (cm2)', 'Status'
+        ]
+        
         def highlight_status(val):
-            return f"color: {'#ff4b4b' if 'FAIL' in str(val) else '#21c354'}; font-weight: bold;"
+            if "❌" in str(val):
+                return "color: #ff4b4b; font-weight: bold;"
+            elif "⚠️" in str(val):
+                return "color: #f39c12; font-weight: bold;"
+            return "color: #21c354; font-weight: bold;"
             
         styled_df = edited_df[display_cols].style.map(highlight_status, subset=['Status']).format({
-            'As Req (cm2)': "{:.2f}", 'Prov. Area (cm2)': "{:.2f}", 'Max Spacing (cm)': "{:.1f}"
+            'As Req (cm2)': "{:.2f}", 'As Min Temp (cm2)': "{:.2f}", 
+            'Prov. Area (cm2)': "{:.2f}", 'Min Spacing (cm)': "{:.1f}", 'Max Spacing (cm)': "{:.1f}"
         })
         st.dataframe(styled_df, width="stretch", hide_index=True)
         
