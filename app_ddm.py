@@ -644,11 +644,10 @@ def render_ddm_tab(calc_obj):
                 st.markdown("---")
     
 
-
     # --- TAB 5: Shear Design (Two-Way and One-Way) ---
     with tab_shear:
         # ==========================================
-        # --- 🟢 แกนอ้างอิงสำหรับการคำนวณเฉือน ---
+        # --- 🟢 แกนอ้างอิงและการสลับแกน (MASTER SWAP) ---
         # ==========================================
         analysis_dir = inputs.get('analysis_dir', 'X-Axis')
         is_y_axis = "Y-Axis" in analysis_dir or "L2" in analysis_dir
@@ -668,7 +667,7 @@ def render_ddm_tab(calc_obj):
         # --- PART 5.1: TWO-WAY SHEAR (PUNCHING) ---
         # ==========================================
         st.header("1. Two-Way (Punching) Shear Design")
-        st.caption("อ้างอิงมาตรฐาน: ACI 318 Section 22.6")
+        st.caption("มาตรฐานอ้างอิง: ACI 318 Section 22.6 & ทฤษฎีโมเมนต์ไม่สมดุล (Unbalanced Moment Transfer)")
         
         # --- 1. Critical Section Geometry ---
         d_shear_cm = d_eff_m * 100.0
@@ -679,57 +678,92 @@ def render_ddm_tab(calc_obj):
         drop_span_cm = (calc_obj['geom'].get('drop_w2', 0) if is_y_axis else calc_obj['geom'].get('drop_w1', 0)) * 100.0
         drop_trans_cm = (calc_obj['geom'].get('drop_w1', 0) if is_y_axis else calc_obj['geom'].get('drop_w2', 0)) * 100.0
         
-        col_bo1, col_bo2 = st.columns([1, 1])
-        
-        with col_bo1:
-            st.markdown(f"**1.1 Critical Perimeter ($b_o$) - {col_loc} Column**")
-            # คำนวณขอบเขตหน้าตัดวิกฤต (bo)
-            if col_loc == "Corner":
-                b1 = c_span_cm + (d_shear_cm / 2.0)
-                b2 = c_trans_cm + (d_shear_cm / 2.0)
-                bo_cm = b1 + b2
-                c_dist = (b1**2) / (2 * (b1 + b2)) if (b1 + b2) > 0 else b1 / 2.0
-                Jc = (d_shear_cm * (b1**3) / 12.0) + ((b1 * (d_shear_cm**3)) / 12.0) + (d_shear_cm * b1 * (b2**2) / 4.0)
-                st.latex(fr"b_o = ({c_span_label} + d/2) + ({c_trans_label} + d/2)")
-                
-            elif col_loc == "Edge":
-                b1 = c_span_cm + (d_shear_cm / 2.0)
-                b2 = c_trans_cm + d_shear_cm
-                bo_cm = (2 * b1) + b2
-                c_dist = (b1**2) / ((2 * b1) + b2) if ((2 * b1) + b2) > 0 else b1 / 2.0
-                Jc = (d_shear_cm * (b1**3) / 6.0) + ((b1 * (d_shear_cm**3)) / 6.0) + (d_shear_cm * b1 * (b2**2) / 2.0)
-                st.latex(fr"b_o = 2({c_span_label} + d/2) + ({c_trans_label} + d)")
-                
-            else: # Interior
-                b1 = c_span_cm + d_shear_cm  
-                b2 = c_trans_cm + d_shear_cm  
-                bo_cm = 2 * (b1 + b2)
-                c_dist = b1 / 2.0
-                Jc = (d_shear_cm * (b1**3) / 6.0) + ((b1 * (d_shear_cm**3)) / 6.0) + (d_shear_cm * b1 * (b2**2) / 2.0)
-                st.latex(fr"b_o = 2[({c_span_label} + d) + ({c_trans_label} + d)]")
-
-            Ac = bo_cm * d_shear_cm
-            st.latex(f"b_o = {bo_cm:.1f} \\text{{ cm}}")
-            st.latex(f"A_c = b_o \\times d = {Ac:,.0f} \\text{{ cm}}^2")
-
-        with col_bo2:
-            st.markdown("**1.2 Section Properties**")
-            st.markdown(f"- **$b_1$** (ทิศขนาน {span_label}): `{b1:.1f} cm`")
-            st.markdown(f"- **$b_2$** (ทิศขนาน {trans_label}): `{b2:.1f} cm`")
-            st.markdown(f"- **$c$** (ระยะศูนย์ถ่วง): `{c_dist:.1f} cm`")
-            st.markdown(f"- **$J_c$** (Polar Moment of Inertia): `{Jc:,.0f} cm⁴`")
+        # 🌟 คำนวณคุณสมบัติหน้าตัดวิกฤตตามหลักกลศาสตร์อย่างถูกต้อง (Rigorous Mechanics)
+        if col_loc == "Corner":
+            b1 = c_span_cm + (d_shear_cm / 2.0)  # ด้านขนานแกนพิจารณา (2 ด้านเปิด)
+            b2 = c_trans_cm + (d_shear_cm / 2.0) # ด้านตั้งฉาก
+            bo_cm = b1 + b2
             
-            if has_drop and drop_span_cm > 0 and drop_trans_cm > 0:
-                d_slab_cm = (calc_obj['geom']['h_s'] * 100.0) - (cc_m * 100.0) - (selected_rebar / 20.0) 
-                if col_loc == "Corner": bo_drop = (drop_span_cm + d_slab_cm/2.0) + (drop_trans_cm + d_slab_cm/2.0)
-                elif col_loc == "Edge": bo_drop = 2*(drop_span_cm + d_slab_cm/2.0) + (drop_trans_cm + d_slab_cm)
-                else: bo_drop = 2 * ((drop_span_cm + d_slab_cm) + (drop_trans_cm + d_slab_cm))
-                st.info(f"📍 **Drop Panel Perimeter ($b_{{o,drop}}$):** {bo_drop:.1f} cm (ใช้สำหรับเช็คเฉือนนอก Drop Panel)")
+            # Centroid จากขอบนอกเสา
+            c_g = (b1**2) / (2 * (b1 + b2)) if (b1 + b2) > 0 else b1 / 2.0
+            c_dist = b1 - c_g # ระยะไปถึงขอบหน้าตัดวิกฤตที่รับ Stress สูงสุด
+            
+            # Exact Jc สำหรับเสามุม (2-sided)
+            Jc = ((d_shear_cm * (b1**3)) / 12.0) + (b1 * d_shear_cm * (b1/2.0 - c_g)**2) + (b2 * d_shear_cm * c_g**2) + (bo_cm * (d_shear_cm**3) / 12.0)
+            eq_bo = fr"b_o = ({c_span_label} + d/2) + ({c_trans_label} + d/2)"
+            
+        elif col_loc == "Edge":
+            b1 = c_span_cm + (d_shear_cm / 2.0)  # ด้านที่พุ่งจากขอบตึกเข้าหาข้างใน
+            b2 = c_trans_cm + d_shear_cm         # ด้านที่ขนานกับขอบตึก
+            bo_cm = (2 * b1) + b2
+            
+            # Centroid จากขอบนอกตึก
+            c_g = (b1**2) / ((2 * b1) + b2) if ((2 * b1) + b2) > 0 else b1 / 2.0
+            c_dist = b1 - c_g # ระยะไปถึงขอบในที่รับแรงตึงสูงสุด
+            
+            # Exact Jc สำหรับเสาขอบ (3-sided) ด้วย Parallel Axis Theorem
+            Jc = 2 * (((d_shear_cm * (b1**3)) / 12.0) + (b1 * d_shear_cm * (b1/2.0 - c_g)**2)) + (b2 * d_shear_cm * c_g**2) + (bo_cm * (d_shear_cm**3) / 12.0)
+            eq_bo = fr"b_o = 2({c_span_label} + d/2) + ({c_trans_label} + d)"
+            
+        else: # Interior Column
+            b1 = c_span_cm + d_shear_cm
+            b2 = c_trans_cm + d_shear_cm
+            bo_cm = 2 * (b1 + b2)
+            c_g = b1 / 2.0
+            c_dist = b1 / 2.0
+            
+            # Exact Jc สำหรับเสาภายใน (4-sided)
+            Jc = (d_shear_cm * (b1**3) / 6.0) + (b1 * (d_shear_cm**3) / 6.0) + (d_shear_cm * (b1**2) * b2 / 2.0)
+            eq_bo = fr"b_o = 2[({c_span_label} + d) + ({c_trans_label} + d)]"
+
+        Ac = bo_cm * d_shear_cm
+
+        # --- ส่วนแสดงผล UI แบ่งคอลัมน์และวาดรูปภาพประกอบเพื่อความชัดเจน ---
+        col_left, col_right = st.columns([1.1, 0.9])
+        
+        with col_left:
+            st.markdown(f"##### 📐 1.1 รูปเรขาคณิตและคุณสมบัติหน้าตัดวิกฤต")
+            st.latex(eq_bo)
+            st.latex(f"b_o = {bo_cm:.1f} \\text{{ cm}}")
+            st.latex(f"A_c = b_o \\times d = {bo_cm:.1f} \\times {d_shear_cm:.1f} = {Ac:,.1f} \\text{{ cm}}^2")
+            st.latex(f"J_c = {Jc:,.0f} \\text{{ cm}}^4 \\quad (c = {c_dist:.1f} \\text{{ cm}})")
+            
+            st.markdown(f"**รายละเอียดสัดส่วนหน้าตัด:**")
+            st.markdown(f"- ความลึกประสิทธิผลเฉือน ($d$): `{d_shear_cm:.2f} cm`")
+            st.markdown(f"- ขนาดหน้าตัดวิกฤต: $b_1$ (แนวสแปน) = `{b1:.1f} cm`, $b_2$ (แนวตั้งฉาก) = `{b2:.1f} cm`")
+        
+        with col_right:
+            # 🎨 ส่วนวาดรูปไดอะแกรมหน้าตัดวิกฤต (Critical Section Visualizer) แบบ Real-time
+            fig, ax = plt.subplots(figsize=(4, 3.5))
+            # วาดเสา (Column) เป็นสีเทาเข้ม เขยิบตามชนิดของเสา
+            if col_loc == "Interior":
+                ax.add_patch(patches.Rectangle((-c_span_cm/2, -c_trans_cm/2), c_span_cm, c_trans_cm, color='#34495E', label='Column'))
+                ax.plot([-b1/2, b1/2, b1/2, -b1/2, -b1/2], [-b2/2, -b2/2, b2/2, b2/2, -b2/2], color='red', linestyle='--', lw=2, label='Critical Perimeter ($b_o$)')
+            elif col_loc == "Edge":
+                ax.add_patch(patches.Rectangle((-c_span_cm, -c_trans_cm/2), c_span_cm, c_trans_cm, color='#34495E', label='Column'))
+                ax.plot([-b1, 0, 0, -b1], [b2/2, b2/2, -b2/2, -b2/2], color='red', linestyle='--', lw=2, label='$b_o$ (3-Sides)')
+                ax.axvline(0, color='gray', lw=2, linestyle='-', alpha=0.7) # ขอบตึก
+            elif col_loc == "Corner":
+                ax.add_patch(patches.Rectangle((-c_span_cm, -c_trans_cm), c_span_cm, c_trans_cm, color='#34495E', label='Column'))
+                ax.plot([-b1, 0, 0], [0, 0, -b2], color='red', linestyle='--', lw=2, label='$b_o$ (2-Sides)')
+                ax.axvline(0, color='gray', lw=1.5); ax.axhline(0, color='gray', lw=1.5) # ขอบมุมตึก
+            
+            ax.set_aspect('equal', 'box')
+            ax.axis('off')
+            ax.legend(loc='upper right', fontsize=7)
+            st.pyplot(fig)
+
+        if has_drop and drop_span_cm > 0 and drop_trans_cm > 0:
+            d_slab_cm = (calc_obj['geom']['h_s'] * 100.0) - (cc_m * 100.0) - (selected_rebar / 20.0) 
+            if col_loc == "Corner": bo_drop = (drop_span_cm + d_slab_cm/2.0) + (drop_trans_cm + d_slab_cm/2.0)
+            elif col_loc == "Edge": bo_drop = 2*(drop_span_cm + d_slab_cm/2.0) + (drop_trans_cm + d_slab_cm)
+            else: bo_drop = 2 * ((drop_span_cm + d_slab_cm) + (drop_trans_cm + d_slab_cm))
+            st.info(f"💡 **Drop Panel Control Perimeter ($b_{{o,drop}}$):** `{bo_drop:.1f} cm` (หน้าตัดวิกฤตนอกแผงดรอปเพื่อตรวจสอบความหนาพื้นหลัก)")
 
         st.divider()
         
         # --- 2. Demand Calculation (Vu and Munbal) ---
-        st.markdown("**2. Applied Forces & Maximum Shear Stress ($v_u$)**")
+        st.markdown("##### 📈 1.2 แรงกระทำและความเค้นเฉือนสูงสุด ($v_{u,max}$)")
         
         col_v1, col_v2 = st.columns([1, 1])
         
@@ -745,7 +779,7 @@ def render_ddm_tab(calc_obj):
                 punched_area = (c1 + d_eff_m) * (c2 + d_eff_m)
 
             vu_kg = wu * (trib_area - punched_area)
-            st.markdown(f"- **Tributary Area:** {trib_area:.2f} m²")
+            st.markdown(f"- พื้นที่รับน้ำหนักเฉือนพั้นชิ่ง ($A_{{trib}}$): `{trib_area:.2f} m²`")
             st.latex(f"V_u = w_u (A_{{trib}} - A_{{punched}}) = {vu_kg:,.0f} \\text{{ kg}}")
             
             mu_at_column = 0
@@ -755,7 +789,7 @@ def render_ddm_tab(calc_obj):
                     mu_at_column = match_int_neg.get('Mu (kg-m)', match_int_neg.get('Moment (kg-m)', 0))
                 except IndexError:
                     pass
-            st.latex(f"M_{{unbal}} = {mu_at_column:,.0f} \\text{{ kg-m}}")
+            st.latex(f"M_{{unbal}} = {mu_at_column:,.0f} \\text{{ kg-m}} \\quad \\text{{(จากแนวแกน {span_label})}}")
         
         with col_v2:
             gamma_f = 1.0 / (1.0 + (2.0/3.0) * math.sqrt(b1/b2))
@@ -765,16 +799,16 @@ def render_ddm_tab(calc_obj):
             vu_moment = (gamma_v * (mu_at_column * 100.0) * c_dist) / Jc if Jc > 0 else 0
             vu_max = vu_direct + vu_moment
             
-            st.latex(fr"\gamma_v = 1 - \gamma_f = {gamma_v:.3f}")
-            st.latex(fr"v_{{u,direct}} = \frac{{V_u}}{{A_c}} = {vu_direct:.2f} \text{{ ksc}}")
-            st.latex(fr"v_{{u,moment}} = \frac{{\gamma_v M_{{unbal}} c}}{{J_c}} = {vu_moment:.2f} \text{{ ksc}}")
-            st.markdown(f"**Maximum Stress:** $v_u = {vu_direct:.2f} + {vu_moment:.2f} = \\mathbf{{{vu_max:.2f} \\text{{ ksc}}}}$")
+            st.latex(fr"\gamma_v = 1 - \gamma_f = 1 - {gamma_f:.3f} = {gamma_v:.3f}")
+            st.latex(fr"v_{{u,direct}} = \frac{{V_u}}{{A_c}} = {vu_direct:.2f} \text{{ kg/cm}}^2")
+            st.latex(fr"v_{{u,moment}} = \frac{{\gamma_v M_{{unbal}} c}}{{J_c}} = {vu_moment:.2f} \text{{ kg/cm}}^2")
+            st.markdown(f"**ความเค้นเฉือนประลัยรวมสูงสุด:** $v_{{u,max}} = {vu_direct:.2f} + {vu_moment:.2f} = \\mathbf{{{vu_max:.2f} \\text{{ ksc}}}}$")
 
         st.divider()
         
         # --- 3. Capacity Calculation ---
-        st.markdown("**3. Punching Shear Capacity ($\\phi v_c$)**")
-        st.markdown("*ตรวจสอบความสามารถในการรับแรงเฉือนของคอนกรีตจาก 3 สมการ (ควบคุมโดยค่าที่น้อยที่สุด)*")
+        st.markdown("##### 🛡️ 1.3 กำลังรับแรงเฉือนพั้นชิ่งของคอนกรีต ($\\phi v_c$)")
+        st.caption("คำนวณตามมาตรฐาน ACI 318 ในหน่วยเมตริก (kg/cm²) โดยเลือกค่าที่น้อยที่สุดควบคุมเสถียรภาพ")
         
         phi_shear = 0.85 
         alpha_s = 40 if case_type == "Interior" else (30 if has_edge_beam else 20)
@@ -788,21 +822,22 @@ def render_ddm_tab(calc_obj):
         phi_vc_stress = phi_shear * vc_gov_stress
         
         c1_vc, c2_vc, c3_vc = st.columns(3)
-        c1_vc.metric("Eq (a)", f"{vc1_stress:.2f} ksc")
-        c2_vc.metric("Eq (b) - Ratio", f"{vc2_stress:.2f} ksc", f"β = {beta_c:.2f}")
-        c3_vc.metric("Eq (c) - Position", f"{vc3_stress:.2f} ksc", f"αs = {alpha_s}")
+        c1_vc.metric("สมการพื้นฐาน (a)", f"{vc1_stress:.2f} ksc")
+        c2_vc.metric("สมการสัดส่วนเสา (b)", f"{vc2_stress:.2f} ksc", f"β = {beta_c:.2f}")
+        c3_vc.metric("สมการตำแหน่งเสา (c)", f"{vc3_stress:.2f} ksc", f"αs = {alpha_s}")
         
         # --- 4. Demand vs Capacity Verification ---
+        st.markdown("##### 📝 1.4 การตรวจสอบความปลอดภัยสองทาง")
         if vu_max <= phi_vc_stress:
-            st.success(f"✅ **PASS:** $v_u$ ({vu_max:.2f} ksc) $\\le \\phi v_c$ ({phi_vc_stress:.2f} ksc). Slab thickness is adequate.")
+            st.success(f"✅ **ปลอดภัย (SAFE):** $v_{{u,max}}$ ({vu_max:.2f} ksc) $\\le \\phi v_c$ ({phi_vc_stress:.2f} ksc) หน้าตัดแผ่นพื้นมีความหนาเพียงพอสำหรับรับ Punching Shear")
         else:
-            st.error(f"❌ **FAIL:** $v_u$ ({vu_max:.2f} ksc) $> \\phi v_c$ ({phi_vc_stress:.2f} ksc). Please increase slab thickness, f'c, or add shear reinforcement.")
+            st.error(f"❌ **ไม่ปลอดภัย (FAIL):** $v_{{u,max}}$ ({vu_max:.2f} ksc) $> \\phi v_c$ ({phi_vc_stress:.2f} ksc) กรุณาเพิ่มความหนาพื้นแผ่น (Slab Thickness), เพิ่มกำลังคอนกรีต ($f'_c$) หรือออกแบบเหล็กเสริมรับแรงเฉือน")
 
         # ==========================================
         # --- PART 5.2: ONE-WAY SHEAR (BEAM ACTION) ---
         # ==========================================
-        st.header("2. One-Way (Beam Action) Shear")
-        st.caption("อ้างอิงมาตรฐาน: ACI 318 Section 22.5")
+        st.header("2. One-Way (Beam Action) Shear Design")
+        st.caption("ตรวจสอบหน้าตัดวิกฤตแบบคานที่ระยะ $d$ จากขอบเสา โดยพิจารณาความกว้างพื้นเต็มแถบวิเคราะห์ ($b_w$)")
         
         dist_crit_m = (c_span / 2.0) + d_eff_m
         L_trib_m = max((L_span / 2.0) - dist_crit_m, 0)
@@ -815,17 +850,20 @@ def render_ddm_tab(calc_obj):
         
         c1_1w, c2_1w = st.columns(2)
         with c1_1w:
-            st.markdown(f"- ระยะหน้าตัดวิกฤต: ${c_span_label}/2 + d = {dist_crit_m:.2f} \\text{{ m}}$")
-            st.markdown(f"- ระยะรับน้ำหนัก (Trib. Length): ${L_trib_m:.2f} \\text{{ m}}$")
-            st.latex(f"V_u = w_u \\times b_w \\times L_{{trib}} = {vu_1way_kg:,.0f} \\text{{ kg}}")
+            st.markdown("**ความต้องการแรงเฉือน (Demand)**")
+            st.markdown(f"- ระยะหน้าตัดวิกฤต (จากศูนย์กลางเสา): ${c_span_label}/2 + d = {dist_crit_m:.2f} \\text{{ m}}$")
+            st.markdown(f"- ความยาวรับน้ำหนัก (Tributary Length): `{L_trib_m:.2f} m` (ความกว้าง $b_w = {b_w_m:.2f} \\text{{ m}}$)")
+            st.latex(f"V_{{u,1way}} = w_u \\times b_w \\times L_{{trib}} = {vu_1way_kg:,.0f} \\text{{ kg}}")
         with c2_1w:
+            st.markdown("**กำลังการรับแรงเฉือน (Capacity)**")
             st.latex(f"V_c = 0.53 \\sqrt{{f'_c}} b_w d = {vc_1way_kg:,.0f} \\text{{ kg}}")
-            st.latex(f"\\phi V_c = 0.75 V_c = {phi_vc_1way:,.0f} \\text{{ kg}}")
+            st.latex(f"\\phi V_{{c,1way}} = 0.75 \\times V_c = {phi_vc_1way:,.0f} \\text{{ kg}}")
             
+        st.markdown("##### 📝 2.1 การตรวจสอบความปลอดภัยทิศทางเดียว")
         if vu_1way_kg <= phi_vc_1way:
-            st.success(f"✅ **PASS:** $V_u$ ({vu_1way_kg:,.0f} kg) $\\le \\phi V_c$ ({phi_vc_1way:,.0f} kg).")
+            st.success(f"✅ **ปลอดภัย (SAFE):** $V_{{u,1way}}$ ({vu_1way_kg:,.0f} kg) $\\le \\phi V_{{c,1way}}$ ({phi_vc_1way:,.0f} kg)")
         else:
-            st.error(f"❌ **FAIL:** $V_u$ ({vu_1way_kg:,.0f} kg) $> \\phi V_c$ ({phi_vc_1way:,.0f} kg). Increase slab thickness.")
+            st.error(f"❌ **ไม่ปลอดภัย (FAIL):** $V_{{u,1way}}$ ({vu_1way_kg:,.0f} kg) $> \\phi V_{{c,1way}}$ ({phi_vc_1way:,.0f} kg) ต้องขยายความหนาแผ่นพื้น")
     
     with tab_viz:
         st.markdown("#### 🎨 Detailed Engineering Drawings")
